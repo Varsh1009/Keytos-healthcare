@@ -1,0 +1,108 @@
+{
+  "linear_demographics": {
+    "r2_mean": 0.40689685634248224,
+    "r2_sd": 0.00031642651598447815,
+    "mae_mean": 10.718899399242272,
+    "mae_sd": 0.005303927767220875,
+    "n_features": 4
+  },
+  "gbm_demographics": {
+    "r2_mean": 0.3967034792005911,
+    "r2_sd": 0.004339249351066267,
+    "mae_mean": 10.753490416731406,
+    "mae_sd": 0.047231581133177214,
+    "n_features": 4
+  },
+  "gbm_full": {
+    "r2_mean": 0.45094042461774464,
+    "r2_sd": 0.0045885097937265,
+    "mae_mean": 10.3070815009164,
+    "mae_sd": 0.04769256724500989,
+    "n_features": 20
+  },
+  "delta_r2_full_vs_demographics": {
+    "mean": 0.054236945417153515,
+    "min": 0.048386064723760724,
+    "max": 0.06033873539735679
+  },
+  "baseline_predict_mean_mae": 14.230001202087672,
+  "fairness": {
+    "race_eth": {
+      "Mexican American": {
+        "n": 263,
+        "mae": 9.752337001045554,
+        "mean_bias": -0.11270583518469986,
+        "low_n_warning": false
+      },
+      "Non-Hispanic Asian": {
+        "n": 259,
+        "mae": 11.23659164011769,
+        "mean_bias": -1.1342200404352052,
+        "low_n_warning": false
+      },
+      "Non-Hispanic Black": {
+        "n": 723,
+        "mae": 10.301700115739587,
+        "mean_bias": 5.055476706855062,
+        "low_n_warning": false
+      },
+      "Non-Hispanic White": {
+        "n": 1421,
+        "mae": 10.440316414802984,
+        "mean_bias": -2.9932471261057603,
+        "low_n_warning": false
+      },
+      "Other Hispanic": {
+        "n": 306,
+        "mae": 10.314167011345026,
+        "mean_bias": 4.593719113622826,
+        "low_n_warning": false
+      },
+      "Other/Multiracial": {
+        "n": 42,
+        "mae": 9.420514449880361,
+        "mean_bias": -2.293713502934169,
+        "low_n_warning": true
+      }
+    },
+    "female": {
+      "male": {
+        "n": 1469,
+        "mae": 9.828044398017445,
+        "mean_bias": 0.2850427277410813,
+        "low_n_warning": false
+      },
+      "female": {
+        "n": 1545,
+        "mae": 10.92126871641369,
+        "mean_bias": -0.02011962308910562,
+        "low_n_warning": false
+      }
+    }
+  },
+  "n": 3014,
+  "dsst_mean": 45.461181154611815,
+  "dsst_sd": 17.43918319720923,
+  "permutation_importance_r2_drop": {
+    "educ": 0.3648478955381121,
+    "age": 0.15310420483433512,
+    "female": 0.03775346559874961,
+    "income_pir": 0.034311395892023436,
+    "bmi": 0.020805997812881737,
+    "drinks_per_day": 0.017427747481948003,
+    "phq9": 0.016311714729145377,
+    "total_chol": 0.015622506565158789,
+    "hba1c": 0.008993424340371082,
+    "sbp": 0.008572428912549496,
+    "sleep_hours": 0.0083955373128144,
+    "stroke": 0.008268419399492999,
+    "sedentary_min_day": 0.005977929441157309,
+    "hdl": 0.00587635761175343,
+    "current_smoker": 0.0014578105874023584,
+    "heart_disease": 0.00012711102632540495,
+    "bp_med": -0.00017141203486773505,
+    "active_min_week": -0.0004909159427447906,
+    "hearing_trouble": -0.0012341826229388176,
+    "diabetes": -0.0012650443908368669
+  }
+}

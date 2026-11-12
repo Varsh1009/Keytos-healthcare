@@ -1,0 +1,10 @@
+# Raw datasets are re-downloaded by data/download_data.py (NHANES, OASIS via Kaggle).
+# The OASIS MRI scans are not redistributed here.
+data/raw/
+# Local player database (personal data, never committed)
+data/*.db
+data/player_state.json
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store

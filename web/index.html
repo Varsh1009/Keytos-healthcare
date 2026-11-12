@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NeuroTrail</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css?v=__V__">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script type="importmap">
+{ "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+} }
+</script>
+</head>
+<body>
+<div id="stage"></div>
+
+<header id="hud">
+  <a class="brand" href="#/"><span class="logo">◉</span> Neuro<b>Trail</b></a>
+  <nav class="tabs" id="tabs">
+    <a href="#/" data-r="home">🏠 Home</a>
+    <a href="#/play" data-r="play">✅ Missions</a>
+    <a href="#/gym" data-r="gym">🧩 Games</a>
+    <a href="#/voice" data-r="voice">🎙️ Voice</a>
+    <a href="#/data" data-r="data">📱 My data</a>
+    <a href="#/progress" data-r="progress">📈 Progress</a>
+    <a href="#/coach" data-r="coach">🤖 Coach</a>
+    <a href="#/science" data-r="science">🔬 Science</a>
+  </nav>
+  <div class="hud-right">
+    <div class="hud-chip" id="levelChip">
+      <svg viewBox="0 0 40 40" class="ring"><circle cx="20" cy="20" r="16" class="ring-bg"/><circle cx="20" cy="20" r="16" class="ring-fg" id="levelRing"/></svg>
+      <div><div class="tiny">LV <span id="levelNum">1</span></div><div class="strong" id="levelName">Neuron</div></div></div>
+    <div class="hud-chip"><span class="spark-ico">⚡</span><div><div class="tiny">SPARKS</div><div class="strong" id="sparks">0</div></div></div>
+    <div class="hud-chip"><span class="flame" id="flame">🔥</span><div><div class="tiny">STREAK</div><div class="strong"><span id="streak">0</span> <span id="days">days</span></div></div></div>
+    <div class="player" id="playerBtn"><span id="playerName">Player</span> ▾<div class="menu" id="playerMenu"></div></div>
+  </div>
+</header>
+
+<main id="pages">
+  <section class="page" id="p-home"></section>
+  <section class="page" id="p-play"></section>
+  <section class="page" id="p-gym"></section>
+  <section class="page" id="p-game"></section>
+  <section class="page" id="p-sprint"></section>
+  <section class="page" id="p-mri"></section>
+  <section class="page" id="p-voice"></section>
+  <section class="page" id="p-data"></section>
+  <section class="page" id="p-progress"></section>
+  <section class="page" id="p-coach"></section>
+  <section class="page" id="p-levers"></section>
+  <section class="page" id="p-science"></section>
+</main>
+
+<div id="caption"><div id="capTitle"></div><div id="capFact"></div>
+  <div class="cap-note">Real template brain (FreeSurfer fsaverage, average of 40 MRIs) · Destrieux atlas regions · a game board, not a scan of you</div></div>
+<div id="toast"></div>
+
+<div class="overlay" id="welcome"><div class="modal hero-modal">
+  <div class="eyebrow">BRAIN-HEALTH QUESTS</div>
+  <h1>No chip in your head.<br><span class="grad">No scan required.</span></h1>
+  <p>Daily quests chosen and weighted by real evidence, scored by models trained on real data
+     (CDC NHANES, n=3,014; OASIS MRI, n=416), coached by an AI agent that reads only your own logs.</p>
+  <div class="row"><input id="newName" placeholder="Your name" maxlength="24" autocomplete="off"><button class="cta" id="startBtn">Enter →</button></div>
+  <div class="row" style="margin-top:10px"><button class="ghost" id="guestBtn">▶ Play as Guest (no typing)</button><button class="ghost" id="promptBtn">✎ Name in a pop-up</button></div>
+  <div id="existing"></div>
+</div></div>
+
+<div class="overlay" id="onboard"><div class="modal wide">
+  <div class="dots" id="obDots"></div><div id="obBody"></div>
+  <div class="row end"><button class="ghost" id="obBack">Back</button><button class="cta" id="obNext">Next →</button></div>
+</div></div>
+
+<div class="overlay" id="levelup"><div class="modal levelup-modal">
+  <div class="burst">✦</div><div class="eyebrow">LEVEL UP</div><h1 id="luName"></h1>
+  <p id="luText"></p><button class="cta" data-close="levelup">Keep going →</button>
+</div></div>
+
+<script type="module" src="/static/app.js?v=__V__"></script>
+</body>
+</html>

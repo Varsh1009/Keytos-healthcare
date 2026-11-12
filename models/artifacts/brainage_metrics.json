@@ -1,0 +1,72 @@
+{
+  "n_normal": 316,
+  "n_dementia": 100,
+  "poly_linear": {
+    "mae_mean": 8.98649821351564,
+    "mae_sd": 0.06647627100357663,
+    "r_mean": 0.886187956577787
+  },
+  "gbm": {
+    "mae_mean": 8.179283902660698,
+    "mae_sd": 0.1587377665001976,
+    "r_mean": 0.8844619519215138
+  },
+  "chosen_model": "gbm",
+  "baseline_mae_predict_mean": 21.3404903060407,
+  "bias_correction": {
+    "slope": -0.1812223566106512,
+    "intercept": 8.049683963905771
+  },
+  "clinical_validity": {
+    "n_normal_age_matched": 93,
+    "n_dementia": 100,
+    "mean_gap_normal": 1.4953360062634984,
+    "mean_gap_dementia": 8.753643424728955,
+    "auc": 0.7168817204301076,
+    "auc_ci": [
+      0.6447793485951081,
+      0.7893353906760227
+    ],
+    "mannwhitney_p": 9.936405455840468e-08,
+    "age_normal_mean": 76.74193548387096,
+    "age_dementia_mean": 76.76
+  },
+  "test_retest": {
+    "n_pairs": 20,
+    "mean_abs_diff_years": 1.9877577993454854,
+    "sd_diff_years": 3.0999468475147287,
+    "smallest_detectable_change_years": 6.075895821128867,
+    "icc_1_1": 0.9580837603781392,
+    "nwbv_mean_abs_diff": 0.0038500000000000036
+  },
+  "longitudinal": {
+    "n_subjects": 150,
+    "n_sessions": 373,
+    "nondemented_nwbv_pts_per_year": -0.3302189719967958,
+    "nondemented_ci": [
+      -0.3977210904648357,
+      -0.26271685352875584
+    ],
+    "demented_nwbv_pts_per_year": -0.5382560706839614,
+    "demented_vs_nd_p": 0.0009851989028279435,
+    "converted_nwbv_pts_per_year": -0.5905058885723009,
+    "converted_vs_nd_p": 0.0006802639462168469,
+    "mean_nwbv_pct": 72.956836461126,
+    "model": "linear mixed model, random intercept per person, REML; converged",
+    "per_person_slope_median": {
+      "Converted": {
+        "n": 14,
+        "median": -0.5752388859491917
+      },
+      "Demented": {
+        "n": 64,
+        "median": -0.5390546805003531
+      },
+      "Nondemented": {
+        "n": 72,
+        "median": -0.39512588116805775
+      }
+    },
+    "per_person_slope_kruskal_p": 0.04903942999231666
+  }
+}

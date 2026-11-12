@@ -1,0 +1,50 @@
+{
+  "data": "Kaggle ninadaithal/oasis-1-shinohara: OASIS-1 T1 MRI, skull-stripped, N4, MNI 2 mm (91x109x91)",
+  "n_volumes": 436,
+  "n_normal": 316,
+  "n_dementia": 100,
+  "architecture": "3D CNN on 4 mm input (46x55x46): 5 conv blocks (16-32-64-128-128, stride-2), global avg pool; L-R flip TTA",
+  "params": 733969,
+  "epochs": 70,
+  "cv": "5-fold, split by subject; out-of-fold predictions for every normal participant",
+  "mae": 7.137745410581179,
+  "r": 0.9287938362918264,
+  "baseline_mae_predict_mean": 21.3404903060407,
+  "nwbv_model_mae": 8.179283902660698,
+  "fold_mae": [
+    7.382308602333069,
+    7.391628053453234,
+    8.280056605263361,
+    6.761059231228298,
+    5.869792605203296
+  ],
+  "bias_correction": {
+    "slope": -0.05653523723015844,
+    "intercept": 0.9010560332568189
+  },
+  "clinical_validity": {
+    "auc": 0.7290322580645161,
+    "auc_ci": [
+      0.6570591973190566,
+      0.7996147336750327
+    ],
+    "mean_gap_dementia": 8.442865204752799,
+    "mean_gap_normal_age_matched": 0.6958265194966691,
+    "n_normal_age_matched": 93,
+    "mannwhitney_p": 1.9876917618328992e-08
+  },
+  "test_retest": {
+    "n_pairs": 20,
+    "mean_abs_diff": 1.9228643417358398,
+    "sd_diff": 2.223604899974299,
+    "icc": 0.9710264194314339,
+    "smallest_detectable_change": 4.358265603949626
+  },
+  "train_minutes": 31.4,
+  "device": "cpu",
+  "format_check": {
+    "similarity_threshold": 0.39,
+    "pct_training_scans_passing": 98.85321100917432,
+    "note": "threshold = 1st percentile of template similarity across the 436 real training scans"
+  }
+}
