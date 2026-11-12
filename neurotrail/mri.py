@@ -116,18 +116,14 @@ def check_format(v: np.ndarray) -> dict:
 
 
 def heldout_fold(file: str) -> int | None:
-    """For a cognitively normal training scan, the CV fold whose model never saw that person."""
-    import pandas as pd
-    from sklearn.model_selection import KFold
-    d = pd.read_csv(ART / "mri_cnn_predictions.csv")
-    normal = d.index[(d["session"] == "MR1") & (d["status"] == "cognitively normal")].to_numpy()
-    subj = d.loc[d["file"] == file, "ID"].str[:9]
-    if subj.empty:
+    """For a cognitively normal training scan, the CV fold whose model never saw that person
+    (folds come from results/splits.json, shared by every brain-age model)."""
+    import re
+    m = re.search(r"(OAS1_\d{4})", file)
+    if not m:
         return None
-    for k, (_, te) in enumerate(KFold(5, shuffle=True, random_state=0).split(normal)):
-        if subj.iloc[0] in set(d.loc[normal[te], "ID"].str[:9]):
-            return k
-    return None
+    k = json.loads((ROOT / "results" / "splits.json").read_text())["fold_of_subject"].get(m.group(1))
+    return k if k is not None and k >= 0 else None
 
 
 def predict_with_cam(v: np.ndarray, only: int | None = None) -> dict:
