@@ -8,3 +8,5 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .DS_Store
+# Pretrained SFCN weights: downloaded + hash-checked by models/finetune_sfcn.py
+models/pretrained/
