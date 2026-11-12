@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
 
-TIER_BONUS = {"Randomized trial": 30, "Large cohort": 15, "Mixed / weak": 5}
+TIER_BONUS = {"Randomized trial": 30, "Large cohort": 15, "Mixed / weak": 5, "Tracking check": 0}
 LANCET_URL = "https://doi.org/10.1016/S0140-6736(24)01296-0"
 LANCET_CITE = ("Livingston G et al. Dementia prevention, intervention, and care: 2024 report of the "
                "Lancet standing Commission. Lancet 2024. Table 1.")
@@ -58,14 +58,13 @@ QUESTS: list[Quest] = [
                     "symbol-matching speed task draws on.",
         steps=["Find a quiet spot with no distractions",
                "Play one 90-second Speed Sprint round",
-               "Booster: play a second round and try to beat your first score"],
-        log={"kind": "speed"}, tier="Randomized trial", lancet_paf=None,
-        evidence=[{"claim": "ACTIVE trial, 20-year Medicare follow-up (n=2,021): speed training with ≥1 "
-                            "booster session → lower diagnosed dementia, HR 0.75 (95% CI 0.59–0.95). "
-                            "Without boosters: HR 1.01. Memory and reasoning training: no effect.",
+               "Play a second round and race your ghost (your earlier score)"],
+        log={"kind": "speed"}, tier="Tracking check", lancet_paf=None,
+        evidence=[{"claim": "Inspired by, not equivalent to, the ACTIVE trial: its speed arm trained visual-attention "
+                            "speed (UFOV) in about 10 supervised 60–75-minute sessions plus booster sessions at 11 and 35 "
+                            "months. With boosters, diagnosed dementia over 20 years was lower (HR 0.75, 95% CI 0.59–0.95).",
                    "url": "https://pubmed.ncbi.nlm.nih.gov/41669119/"}],
-        caveat="Only speed training *with boosters* was linked to benefit, hence the second round. "
-               "The game is our own digital version, not the trial software.",
+        caveat="A 90-second symbol game is not the ACTIVE training. We use it to track your own processing speed over time.",
     ),
     Quest(
         id="bp", title="Pressure Point", stop="Cingulate Crossing", icon="🩺", color="#FF5A6E",

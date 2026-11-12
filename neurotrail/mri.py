@@ -92,8 +92,10 @@ def load_upload(data: bytes, filename: str) -> np.ndarray:
         tmp.write(data)
         tmp.flush()
         img = nib.load(tmp.name)
-        img = nib.as_closest_canonical(img)
-        return np.asanyarray(img.dataobj, dtype=np.float32).squeeze()
+        img = nib.as_closest_canonical(img)   # RAS
+        v = np.asanyarray(img.dataobj, dtype=np.float32).squeeze()
+        # Training scans (OASIS) are stored LAS (x flipped); match that orientation.
+        return v[::-1, :, :] if v.ndim == 3 else v
 
 
 def check_format(v: np.ndarray) -> dict:

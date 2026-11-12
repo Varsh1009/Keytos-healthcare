@@ -93,14 +93,18 @@ BASE = dict(sbp=120, diabetes=0, current_smoker=0, active_min_week=150, phq9=0, 
 
 
 def test_lever_zero_at_targets_and_monotone_in_bp():
-    assert abs(scoring.lever_age(BASE)["years"]) < 1e-9
+    assert abs(scoring.lever_age(BASE)["points"]) < 1e-9
     hi = scoring.lever_age({**BASE, "sbp": 160})
-    assert hi["years"] > 0 and hi["ci"][0] <= hi["years"] <= hi["ci"][1]
+    assert hi["points"] > 0 and hi["ci"][0] <= hi["points"] <= hi["ci"][1]
+    assert "years" not in hi                      # no "years older" anywhere
 
 
-def test_null_factors_excluded_from_total():
-    r = scoring.lever_age({**BASE, "active_min_week": 0, "sedentary_min_day": 900})
-    assert abs(r["years"]) < 1e-9 and not r["per_factor"]["active_min_week"]["in_total"]
+def test_unknown_and_null_factors_excluded_from_total():
+    r = scoring.lever_age({**BASE, "sbp": None, "phq9": None, "active_min_week": 0, "sedentary_min_day": 900})
+    f = r["per_factor"]
+    assert abs(r["points"]) < 1e-9
+    assert not f["sbp"]["known"] and f["sbp"]["size"] == "Unknown"
+    assert not f["active_min_week"]["significant"] and f["active_min_week"]["size"] == "Not shown in data"
 
 
 def test_brain_age_reports_noise_band():
@@ -111,12 +115,18 @@ def test_brain_age_reports_noise_band():
 # ---------------------------------------------------------------- coach agent tools
 def test_coach_tools_are_grounded():
     p = Player.create("K")
-    lev = coach.run_tool(p, "get_profile_and_levers", {})
-    assert lev["total_years"] == round(scoring.lever_age(p.profile())["years"], 2)
+    p.sbp = 150
+    p.save()
+    lev = coach.run_tool(Player.load("K"), "get_profile_and_levers", {})
+    assert lev["total_points"] == round(scoring.lever_age(Player.load("K").profile())["points"], 2)
     ev = coach.run_tool(p, "get_quest_evidence", {"quest_id": "bp"})
     assert ev["evidence"][0]["url"].startswith("https://pubmed")
     coach.run_tool(p, "save_weekly_plan", {"title": "t", "items": [{"day": "Mon", "quest_id": "bp", "action": "x"}]})
     assert db.plans("K")[0]["items"][0]["quest_id"] == "bp"
+
+
+def test_coach_prompt_puts_988_first():
+    assert "988" in coach.SYSTEM and "years older" in coach.SYSTEM   # the prompt forbids the phrase
 
 
 def test_offline_coach_saves_plan():
@@ -127,47 +137,64 @@ def test_offline_coach_saves_plan():
     assert out["source"] == "offline" and db.plans("O")
 
 
-# ---------------------------------------------------------------- API
-def test_api_flow():
+# ---------------------------------------------------------------- API (guest session cookie + /api/me)
+def _client():
     from fastapi.testclient import TestClient
     import web.server as srv
-    c = TestClient(srv.app)
-    c.post("/api/players", json={"name": "T"})
-    assert c.post("/api/player/T/complete", json={"quest": "bp"}).status_code == 409  # steps not done
-    for i in range(4):
-        c.post("/api/player/T/step", json={"quest": "bp", "index": i, "done": True})
-    r = c.post("/api/player/T/complete", json={"quest": "bp", "value": 128})
-    assert r.status_code == 200 and r.json()["gained"] == 61
-    for _ in range(2):
-        c.post("/api/player/T/speed", json={"correct": 30, "wrong": 2, "best_combo": 9})
-    assert c.post("/api/player/T/complete", json={"quest": "speed", "value": 30}).json()["gained"] == 50
-    prog = c.get("/api/player/T/progress").json()
-    assert prog["totals"]["quests"] == 2 and prog["bp"][0]["value"] == 128 and len(prog["speed"]) == 2
+    return TestClient(srv.app)
 
 
-# ---------------------------------------------------------------- Brain Gym
+ONB = {"age": 68, "female": True, "diabetes": True, "current_smoker": False, "sleep_hours": 7,
+       "sbp": None, "hearing_trouble": True, "feel_down": False}
+
+
+def test_api_requires_session_and_blocks_direct_player_routes():
+    c = _client()
+    assert c.get("/api/me").status_code == 401
+    name = c.post("/auth/guest", json={}).json()["name"]
+    assert name.startswith("Guest")
+    assert c.get(f"/api/player/{name}").status_code == 401       # no reading other people's data by name
+    assert c.get("/api/me").json()["name"] == name
+
+
+def test_api_flow():
+    c = _client()
+    c.post("/auth/guest", json={})
+    snap = c.post("/api/me/onboard", json=ONB).json()
+    assert snap["lever"]["per_factor"]["sbp"]["known"] is False and snap["profile"]["phq9"] is None
+    r = c.post("/api/me/complete", json={"quest": "bp", "value": 128})   # one clear Done: steps are guidance
+    assert r.status_code == 200 and r.json()["gained"] == 61 and r.json()["rings"]["body"]["points"] == 61
+    s1 = c.post("/api/me/speed", json={"correct": 30, "wrong": 2, "best_combo": 9}).json()
+    s2 = c.post("/api/me/speed", json={"correct": 34, "wrong": 1, "best_combo": 9}).json()
+    assert s2["first_speed"] == 30 and s2["best_speed"] == 34 and s2["rings"]["mind"]["points"] == s1["rings"]["mind"]["points"]
+    prog = c.get("/api/me/progress").json()
+    assert prog["totals"]["quests"] == 1 and prog["bp"][0]["value"] == 128 and len(prog["speed"]) == 2
+
+
+def test_mood_check_shows_support_at_10_or_more():
+    c = _client()
+    c.post("/auth/guest", json={})
+    c.post("/api/me/onboard", json=ONB)
+    low = c.post("/api/me/mood", json={"answers": [0, 1, 0, 1, 0, 0, 1, 0]}).json()
+    high = c.post("/api/me/mood", json={"answers": [2, 2, 1, 2, 1, 1, 1, 0]}).json()
+    assert low["score"] == 3 and not low["support"] and high["score"] == 10 and high["support"]
+    assert high["player"]["support"]
+
+
+# ---------------------------------------------------------------- Checks (games)
 def test_fluency_scoring_rejects_non_animals_and_repeats():
     from neurotrail import games
     r = games.score_fluency(["dog", "Dogs", "table", "butterflies", "polar bear"])
     assert r["score"] == 3 and r["unrecognized"] == ["table"]
 
 
-def test_nhanes_percentile_uses_real_reference():
-    from neurotrail import games
-    r = games.nhanes_percentile("cerad_learning", 22, 70, True)
-    assert r["n"] > 300 and 0 <= r["percentile"] <= 100
-
-
-def test_game_api_awards_sparks_once_per_day():
-    from fastapi.testclient import TestClient
-    import web.server as srv
-    c = TestClient(srv.app)
-    c.post("/api/players", json={"name": "G"})
-    a = c.post("/api/player/G/game", json={"game": "stroop", "score": 30, "detail": {}}).json()
-    b = c.post("/api/player/G/game", json={"game": "stroop", "score": 33, "detail": {}}).json()
+def test_game_api_awards_points_once_per_day_and_no_population_percentiles():
+    c = _client()
+    c.post("/auth/guest", json={})
+    a = c.post("/api/me/game", json={"game": "stroop", "score": 30, "detail": {}}).json()
+    b = c.post("/api/me/game", json={"game": "stroop", "score": 33, "detail": {}}).json()
     assert a["sparks_gained"] == 15 and b["sparks_gained"] == 0 and b["stats"]["best"] == 33
-    r = c.post("/api/player/G/game", json={"game": "recall", "score": 22, "detail": {"comparable": True, "norm_col": "cerad_learning"}}).json()
-    assert r["nhanes"]["n"] > 100
+    assert not b.get("nhanes")                     # compared only with yourself
 
 
 # ---------------------------------------------------------------- voice + wearables
@@ -195,7 +222,42 @@ def test_apple_health_parse_dedupes_sources_and_ignores_in_bed():
     assert d["steps"] == 3500 and d["sleep_hours"] == 7.0
 
 
-def test_wearable_sleep_feeds_profile():
+def test_watch_sleep_is_display_only():
     p = Player.create("W")
+    p.sleep_hours = 7.0
+    p.save()
     db.put_days("W", {date.today().isoformat(): {"sleep_hours": 5.0}}, "test")
-    assert Player.load("W").profile()["sleep_hours"] == 5.0
+    assert Player.load("W").profile()["sleep_hours"] == 7.0   # model was trained on self-report
+
+
+# ---------------------------------------------------------------- brain atlas + MRI honesty
+def test_disease_atlas_regions_resolve_and_cite_pubmed():
+    from neurotrail import diseases, regions as R
+    ids = {r["id"] for r in R.regions()}
+    for d in diseases.catalog():
+        assert d["source"][1].startswith("https://pubmed.ncbi.nlm.nih.gov/")
+        assert d["group"] in {"lower", "live", "early"} and d["doctor"]
+        for st in d["stages"]:
+            assert st["regions"] and set(st["regions"]) <= ids
+
+
+def test_failed_mri_measures_are_not_shown():
+    import json
+    t = json.loads((ROOT / "models" / "artifacts" / "tissue_norms.json").read_text())
+    for k, m in t["measures"].items():
+        if k != "nWBV":
+            assert m["shown"] is False and (m["auc"] < 0.70 or m["icc"] < 0.90)
+
+
+def test_facts_match_artifacts():
+    import json
+    f = json.loads((ROOT / "models" / "artifacts" / "facts.json").read_text())
+    tv = f["teaching_view"]
+    assert f["oasis"]["volumes"] == 436 and len(f["removed"]) == 5
+    assert tv["healthy60_flag_pct"] < tv["dementia_flag_pct"] < 50   # one MRI number can't screen
+
+
+def test_mri_samples_do_not_expose_cnn_brain_age():
+    c = _client()
+    rows = c.get("/api/mri/samples").json()
+    assert rows and all("brain_age" not in r for r in rows)

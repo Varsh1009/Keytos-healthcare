@@ -1,195 +1,137 @@
-# NeuroTrail: brain-health quests. No chip in your head. No scan required.
+# NeuroTrail: the honest brain coach
 
-Keytos Hack 2026, Health track. You don't need an implant (like Neuralink) or an MRI to work on
-brain health. NeuroTrail turns the habits with the strongest evidence into a daily game:
+Keytos Hack 2026, Health track.
 
-- Each quest has concrete action steps.
-- Points are weighted by how strong the evidence is.
-- The score comes from models trained on real public data.
-- Each finished quest lights up a real region on a 3D brain.
+In 2 minutes NeuroTrail shows you **which of your habits matter most for your brain**, using models
+trained on real public health data. Then it helps you build those habits with small daily steps you
+actually tick off. It also teaches how 7 brain diseases affect the brain, on a real 3D brain.
+
+It is a wellness and education tool. It is **not** a diagnosis, a dementia risk score, or an MRI reader.
+We tested several "impressive" features, found they didn't hold up, and removed them (see
+[What we tested and removed](#what-we-tested-and-removed)).
 
 ## Run it
 
 ```bash
 pip install -r requirements.txt
 python data/download_data.py        # CDC NHANES + OASIS (Kaggle; needs ~/.kaggle credentials)
-python models/train_cognition.py    # NHANES processing-speed models + associations + fairness
-python models/train_brainage.py     # OASIS MRI brain-age model + validation
-python models/train_mri_cnn.py      # 3D CNN brain age on 436 real OASIS MRIs (~30 min on M3 CPU)
-python -m neurotrail.brain_export   # high-res brain mesh + atlas regions for the 3D view
+python models/train_cognition.py    # NHANES thinking-speed models, associations, fairness
+python models/train_brainage.py     # OASIS nWBV model + validation
+python models/train_mri_cnn.py      # 3D CNN on 436 real OASIS MRIs (~30 min CPU; tested, then removed from the app)
+python models/build_region_norms.py # region intensity index (tested, then removed from the app)
+python models/build_tissue_norms.py # hippocampus / ventricle / brain-fraction measures + go/no-go test
+python models/build_facts.py        # writes models/artifacts/facts.json: every number the app quotes
+python -m neurotrail.brain_export   # fsaverage6 brain mesh for the 3D view
+python -m neurotrail.atlas_export   # deep-structure meshes + Harvard-Oxford labels
 python web/server.py                # open http://localhost:8600
-pytest -q                           # 21 tests
+pytest -q                           # 27 tests
 ```
 
-Stack: Python does all the work (pandas, scikit-learn, statsmodels, nilearn, FastAPI). The browser only
-draws it, using a single HTML/JS page with Three.js from a CDN. There is no Node and no build step.
+Python does all the work (pandas, scikit-learn, statsmodels, nilearn, nibabel, PyTorch, FastAPI).
+The browser only draws it: one HTML page, plain ES modules, Three.js / Chart.js / SimpleWebAuthn
+served locally from `web/static/vendor/`. No Node, no build step, no CDN at runtime (fonts aside).
 
-## App pages (tabs)
+## How it works (the user flow)
 
-- **Home**: your brain buddy, today's 3-step plan, and what your habits say in plain words.
-- **Missions**: the 9 daily missions.
-- **Games**: 7 brain games.
-- **Voice**: a 1-minute speech check.
-- **My data**: phone/watch import, MRI upload, and what-if sliders.
-- **Progress**, **Coach** and **Science**.
+1. **Welcome**: Start as a guest, or sign in with a passkey.
+2. **About you**: age and sex (two taps).
+3. **Speed Sprint** (90 s, skippable): a digital symbol-matching task modeled on the Digit Symbol test.
+   It becomes your "first try" that you race later as a ghost.
+4. **6 taps**: told you have high blood pressure (optional reading), diabetes, smoking, sleep hours,
+   hearing trouble, feeling down. If you've been feeling down, a 988 support card shows first.
+5. **Your result**:
+   - A 100-person icon array: of 100 dementia cases, about 45 are linked to 14 changeable factors
+     (Lancet Commission 2024). The ones linked to your answers are gold. Population numbers, not your personal risk.
+   - **What matters most for you**: each factor with a clear link in the CDC survey, ranked, in test
+     points with a 95% range (for example diabetes: about 3.6 points lower, range 2.1 to 5.1).
+   - Your first 3 habits.
+   - **Save with a passkey** (WebAuthn / FIDO2): fingerprint, face or device PIN. No password.
 
-## Page details
+Then four tabs:
 
-- **Home**: today's progress ring, all quests (play them in any order), coach card, levers, this week.
-- **Play**: a dedicated room for one quest. Step checklist, tap-only inputs (sliders, steppers, chips),
-  "Fire this neuron". The brain flies to that quest's region.
-- **Sprint**: a 90-second symbol-matching speed game, plus a booster round.
-- **Progress**: sparks per day, consistency heatmap, BP / steps / sleep / speed trends, lever score
-  over time, quest mix, full activity log.
-- **Coach**: the AI agent (below) and its saved weekly plans.
-- **Levers**: what-if sliders on the NHANES model, plus optional MRI brain age.
-- **Science**: every metric, the fairness audit, the evidence table and the architecture.
-
-## Real MRI scans: 3D CNN brain age (`models/train_mri_cnn.py`)
-
-- **Data:** 436 real T1 MRI volumes from Kaggle `ninadaithal/oasis-1-shinohara` (OASIS-1). They're
-  skull-stripped, N4 bias-corrected and on the MNI 2 mm grid. Each is joined to that person's real
-  age and dementia rating (CDR).
-- **Model:** a compact 3D CNN on 4 mm input. Trained on cognitively normal people only, with 5-fold
-  cross-validation split by subject.
-- **Accuracy:** MAE **7.1 years** (r = 0.93), versus 21.3 for predicting the mean and 8.2 for the
-  brain-volume-only model.
-- **Dementia:** the bias-corrected brain-age gap is +8.4 years in dementia vs +0.7 in age-matched
-  normals, AUC **0.73** (95% CI 0.66–0.80).
-- **Test-retest** on 20 real repeat scans: ICC **0.97**. The smallest change that can be detected is
-  ±4.4 years.
-- **Upload:** the MRI tab takes a `.nii` / `.nii.gz` file and returns brain age, the gap, and Grad-CAM
-  heatmaps on real slices. Each upload is checked against the training format: skull-stripped, MNI
-  2 mm, and template similarity at or above the 1st percentile of the real training scans. Scans are
-  never stored.
-- **Sample scans:** each is scored only by models that never saw that person.
-
-## Voice check (`neurotrail/voice.py`)
-
-You read a short paragraph or tell a 1-minute story. The browser records WAV audio, and Python
-(numpy/scipy) measures:
-- speech tempo and articulation rate (syllable nuclei)
-- number of pauses and the share of time spent pausing
-- pitch and pitch variability
-
-These are the temporal speech measures that differed in mild cognitive impairment in Tóth et al.
-2018 (PubMed 29165085). The app compares you only with yourself over time; it doesn't diagnose.
-Audio is never stored.
-
-## Phone & watch import (`neurotrail/wearables.py`)
-
-- **Apple Health** `export.zip` / `export.xml`: daily steps (de-duplicated across iPhone and Watch),
-  sleep (asleep stages only), resting heart rate, heart-rate variability, walking speed.
-- **Any CSV** with `date` plus any of `steps`, `sleep_hours`, `resting_hr`, `hrv_ms`, `walking_speed`.
-- Your 14-day sleep average replaces the sleep answer you gave at sign-up in your lever score.
-
-## Brain Gym (7 games)
-
-| Game | Based on |
+| Tab | What's there |
 |---|---|
-| Speed Sprint | DSST (ACTIVE-trial evidence) |
-| Word Recall | CERAD word list, with NHANES percentiles from 2,972 adults 60+ |
-| Animal Naming | Animal fluency, with NHANES percentiles from 2,949 adults |
-| Trail Connect | Trail Making Test A/B |
-| Color Clash | Stroop |
-| Memory Grid | Corsi block span |
-| Reflex | Reaction time |
+| **Today** | One next step, today's 3 habits, care rings (Move / Mind / Body, filled by evidence-weighted points), a kind streak (one rest day a week never breaks it), "Try a change" what-if, tip of the day |
+| **Checks** | Speed Sprint (race your ghost), Word Recall, Animal Naming, Voice check; more: Trail Connect, Color Clash, Memory Grid, Reflex. Compared only with your own first tries; "learning your baseline" until 3 plays |
+| **My Brain** | **Learn**: 7 diseases grouped by what you can do (lower your risk / live better / early help matters): where each one strikes on a 3D brain, a stage slider, how it varies, what to do at home, when to call a doctor, BE-FAST, myth-or-fact cards. **Mine**: a skills map colored from your checks, plus an MRI research preview |
+| **Me** | Progress charts, connect a device (Apple Health / CSV), edit answers, passkey security, **How we know**, support lines |
 
-Only Speed Sprint has dementia-outcome trial evidence. The others are tracking tools: brain-training
-gains rarely transfer to everyday life (Simons et al. 2016, PubMed 27697851).
+Each habit page has numbered "how to do it" steps (guidance, not gates), one input that counts, and one
+big **Done**. The blood pressure habit has an "I don't have a cuff" path. The mood habit is the PHQ-8;
+a score of 10+ shows support resources before anything else.
 
-## Database
-
-SQLite, stored locally at `data/neurotrail.db` (`neurotrail/db.py`). It has six tables: `players`,
-`quest_logs`, `step_progress`, `speed_rounds`, `coach_messages`, `plans`, `game_results`, `mri_results`, `voice_results`, `wearable_days`.
-
-## AI coach agent (`neurotrail/coach.py`)
-
-The coach is Claude Opus 5.5 running a tool-use loop. Its five tools are grounded in your data:
-- the NHANES lever model on your current values
-- your activity log from SQLite
-- each quest's verified evidence
-- a what-if simulation
-- saving a weekly plan to the database
-
-The system prompt forbids numbers that didn't come from a tool. To enable it, set `ANTHROPIC_API_KEY`
-and restart the server. Without credentials, a labeled offline coach runs the same tools with fixed rules.
+Accessibility: 18 px body text (nothing under 16 px), 48 px tap targets, solid high-contrast panels,
+A / A+ / A++ text size, Calm mode and `prefers-reduced-motion` (no animation), keyboard focus rings,
+skip link, single-column phone layout with a bottom tab bar. The 3D brain spins for 5 s, then holds still.
 
 ## Data (all real, all public)
 
-| Dataset | What | n |
+| Dataset | Used for | n |
 |---|---|---|
-| CDC NHANES 2011–2014 | Digit Symbol Substitution Test (processing speed), plus BP, diabetes, smoking, activity, sleep, PHQ-9 depression, hearing, labs | 3,014 adults 60+ |
-| OASIS-1 (Kaggle `jboysen/mri-and-alzheimers`) | MRI-derived brain volume (nWBV, eTIV), dementia rating (CDR) | 416 people aged 18–96, plus 20 repeat scans |
-| OASIS-2 | Longitudinal MRI | 150 people, 373 scans |
-| FreeSurfer fsaverage6 + Destrieux atlas (nilearn) | Template brain surface (average of 40 MRIs) and cortical regions | 81,924 vertices |
+| CDC NHANES 2011–2014 | Digit Symbol test (thinking speed) + blood pressure, diabetes, smoking, activity, sleep, PHQ-9, hearing | 3,014 adults 60+ with the test; 2,597 complete cases |
+| OASIS-1 tables (Kaggle `jboysen/mri-and-alzheimers`) | nWBV brain volume, dementia rating (CDR) | 416 people aged 18–96 + 20 repeat scans |
+| OASIS-1 MRI volumes (Kaggle `ninadaithal/oasis-1-shinohara`) | Sample scans, tested MRI measures | 436 volumes |
+| fsaverage6 + Harvard-Oxford atlas (nilearn) | 3D brain surface, cortical and deep regions | 81,924 vertices |
 
-## Results (reproduced by the scripts above)
+## Results (every number below is in `models/artifacts/facts.json`)
 
-**Processing-speed model (NHANES, repeated 5-fold CV, 5 seeds)**
+**Habits and thinking speed** (NHANES, survey-weighted regression, adults 60+, n = 2,597).
+Adding habits to age, sex, education and income raised cross-validated R² from 0.41 to 0.45.
 
-| Model | R² | MAE (DSST points) |
+| Change | Digit Symbol points (95% CI) | p |
 |---|---|---|
-| Predict the mean | 0.000 | 14.23 |
-| Linear: age, sex, education, income | 0.407 | 10.72 |
-| Gradient boosting: demographics | 0.397 | 10.75 |
-| **Gradient boosting: + 16 modifiable factors** | **0.451** | **10.31** |
+| Diabetes → no diabetes | +3.6 (+2.1 to +5.1) | 1.8e-6 |
+| Depression score 10 → 2 | +3.2 (+1.6 to +4.7) | 3.5e-5 |
+| Smoker → non-smoker | +2.6 (+0.7 to +4.6) | 0.009 |
+| Systolic BP 150 → 120 | +1.7 (+0.7 to +2.7) | 0.0009 |
+| Sleep 5 h → 7 h | +1.5 (+0.3 to +2.7) | 0.019 |
+| Inactive → 150 active min/week | +0.1 (−0.2 to +0.3) | 0.59 (not shown as a factor) |
+| Sitting 600 → 360 min/day | −0.1 (−1.0 to +0.7) | 0.75 (not shown as a factor) |
 
-Modifiable factors add ΔR² = 0.054 over demographics alone.
+These are associations in a cross-sectional survey, not proof of cause. Only factors with p < 0.05 count.
 
-**Associations** (survey-weighted least squares, cluster-robust SEs, adjusted for age, sex, education
-and income; n = 2,597; age effect −0.82 DSST points/year):
+Fairness: the prediction model's mean error differs by group (+5.1 points Non-Hispanic Black, +4.6 Other
+Hispanic, −3.0 Non-Hispanic White). So the app only uses these numbers for within-person "what if"
+comparisons, never to rank or label people.
 
-| Change | DSST points (95% CI) | ≈ years | p |
-|---|---|---|---|
-| Systolic BP 150 → 120 | +1.71 (0.71 to 2.73) | +2.1 | 0.0009 |
-| Diabetes → none | +3.60 (2.12 to 5.07) | +4.4 | 2e-6 |
-| Smoker → non-smoker | +2.60 (0.69 to 4.55) | +3.1 | 0.009 |
-| PHQ-9 10 → 2 | +3.18 (1.64 to 4.71) | +3.9 | 4e-5 |
-| Sleep 5 h → 7 h | +1.48 (0.25 to 2.73) | +1.8 | 0.02 |
-| Activity 0 → 150 min/wk (self-report) | +0.07 (−0.17 to 0.30) | +0.1 | 0.59 (null) |
-| Sitting 600 → 360 min/day | −0.14 (−1.03 to 0.71) | −0.2 | 0.75 (null) |
+**MRI teaching view** (OASIS's own validated nWBV measure). It separates dementia from healthy scans
+with AUC 0.72 (95% CI 0.64–0.79). At the best cut-off it flags 4 of 100 healthy people over 60 and only
+12 of 100 people with dementia. The app uses this to teach why one MRI number can't screen a person.
 
-The "lever" score in the app counts only the factors that are statistically significant. Null factors
-are still shown, greyed out.
+## What we tested and removed
 
-**Fairness audit:** error (MAE) is similar across groups. Predictions still lean about +5 points for
-Non-Hispanic Black participants and about −3 for Non-Hispanic White participants (race was not a model
-input). This is why the app reports factor associations and within-person change, never a cognitive
-diagnosis.
+| Built | Why it's gone |
+|---|---|
+| 3D CNN "brain age" | In people 60+ it was no better than guessing the average age (error 7.63 vs 7.62 years). Its 7.1-year overall error came from the wide 18–96 age range |
+| Region intensity index (57 regions) | Flagged 81% of healthy adults 60+ as having an "abnormal" region, and missed ventricle enlargement |
+| Our hippocampus / ventricle / brain-fraction measures | None reached our bar (dementia AUC ≥ 0.70 and repeat-scan ICC ≥ 0.90), so uploads get a format check and slice preview only, no numbers |
+| "Years older" / "brain age" wording | A single survey snapshot can't tell you how old your brain is |
+| NHANES percentiles for the digital games | Different words, timing and format from the NHANES interview; you're compared only with yourself |
 
-**MRI brain age (OASIS):**
+## Evidence behind the habits
 
-- MAE 8.2 years (r = 0.88) on cognitively normal adults.
-- Bias-corrected gap: +8.8 years in dementia vs +1.5 in age-matched normals; AUC 0.72 (95% CI 0.64–0.79).
-- Test-retest ICC 0.958 on 20 real repeat scans. The smallest change that can be detected is ±6.1 years.
-  That's why daily quests are never scored on MRI brain age.
-- Brain atrophy: nWBV falls 0.33 points/yr in nondemented people vs 0.54 in people with dementia
-  (mixed model, p = 0.001).
+Each habit cites its source in the app ("Why this habit?"). Main ones: SPRINT MIND (blood pressure),
+ACHIEVE (hearing aids), UK Biobank step counts (3,826 / 9,826 steps), ACTIVE (speed training),
+behavioral activation trials (planning enjoyable activities), CDC quitline. Disease maps: Braak staging
+for Alzheimer's and Parkinson's, Vonsattel for Huntington's, Brettschneider for ALS, Rascovsky for FTD,
+McDonald criteria for MS, BE-FAST for stroke (all PubMed-linked in the app).
 
-## How quests are weighted
+## Security and privacy
 
-`sparks = 20 + tier bonus (RCT 30 · large cohort 15 · mixed 5) + 5 × Lancet 2024 weighted PAF%`
+- **Passkeys** (py_webauthn + SimpleWebAuthn): resident keys with user verification; no passwords stored.
+  A guest session can be upgraded to a passkey at any time.
+- **Session routing**: the browser only calls `/api/me/...`; a middleware maps it to the signed-in player
+  and refuses direct `/api/player/<name>` calls, so nobody can read another person's data by name.
+- **Local storage**: SQLite at `data/neurotrail.db` (11 tables). Voice audio is analyzed and discarded; only numbers are kept.
 
-PAF (population attributable fraction) is the Lancet Commission's estimate of the share of dementia
-cases linked to each risk factor.
+## AI assistant (`neurotrail/coach.py`)
 
-Sources were checked on 2026-11-11 against the primary text:
-- Lancet Commission 2024, Table 1: https://doi.org/10.1016/S0140-6736(24)01296-0
-- SPRINT MIND: https://pubmed.ncbi.nlm.nih.gov/30688979/
-- ACTIVE 20-year follow-up: https://pubmed.ncbi.nlm.nih.gov/41669119/
-- US POINTER: https://pubmed.ncbi.nlm.nih.gov/40720610/
-- UK Biobank steps study: https://pubmed.ncbi.nlm.nih.gov/36066874/
-- STEP UP gamification trial: https://pubmed.ncbi.nlm.nih.gov/31498375/
-- Behavioural-activation meta-analysis: https://pubmed.ncbi.nlm.nih.gov/24936656/
-- AHA home blood-pressure steps:
-  https://www.heart.org/en/health-topics/high-blood-pressure/understanding-blood-pressure-readings/monitoring-your-blood-pressure-at-home
-- CDC quitline: https://www.cdc.gov/tobacco/campaign/tips/quit-smoking/quitline/index.html
+Claude Opus 5.5 in a tool-use loop with five tools grounded in your data (your factors, your activity log,
+habit evidence, a what-if, saving a weekly plan). The prompt forbids numbers that didn't come from a
+tool and puts 988 first if someone mentions feeling down. The Ask card only appears when an API key is
+configured; otherwise it stays hidden.
 
-## What it does not claim
+## Hackathon note
 
-- It does not diagnose anything, and it doesn't measure your brain without an MRI.
-- The 3D brain is a template game board. A lit region means a quest is done, not that the region changed.
-- The NHANES associations are cross-sectional. The trials are what support doing the quests.
-- The Speed Sprint is a digital task in the style of the DSST, so you only see your own trend, never a
-  percentile.
+Everything in this repository so far (data pipeline, models, app) was built before the hackathon
+starts on Nov 13, 2026. Check the Keytos Hack rules on pre-existing code and disclose it in the submission.

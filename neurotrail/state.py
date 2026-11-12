@@ -13,7 +13,7 @@ from .quests import QUEST_BY_ID, QUESTS
 LEVELS = [(0, "Neuron"), (150, "Synapse"), (400, "Circuit"), (800, "Network"),
           (1400, "Cortex"), (2200, "Connectome"), (3200, "Mindstar")]
 PROFILE_KEYS = ("age", "female", "educ", "income_pir", "sbp", "diabetes", "current_smoker",
-                "active_min_week", "sedentary_min_day", "sleep_hours", "phq9", "phq_item9")
+                "active_min_week", "sedentary_min_day", "sleep_hours", "phq9", "hearing_trouble", "feel_down", "guest")
 
 
 def today() -> str:
@@ -27,14 +27,16 @@ class Player:
     female: bool = True
     educ: int = 4
     income_pir: float = 2.5
-    sbp: float = 130.0
+    sbp: float | None = None          # unknown until measured (never guessed)
     diabetes: bool = False
     current_smoker: bool = False
     active_min_week: float = 90.0
     sedentary_min_day: float = 420.0
     sleep_hours: float = 7.0
-    phq9: int = 3
-    phq_item9: int = 0
+    phq9: int | None = None           # PHQ-8 total from the Mood check (item 9 is never asked)
+    hearing_trouble: bool = False
+    feel_down: bool = False
+    guest: bool = False
     onboarded: bool = False
     logs: list[dict] = field(default_factory=list)
 
@@ -62,16 +64,12 @@ class Player:
     def profile(self) -> dict:
         """Values for the lever model; the last 7 days of logs override baseline answers."""
         p = asdict(self)
-        # device data (phone / watch) overrides the onboarding answer for sleep
-        from .wearables import summary
-        wsum = summary(db.days(self.name))
-        if wsum.get("sleep_hours"):
-            p["sleep_hours"] = wsum["sleep_hours"]
+        # Watch sleep is display-only: the NHANES model was trained on self-reported sleep.
         for qid, key in (("bp", "sbp"), ("sleep", "sleep_hours")):
             vals = [l["value"] for l in self.recent(qid, 7) if l.get("value") is not None]
             if vals:
                 p[key] = sum(vals) / len(vals)
-        return {k: p[k] for k in PROFILE_KEYS if k != "phq_item9"}
+        return {k: p[k] for k in PROFILE_KEYS}
 
     def recent(self, quest_id: str, days: int) -> list[dict]:
         cut = (date.today() - timedelta(days=days - 1)).isoformat()
@@ -92,7 +90,30 @@ class Player:
     def done_today(self, quest_id: str) -> bool:
         return any(l["quest"] == quest_id and l["date"] == today() for l in self.logs)
 
+    def active_days(self) -> set[str]:
+        days = {l["date"] for l in self.logs}
+        days |= {g["date"] for g in db.games(self.name)}
+        days |= {r["date"] for r in db.rounds(self.name)}
+        return days
+
     def streak(self) -> int:
+        """Kind streak: consecutive days with any habit or check, with one free rest day per 7 days."""
+        days = self.active_days()
+        d = date.today()
+        if d.isoformat() not in days:
+            d -= timedelta(days=1)
+        n, rests, last_rest = 0, 0, None
+        while True:
+            if d.isoformat() in days:
+                n += 1
+            elif (last_rest is None or (last_rest - d).days >= 7) and n > 0 and (d - timedelta(days=1)).isoformat() in days:
+                last_rest, rests = d, rests + 1   # rest day: doesn't break the streak, doesn't count
+            else:
+                break
+            d -= timedelta(days=1)
+        return n
+
+    def _old_streak(self) -> int:
         days = {l["date"] for l in self.logs}
         d = date.today()
         if d.isoformat() not in days:

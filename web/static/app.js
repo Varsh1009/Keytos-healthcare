@@ -1,712 +1,729 @@
-// NeuroTrail front end. Every number shown comes from the Python API (models + SQLite + AI coach).
-import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { pageGym, pageGame, pageMRI } from './gym.js?v=3';
-import { pageHome as pageHome2, pageVoice, pageData, plainLever, plainAmount, buddy } from './ui2.js?v=1';
+// NeuroTrail v2 front end. Four tabs: Today, Checks, My Brain, Me.
+// Every number comes from the Python API (trained models, SQLite, real datasets). Nothing is made up here.
+import { pageGame } from './gym.js?v=4';
+import { pageVoice, buddy } from './ui2.js?v=3';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
-const api = async (path, body) => {
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const fmt = (x, d = 1) => (x > 0 ? '+' : '') + Number(x).toFixed(d);
+const store = { get: k => { try { return localStorage.getItem(k); } catch { return null; } }, set: (k, v) => { try { localStorage.setItem(k, v); } catch { /* private mode */ } } };
+async function api(path, body) {
   const r = await fetch(path, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {});
   const j = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(j.detail || r.statusText);
+  if (!r.ok) throw new Error(typeof j.detail === 'string' ? j.detail : r.statusText);
   return j;
-};
-const fmt = (x, d = 1) => (x > 0 ? '+' : '') + Number(x).toFixed(d);
-const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const TIER = { 'Randomized trial': 'b-rct', 'Large cohort': 'b-cohort', 'Mixed / weak': 'b-weak' };
-const enc = encodeURIComponent;
-
-let QUESTS = [], QMAP = {}, ME = null, SEL = null, META = null, ROUTE = 'home';
-const inputs = {};
+}
+async function postForm(url, fd) { const r = await fetch(url, { method: 'POST', body: fd }); const j = await r.json().catch(() => ({})); if (!r.ok) throw new Error(j.detail || r.statusText); return j; }
+const toast = (m, ms = 3200) => { const t = $('#toast'); t.textContent = m; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), ms); };
 const charts = {};
-const toast = (m, ms = 2800) => { const t = $('#toast'); t.textContent = m; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), ms); };
-const chartOpts = (extra = {}) => ({ responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#C9D0EE' } } },
-  scales: { x: { ticks: { color: '#9AA3C7', maxRotation: 0, autoSkip: true }, grid: { color: 'rgba(255,255,255,.04)' } }, y: { ticks: { color: '#9AA3C7' }, grid: { color: 'rgba(255,255,255,.06)' } } }, ...extra });
+const calm = () => document.body.classList.contains('calm') || matchMedia('(prefers-reduced-motion: reduce)').matches;
+const chartOpts = (extra = {}) => ({ responsive: true, maintainAspectRatio: false, animation: calm() ? false : undefined, plugins: { legend: { labels: { color: '#C3CAEA', font: { size: 14 } } } },
+  scales: { x: { ticks: { color: '#C3CAEA', maxRotation: 0, autoSkip: true, font: { size: 13 } }, grid: { color: 'rgba(255,255,255,.05)' } }, y: { ticks: { color: '#C3CAEA', font: { size: 13 } }, grid: { color: 'rgba(255,255,255,.08)' } } }, ...extra });
 const chart = (id, cfg) => { charts[id]?.destroy(); const el = document.getElementById(id); if (el) charts[id] = new Chart(el, cfg); };
+const main = $('#main');
 
-// ================================================================ 3D BRAIN
-const stage = $('#stage');
-const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-renderer.setSize(innerWidth, innerHeight);
-renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
-stage.appendChild(renderer.domElement);
-const scene = new THREE.Scene();
-const camera = new THREE.PerspectiveCamera(36, innerWidth / innerHeight, 1, 5000);
-const HOME_CAM = new THREE.Vector3(-380, 70, 50);
-camera.position.copy(HOME_CAM);
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true; controls.dampingFactor = .06; controls.enablePan = false;
-controls.minDistance = 180; controls.maxDistance = 640; controls.autoRotate = true; controls.autoRotateSpeed = .45;
-scene.add(new THREE.HemisphereLight(0xbfd4ff, 0x2a1530, 1.1));
-const key = new THREE.DirectionalLight(0xfff1e6, 2.2); key.position.set(-300, 400, 300); scene.add(key);
-const rim1 = new THREE.DirectionalLight(0x59f0ff, 1.6); rim1.position.set(300, 100, -400); scene.add(rim1);
-const rim2 = new THREE.DirectionalLight(0x9b7bff, 1.2); rim2.position.set(200, -300, 300); scene.add(rim2);
-const composer = new EffectComposer(renderer);
-composer.addPass(new RenderPass(scene, camera));
-const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.55, 0.4, 0.82);
-composer.addPass(bloom); composer.addPass(new OutputPass());
-{ // starfield
-  const n = 2500, g = new THREE.BufferGeometry(), p = new Float32Array(n * 3), c = new Float32Array(n * 3);
-  for (let i = 0; i < n; i++) {
-    const r = 900 + Math.random() * 1600, th = Math.random() * Math.PI * 2, ph = Math.acos(2 * Math.random() - 1);
-    p.set([r * Math.sin(ph) * Math.cos(th), r * Math.cos(ph), r * Math.sin(ph) * Math.sin(th)], i * 3);
-    const t = Math.random(); c.set(t < .5 ? [.6, .8, 1] : t < .8 ? [.75, .6, 1] : [1, 1, 1], i * 3);
-  }
-  g.setAttribute('position', new THREE.BufferAttribute(p, 3)); g.setAttribute('color', new THREE.BufferAttribute(c, 3));
-  scene.add(new THREE.Points(g, new THREE.PointsMaterial({ size: 2.2, vertexColors: true, transparent: true, opacity: .8, depthWrite: false })));
-}
-const spriteTex = (() => { const cv = document.createElement('canvas'); cv.width = cv.height = 64; const x = cv.getContext('2d');
-  const gr = x.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(.25, 'rgba(255,255,255,.8)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
-  x.fillStyle = gr; x.fillRect(0, 0, 64, 64); return new THREE.CanvasTexture(cv); })();
-const brain = new THREE.Group(); scene.add(brain);
-const hemis = {}; const uTime = { value: 0 };
-const toWorld = (x, y, z) => new THREE.Vector3(x, z, -y);
+let AUTH = null, ME = null, QUESTS = [], QMAP = {}, FACTS = null, COACH = null, ROUTE = 'today';
 
-function brainMaterial() {
-  const m = new THREE.MeshPhysicalMaterial({ vertexColors: true, roughness: .5, metalness: 0, clearcoat: .35, clearcoatRoughness: .45, sheen: .4, sheenColor: new THREE.Color(0xffc2c2) });
-  m.onBeforeCompile = (sh) => {
-    sh.uniforms.uTime = uTime;
-    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec3 aGlow; attribute vec4 aTint; attribute float aPulse;\nvarying vec3 vGlow; varying vec4 vTint; varying float vPulse;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGlow = aGlow; vTint = aTint; vPulse = aPulse;');
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uTime; varying vec3 vGlow; varying vec4 vTint; varying float vPulse;')
-      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
-        diffuseColor.rgb = mix(diffuseColor.rgb, vTint.rgb, vTint.a);
-        totalEmissiveRadiance += vGlow * (1.0 + vPulse * 0.6 * sin(uTime * 3.2));`);
-  };
-  return m;
-}
-async function loadBrain() {
-  META = await (await fetch('/static/brain/meta.json')).json();
-  for (const h of ['left', 'right']) {
-    const buf = await (await fetch(`/static/brain/${h}.bin`)).arrayBuffer();
-    const nv = META.hemis[h].n_vertices, nf = META.hemis[h].n_faces; let o = 0;
-    const raw = new Float32Array(buf, o, nv * 3); o += nv * 12;
-    const idx = new Uint16Array(buf, o, nf * 3); o += nf * 6;
-    const sulc = new Uint8Array(buf, o, nv); o += nv;
-    const region = new Uint8Array(buf, o, nv);
-    const pos = new Float32Array(nv * 3);
-    for (let i = 0; i < nv; i++) { const v = toWorld(raw[i * 3], raw[i * 3 + 1], raw[i * 3 + 2]); pos.set([v.x, v.y, v.z], i * 3); }
-    const g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setIndex(new THREE.BufferAttribute(new Uint32Array(idx), 1)); g.computeVertexNormals();
-    const col = new Float32Array(nv * 3), gyr = new THREE.Color('#E9C3BB'), sul = new THREE.Color('#9C5F63'), tmp = new THREE.Color();
-    for (let i = 0; i < nv; i++) { tmp.copy(gyr).lerp(sul, Math.pow(sulc[i] / 255, 1.25)); col.set([tmp.r, tmp.g, tmp.b], i * 3); }
-    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    const glow = new THREE.BufferAttribute(new Float32Array(nv * 3), 3), tint = new THREE.BufferAttribute(new Float32Array(nv * 4), 4), pulse = new THREE.BufferAttribute(new Float32Array(nv), 1);
-    g.setAttribute('aGlow', glow); g.setAttribute('aTint', tint); g.setAttribute('aPulse', pulse);
-    const mesh = new THREE.Mesh(g, brainMaterial()); brain.add(mesh);
-    hemis[h] = { mesh, region, glow, tint, pulse, sulc, home: new THREE.Vector3() };
-  }
-  const c = new THREE.Box3().setFromObject(brain).getCenter(new THREE.Vector3());
-  for (const h of Object.values(hemis)) h.mesh.position.sub(c);
-  hemis.left.mesh.position.x -= 3; hemis.right.mesh.position.x += 3;
-  for (const h of Object.values(hemis)) h.home.copy(h.mesh.position);
-  brain.userData.center = c;
-  buildSparkles(); paintRegions();
-}
-let sparkles;
-function buildSparkles() {
-  const n = 700, p = new Float32Array(n * 3), col = new Float32Array(n * 3), ph = new Float32Array(n);
-  for (let i = 0; i < n; i++) {
-    const h = i % 2 ? hemis.left : hemis.right, a = h.mesh.geometry.attributes.position, nrm = h.mesh.geometry.attributes.normal;
-    let k; do { k = Math.floor(Math.random() * a.count); } while (h.sulc[k] > 90);
-    const v = new THREE.Vector3().fromBufferAttribute(a, k).addScaledVector(new THREE.Vector3().fromBufferAttribute(nrm, k), 1.2).add(h.mesh.position);
-    p.set([v.x, v.y, v.z], i * 3); ph[i] = Math.random() * 10;
-  }
-  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(p, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-  sparkles = new THREE.Points(g, new THREE.PointsMaterial({ size: 4, map: spriteTex, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
-  sparkles.userData = { ph }; brain.add(sparkles);
-}
-function paintRegions(hover) {
-  if (!ME || !META || !hemis.left) return;
-  const st = ME.trail || {}, focus = hover || SEL;
-  const byIdx = Object.fromEntries(Object.entries(META.groups).map(([k, v]) => [v, k]));
-  for (const h of Object.values(hemis)) {
-    const G = h.glow.array, T = h.tint.array, P = h.pulse.array; G.fill(0); T.fill(0); P.fill(0);
-    for (let i = 0; i < h.region.length; i++) {
-      const qid = byIdx[h.region[i]]; if (!qid) continue;
-      const q = QMAP[qid], s = st[qid]; if (!q || !s) continue;
-      const c = new THREE.Color(q.color); let gi = 0, ta = .16, pu = 0;
-      if (s === 'done') { gi = .32; ta = .62; }
-      if (s === 'next') { gi = .2; ta = .45; pu = 1; }
-      if (focus === qid) { gi = Math.max(gi, .3) + .14; ta = .72; pu = s === 'done' ? 0 : 1; }
-      G.set([c.r * gi, c.g * gi, c.b * gi], i * 3); T.set([c.r, c.g, c.b, ta], i * 4); P[i] = pu;
-    }
-    h.glow.needsUpdate = h.tint.needsUpdate = h.pulse.needsUpdate = true;
-  }
-}
-let flight = null, SPLIT = 0, VIEW_X = 0, VIEW_TARGET = 0;
-function regionPoint(qid, h = 'left') { return toWorld(...META.centroids[qid][h]).sub(brain.userData.center).add(new THREE.Vector3(h === 'left' ? -3 : 3, 0, 0)); }
-function flyTo(qid) {
-  if (!META?.centroids?.[qid]) return;
-  const pL = regionPoint(qid), medial = Math.abs(pL.x) < 22;
-  let dir = pL.clone().normalize();
-  if (medial) dir = new THREE.Vector3(1, pL.y > 0 ? .25 : -.15, pL.z * .004).normalize();
-  flight = { t: 0, from: camera.position.clone(), to: dir.multiplyScalar(370), split: medial ? 1 : 0, splitFrom: SPLIT };
-  controls.autoRotate = false;
-}
-function goHomeCam() { flight = { t: 0, from: camera.position.clone(), to: HOME_CAM.clone(), split: 0, splitFrom: SPLIT }; controls.autoRotate = true; }
-const parts = [];
-function sparkStream(qid, n = 60, burst = false) {
-  if (!META?.centroids?.[qid]) return;
-  const target = regionPoint(qid), c = new THREE.Color(QMAP[qid].color);
-  const g = new THREE.BufferGeometry(), pos = new Float32Array(n * 3), vel = [], start = [];
-  for (let i = 0; i < n; i++) {
-    let s;
-    if (burst) { s = target.clone(); vel.push(new THREE.Vector3().randomDirection().multiplyScalar(60 + Math.random() * 140)); }
-    else { s = camera.position.clone().lerp(target, .35).add(new THREE.Vector3().randomDirection().multiplyScalar(80 + Math.random() * 60)); vel.push(null); }
-    start.push(s.clone()); pos.set([s.x, s.y, s.z], i * 3);
-  }
-  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  const pts = new THREE.Points(g, new THREE.PointsMaterial({ size: burst ? 9 : 7, map: spriteTex, color: c, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
-  scene.add(pts); parts.push({ pts, start, vel, target, t: 0, life: burst ? 1.6 : 1.1, burst, delay: Array.from({ length: n }, () => Math.random() * .35) });
-}
-const clock = new THREE.Clock();
-function update(dt) {
-  uTime.value += dt;
-  if (flight) {
-    flight.t = Math.min(1, flight.t + dt / 1.3);
-    const e = flight.t < .5 ? 4 * flight.t ** 3 : 1 - (-2 * flight.t + 2) ** 3 / 2;
-    const p = flight.from.clone().lerp(flight.to, e); p.setLength(THREE.MathUtils.lerp(flight.from.length(), flight.to.length(), e));
-    camera.position.copy(p);
-    SPLIT = THREE.MathUtils.lerp(flight.splitFrom, flight.split, e);
-    if (hemis.right) { hemis.right.mesh.position.copy(hemis.right.home).add(new THREE.Vector3(70 * SPLIT, 260 * SPLIT, 0)); hemis.right.mesh.rotation.z = -.5 * SPLIT; }
-    if (flight.t >= 1) flight = null;
-  }
-  // shift the brain sideways on the Play page (view offset keeps the orbit centered on it)
-  VIEW_X += (VIEW_TARGET - VIEW_X) * Math.min(1, dt * 4);
-  camera.setViewOffset(innerWidth, innerHeight, VIEW_X * innerWidth, 0, innerWidth, innerHeight);
-  if (sparkles) {
-    const col = sparkles.geometry.attributes.color.array, ph = sparkles.userData.ph, t = uTime.value;
-    for (let i = 0; i < ph.length; i++) { const v = Math.max(0, Math.sin(t * 1.7 + ph[i] * 7.3)) ** 18; col[i * 3] = .55 * v; col[i * 3 + 1] = .95 * v; col[i * 3 + 2] = v; }
-    sparkles.geometry.attributes.color.needsUpdate = true;
-  }
-  for (let k = parts.length - 1; k >= 0; k--) {
-    const P = parts[k]; P.t += dt; const a = P.pts.geometry.attributes.position.array;
-    for (let i = 0; i < P.start.length; i++) {
-      const tt = Math.max(0, Math.min(1, (P.t - P.delay[i]) / P.life));
-      const v = P.burst ? P.start[i].clone().addScaledVector(P.vel[i], tt * (1 - tt * .5)) : P.start[i].clone().lerp(P.target, tt * tt);
-      a.set([v.x, v.y, v.z], i * 3);
-    }
-    P.pts.material.opacity = P.burst ? Math.max(0, 1 - P.t / (P.life + .3)) : (P.t < P.life ? 1 : 0);
-    P.pts.geometry.attributes.position.needsUpdate = true;
-    if (P.t > P.life + .5) { scene.remove(P.pts); P.pts.geometry.dispose(); parts.splice(k, 1); }
-  }
-  controls.update();
-}
-function frame() { update(Math.min(clock.getDelta(), .05)); composer.render(); requestAnimationFrame(frame); }
-addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight); });
+// ------------------------------------------------------------------ plain-language names
+const HABIT = {
+  bp: { name: 'Check your blood pressure', ico: '🩺', ring: 'Body' },
+  steps: { name: 'Take a walk', ico: '👟', ring: 'Move' },
+  connect: { name: 'Talk with someone', ico: '💬', ring: 'Mind' },
+  hearing: { name: 'Look after your hearing', ico: '👂', ring: 'Body' },
+  joy: { name: 'Do something you enjoy', ico: '🎯', ring: 'Mind' },
+  smoke: { name: 'Smoke-free day', ico: '🚭', ring: 'Body' },
+  sleep: { name: 'Sleep on a schedule', ico: '🌙', ring: 'Body' },
+  labs: { name: 'Know your numbers', ico: '🧪', ring: 'Body' },
+  mood: { name: 'Mood check (8 questions)', ico: '💛', ring: 'Mind' },
+};
+const FACTOR_HABIT = { sbp: 'bp', diabetes: 'labs', current_smoker: 'smoke', sleep_dev: 'sleep', phq9: 'mood', active_min_week: 'steps' };
+const CHECKS = [
+  { id: 'speed', name: 'Speed Sprint', ico: '⚡', what: 'Match symbols to numbers for 90 seconds.', main: true },
+  { id: 'recall', name: 'Word Recall', ico: '📝', what: 'Learn 10 words, then pick them out.', main: true },
+  { id: 'fluency', name: 'Animal Naming', ico: '🦒', what: 'Name as many animals as you can in 60 seconds.', main: true },
+  { id: 'voice', name: 'Voice check', ico: '🎙️', what: 'Read a short passage aloud. We measure pace and pauses.', main: true },
+  { id: 'trails', name: 'Trail Connect', ico: '🔗', what: 'Tap numbers (and letters) in order.' },
+  { id: 'stroop', name: 'Color Clash', ico: '🎨', what: 'Tap the ink color, not the word.' },
+  { id: 'corsi', name: 'Memory Grid', ico: '🟦', what: 'Repeat a sequence of lit squares.' },
+  { id: 'reaction', name: 'Reflex', ico: '🏁', what: 'Tap the moment the circle turns green.' },
+];
+// Lancet Commission 2024 (Livingston et al.): weighted population attributable fractions, % of dementia cases.
+const LANCET = [
+  ['hearing', 'Hearing loss', 7], ['ldl', 'High LDL cholesterol', 7], ['edu', 'Less education', 5], ['isolation', 'Social isolation', 5],
+  ['depression', 'Depression', 3], ['tbi', 'Head injury', 3], ['air', 'Air pollution', 3], ['inactivity', 'Physical inactivity', 2],
+  ['smoking', 'Smoking', 2], ['diabetes', 'Diabetes', 2], ['bp', 'High blood pressure', 2], ['vision', 'Untreated vision loss', 2],
+  ['obesity', 'Obesity', 1], ['alcohol', 'Too much alcohol', 1]];
+const LANCET_URL = 'https://doi.org/10.1016/S0140-6736(24)01296-0';
+const SUPPORT = `<div class="support-card" role="alert"><h2>You don't have to carry this alone</h2>
+  <p>You told us you've been feeling down. If you're struggling, <b>call or text 988</b> (US Suicide & Crisis Lifeline, free, 24/7) or chat at <a href="https://988lifeline.org" target="_blank" rel="noopener">988lifeline.org</a>. In an emergency call <b>911</b>.</p>
+  <p>Low mood is common and treatable. Talking to your doctor is a strong next step. NeuroTrail is not treatment and no person reads your answers.</p></div>`;
 
-// ================================================================ HUD
-function countUp(el, to) { const from = +el.dataset.v || 0; el.dataset.v = to; const t0 = performance.now();
-  const step = (now) => { const e = Math.min(1, (now - t0) / 900); el.textContent = Math.round(from + (to - from) * (1 - (1 - e) ** 3)).toLocaleString(); if (e < 1) requestAnimationFrame(step); }; requestAnimationFrame(step); }
-function renderHUD() {
-  if (!ME) return;
-  countUp($('#sparks'), ME.sparks); $('#streak').textContent = ME.streak; $('#days').textContent = ME.streak === 1 ? 'day' : 'days';
-  $('#flame').classList.toggle('on', ME.streak > 0);
-  const L = ME.level; $('#levelNum').textContent = L.index; $('#levelName').textContent = L.name;
-  $('#levelRing').style.strokeDashoffset = 100.5 * (1 - (L.next_at ? (ME.sparks - L.floor) / (L.next_at - L.floor) : 1));
-  $('#playerName').textContent = ME.name;
+// ------------------------------------------------------------------ settings: text size + calm mode
+function applySettings() {
+  const s = +(store.get('nt-size') || 1); document.documentElement.style.setProperty('--scale', s);
+  $$('.sizer button').forEach(b => b.classList.toggle('on', +b.dataset.size === s));
+  const c = store.get('nt-calm') === '1'; document.body.classList.toggle('calm', c); $('#calmBtn').setAttribute('aria-pressed', c);
 }
-function caption(id) {
-  if (!id || !QMAP[id]) { $('#capTitle').textContent = ''; $('#capFact').textContent = ''; return; }
-  const q = QMAP[id]; $('#capTitle').innerHTML = `<span style="color:${q.color}">●</span> ${q.stop} · ${q.region_name}`; $('#capFact').textContent = q.region_fact;
-}
+$$('.sizer button').forEach(b => b.onclick = () => { store.set('nt-size', b.dataset.size); applySettings(); });
+$('#calmBtn').onclick = () => { store.set('nt-calm', store.get('nt-calm') === '1' ? '0' : '1'); applySettings(); };
+const bodyClass = r => { document.body.className = 'r-' + r + (store.get('nt-calm') === '1' ? ' calm' : ''); };
 
-// ================================================================ ROUTER
-const homeRoute = () => { SEL = null; paintRegions(); caption(null); goHomeCam(); return pageHome2(); };
-const routes = { home: homeRoute, play: pagePlay, gym: pageGym, game: pageGame, sprint: pageSprint, voice: pageVoice, data: pageData, mri: pageMRI, progress: pageProgress, coach: pageCoach, levers: pageLevers, science: pageScience };
+function renderWho() {
+  if (!AUTH?.signed_in) { $('#who').textContent = ''; return; }
+  $('#who').innerHTML = AUTH.passkey ? `🔑 ${esc(AUTH.name)} · saved` : `${esc(AUTH.name)} · <a href="#/me/security">not saved yet</a>`;
+}
+async function refresh() { ME = await api('/api/me'); return ME; }
+
+// ------------------------------------------------------------------ helpers
+const stepper = (id, val, unit = '', label = '') => `<div class="stepper" role="group" aria-label="${esc(label)}">
+  <button type="button" data-dec="${id}" aria-label="Less">−</button><output id="${id}" aria-live="polite">${val}${unit}</output><button type="button" data-inc="${id}" aria-label="More">+</button></div>`;
+function wireStepper(root, id, get, set, { min, max, step, unit = '', fmtv = v => v }) {
+  const out = $('#' + id, root), upd = () => { out.textContent = fmtv(get()) + unit; };
+  $(`[data-dec="${id}"]`, root).onclick = () => { set(Math.max(min, +(get() - step).toFixed(2))); upd(); };
+  $(`[data-inc="${id}"]`, root).onclick = () => { set(Math.min(max, +(get() + step).toFixed(2))); upd(); };
+  upd();
+}
+function choice(root, sel, cb) { $$(sel, root).forEach(b => b.onclick = () => { $$(sel, root).forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-pressed', x === b); }); cb(b.dataset.v, b); }); }
+const ring = (label, v, goal, color) => { const C = 2 * Math.PI * 42, f = Math.min(1, v / goal);
+  return `<div class="ring"><svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="42" stroke="#2E3768" stroke-width="12" fill="none"/>
+    <circle cx="50" cy="50" r="42" stroke="${color}" stroke-width="12" fill="none" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - f)}"/></svg>
+    <b>${label}</b><span>${v} / ${goal} this week</span></div>`; };
+const sizeCls = s => ({ 'On target': 'ontarget', Unknown: 'unknown', 'Not shown in data': 'notshown' }[s] || s);
+function userFactors(p) {
+  const f = new Set();
+  if (p.hearing_trouble) f.add('hearing'); if (p.feel_down || (p.phq9 ?? 0) >= 10) f.add('depression');
+  if (p.current_smoker) f.add('smoking'); if (p.diabetes) f.add('diabetes');
+  if ((p.sbp ?? 0) >= 130 || store.get('nt-toldbp') === '1') f.add('bp');
+  return f;
+}
+function iconArray(p) {
+  const mine = userFactors(p), order = [...LANCET.filter(x => mine.has(x[0])), ...LANCET.filter(x => !mine.has(x[0]))];
+  const cells = []; for (const [k, , n] of order) for (let i = 0; i < n; i++) cells.push(mine.has(k) ? 'you' : 'on');
+  while (cells.length < 100) cells.push('');
+  const youN = order.filter(x => mine.has(x[0])).reduce((a, x) => a + x[2], 0);
+  return { youN, html: `<div class="icons" role="img" aria-label="100 people: 45 colored, ${youN} of them gold">${cells.map((c, i) => `<i class="${c} ${calm() ? '' : 'anim'}" style="animation-delay:${i * 18}ms"></i>`).join('')}</div>
+    <div class="legend"><span style="--c:var(--gold)">linked to factors you told us about (${youN})</span><span style="--c:var(--violet)">other changeable factors (${45 - youN})</span><span style="--c:#2E3768">not linked to these 14 (age, genes, unknown)</span></div>` };
+}
+function planFor(me) {
+  const L = me.lever?.per_factor || {}, p = me.profile, out = [];
+  const ranked = Object.entries(L).filter(([, f]) => f.known && (f.points ?? 0) > .1 && f.significant).sort((a, b) => b[1].points - a[1].points);
+  for (const [k] of ranked) if (FACTOR_HABIT[k]) out.push(FACTOR_HABIT[k]);
+  if (p.sbp == null) out.push('bp');
+  if (p.feel_down) out.push('mood');
+  if (p.hearing_trouble) out.push('hearing');
+  if (p.phq9 == null) out.push('mood');
+  out.push('steps', 'connect', 'joy', 'sleep');
+  return [...new Set(out)].filter(id => id === 'mood' || (QMAP[id] && (id !== 'smoke' || p.current_smoker))).slice(0, 3);
+}
+const habitDone = id => id === 'mood' ? ME.profile.phq9 != null : ME.trail?.[id] === 'done';
+
+// ------------------------------------------------------------------ ROUTER
+const routes = { today: pageToday, habit: pageHabit, checks: pageChecks, check: pageCheck, sprint: () => pageCheck('speed'), brain: pageBrain, me: pageMe };
+const TAB = { habit: 'today', check: 'checks', sprint: 'checks' };
+let brainView = null;
 async function route() {
-  if (!ME?.onboarded) return;
-  const [, r = 'home', arg] = (location.hash || '#/').split('/');
-  ROUTE = routes[r] ? r : 'home';
-  document.body.className = 'r-' + ROUTE;
-  const tab = { game: 'gym', sprint: 'gym', mri: 'data', levers: 'data' }[ROUTE] || ROUTE;
-  $$('#tabs a').forEach(a => a.classList.toggle('on', a.dataset.r === tab));
-  $$('.page').forEach(p => p.classList.toggle('on', p.id === 'p-' + ROUTE));
-  stage.classList.toggle('dim', !['home', 'play'].includes(ROUTE) || (ROUTE === 'home' && innerWidth < 1150));
-  stage.classList.toggle('side', ROUTE === 'home');
-  VIEW_TARGET = ROUTE === 'play' ? -0.2 : ROUTE === 'home' ? -0.22 : 0;
-  if (ROUTE !== 'sprint') G = null;
-  await routes[ROUTE](arg);
+  STOP_SPRINT();
+  if (!AUTH?.signed_in) return pageWelcome();
+  if (!AUTH.onboarded) return pageOnboard();
+  const [, r = 'today', ...args] = (location.hash || '#/today').split('/');
+  ROUTE = routes[r] ? r : 'today';
+  bodyClass(ROUTE);
+  $$('#tabs a').forEach(a => { const on = a.dataset.r === (TAB[ROUTE] || ROUTE); a.classList.toggle('on', on); on ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current'); });
+  if (ROUTE !== 'brain') brainView?.stop();
+  try { await refresh(); } catch { AUTH = { signed_in: false }; return pageWelcome(); }
+  renderWho();
+  await routes[ROUTE](...args);
+  main.focus({ preventScroll: true }); if (!(ROUTE === 'me' && args[0])) scrollTo(0, 0);
 }
 addEventListener('hashchange', route);
 
-// ================================================================ HOME
-function pageHome() {
-  SEL = null; paintRegions(); caption(null); goHomeCam();
-  const ids = Object.keys(ME.trail), done = ids.filter(i => ME.trail[i] === 'done').length, next = ids.find(i => ME.trail[i] === 'next');
-  const C = 2 * Math.PI * 40, L = ME.lever;
-  $('#p-home').innerHTML = `<div class="home">
-    <div class="col"><div class="glass panel">
-      <div class="eyebrow">TODAY</div>
-      <div class="today-ring"><svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="40" stroke="rgba(255,255,255,.08)" stroke-width="10" fill="none"/>
-        <circle cx="50" cy="50" r="40" stroke="url(#tr)" stroke-width="10" fill="none" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - done / ids.length)}" style="transition:1s;filter:drop-shadow(0 0 6px #59F0FF)"/>
-        <defs><linearGradient id="tr"><stop offset="0" stop-color="#59F0FF"/><stop offset="1" stop-color="#9B7BFF"/></linearGradient></defs></svg>
-        <div><div class="big">${done}/${ids.length}</div><div class="muted">brain regions lit today</div></div></div>
-      ${next ? `<a class="bigbtn" href="#/play/${next}" style="margin-top:14px">${QMAP[next].icon} Play next: ${QMAP[next].title} →</a>` : '<div class="bigbtn" style="margin-top:14px">🏆 Whole brain lit today</div>'}
-    </div>
-    <div class="glass panel"><div class="eyebrow">QUESTS · ANY ORDER</div>
-      ${ids.map(id => { const q = QMAP[id], s = ME.trail[id]; return `<a class="qtile ${s}" href="#/play/${id}" data-q="${id}" style="--c:${q.color}">
-        <div class="orb" style="width:40px;height:40px;font-size:18px">${q.icon}</div>
-        <div class="tmeta"><div class="tt">${q.title}</div><div class="ts">${q.stop}</div></div>
-        <div class="go">${s === 'done' ? '✓ lit' : `+${q.sparks} ⚡`}</div></a>`; }).join('')}
-    </div></div>
-    <div class="mid"></div>
-    <div class="col">
-      <div class="glass panel coachcard"><div class="eyebrow">🤖 YOUR COACH</div><div class="bubble" id="homeCoach"><span class="muted">Loading…</span></div>
-        <a class="bigbtn" href="#/coach" style="margin-top:12px;background:linear-gradient(90deg,#9B7BFF,#59F0FF)">Talk to your coach →</a></div>
-      <div class="glass panel"><div class="eyebrow">YOUR LEVERS</div>
-        <div style="font:700 34px 'Space Grotesk';margin:6px 0;color:${L.years > 1 ? '#FF8A7A' : L.years > 0 ? '#FFC83D' : '#3DDC97'}">${Math.abs(L.years).toFixed(1)} yrs ${L.years >= 0 ? 'older' : 'younger'}</div>
-        <div class="muted">processing speed linked to your significant factors vs healthy targets (NHANES, 95% CI ${fmt(L.ci[0])} to ${fmt(L.ci[1])})</div>
-        <a href="#/levers" class="muted" style="color:#59F0FF">Open the control room →</a></div>
-      <div class="glass panel"><div class="eyebrow">THIS WEEK</div>
-        <div class="mini-bars">${ME.week.map(d => `<div style="height:${Math.max(6, d.quests / 9 * 100)}%" title="${d.date}: ${d.quests}"></div>`).join('')}</div>
-        <div style="display:flex">${ME.week.map(d => `<span style="flex:1;text-align:center;font-size:10px;color:#9AA3C7">${d.dow}</span>`).join('')}</div>
-        <a href="#/progress" class="muted" style="color:#59F0FF">See full progress →</a></div>
-    </div></div>`;
-  $$('#p-home .qtile').forEach(t => { t.onmouseenter = () => { paintRegions(t.dataset.q); caption(t.dataset.q); }; t.onmouseleave = () => { paintRegions(); caption(null); }; });
-  api(`/api/player/${enc(ME.name)}/coach`).then(h => {
-    const last = [...h.messages].reverse().find(m => m.role === 'assistant');
-    $('#homeCoach').innerHTML = last ? esc(last.content.slice(0, 320)) + (last.content.length > 320 ? '…' : '') : `Hi ${esc(ME.name)}! I read your logs and run the real models. Ask me what your biggest lever is, or to build your week.`;
-  }).catch(() => {});
+// ================================================================== WELCOME
+function pageWelcome() {
+  bodyClass('welcome');
+  main.innerHTML = `<div class="hero pop">${buddy('happy', 120)}
+    <h1>What actually helps <em>your</em> brain?</h1>
+    <p class="lead">Two minutes, a few taps, and you'll see which of your habits matter most, backed by real health data from thousands of people. Then build those habits with small daily steps.</p>
+    <button class="btn big" id="start">Start · no sign-up needed</button>
+    <div style="margin-top:12px"><button class="btn alt big" id="login">🔑 I already have a passkey</button></div>
+    <div class="promise">
+      <div><b>📊 Real data</b>CDC survey of 2,597 adults 60+, and 436 real MRI scans.</div>
+      <div><b>🙅 No hype</b>We show what we tested and what failed. No "brain age".</div>
+      <div><b>🔒 Private</b>Saved on this computer. Sign in with a passkey, not a password.</div></div>
+    <p class="muted">A wellness and education tool, not a diagnosis. If you're worried about your memory, talk to a doctor.</p></div>`;
+  $('#start').onclick = async () => { try { await api('/auth/guest', {}); AUTH = await api('/auth/me'); route(); } catch (e) { toast(`Couldn't start: ${e.message}`, 5000); } };
+  $('#login').onclick = passkeyLogin;
 }
-
-// ================================================================ PLAY
-function pagePlay(id) {
-  if (!id || !QMAP[id]) { const n = Object.keys(ME.trail).find(k => ME.trail[k] === 'next') || Object.keys(ME.trail)[0]; location.hash = `#/play/${n}`; return; }
-  SEL = id; paintRegions(); caption(id); flyTo(id); renderPlay();
-}
-function renderPlay() {
-  const q = QMAP[SEL], s = ME.trail[q.id], steps = ME.steps[q.id] || [], nDone = steps.filter(Boolean).length;
-  const ids = Object.keys(ME.trail), i = ids.indexOf(q.id), prev = ids[(i - 1 + ids.length) % ids.length], nxt = ids[(i + 1) % ids.length];
-  const nh = q.nhanes ? `<p class="ours"><b>Our NHANES model</b> (n=2,597, survey-weighted): ${q.nhanes.label} ↔ ${fmt(q.nhanes.dsst_points)} DSST points (95% CI ${fmt(q.nhanes.dsst_ci[0])} to ${fmt(q.nhanes.dsst_ci[1])}) ≈ ${fmt(q.nhanes.years)} yrs, ${q.nhanes.p_value < .05 ? '<span class="sig">significant</span>' : '<span class="nsig">not significant</span>'} (p=${q.nhanes.p_value.toPrecision(2)}). Association, not cause.</p>` : '';
-  const ev = `<details class="ev"><summary>Why this quest? The evidence</summary><div class="evb">${q.evidence.map(e => `<p>• ${e.claim} <a href="${e.url}" target="_blank" rel="noopener">source ↗</a></p>`).join('')}${nh}${q.caveat ? `<p class="caveat">⚠ ${q.caveat}</p>` : ''}<p class="formula">sparks = ${q.sparks_formula}</p></div></details>`;
-  const picker = `<div class="qpicker">${ids.map(k => `<a href="#/play/${k}" class="${k === q.id ? 'on' : ''} ${ME.trail[k] === 'done' ? 'done' : ''}" style="--c:${QMAP[k].color}" title="${QMAP[k].title}">${QMAP[k].icon}</a>`).join('')}</div>`;
-  let body;
-  if (s === 'done') body = `<div class="done-card"><div class="big">Neuron fired 🔥</div><p class="muted">${q.region_name} stays lit for today. Come back tomorrow to keep your streak.</p><a class="cta" href="#/play/${nxt}" style="text-decoration:none;display:inline-block">Next quest →</a></div>`;
-  else body = `<div class="progress-strip"><i style="width:${nDone / steps.length * 100}%"></i></div><div class="muted" id="stepCount">${nDone} of ${steps.length} steps done · tap a step when you've done it</div>
-    <div class="steps">${q.steps.map((t, k) => `<div class="stp ${steps[k] ? 'on' : ''} ${q.log.kind === 'speed' && k > 0 ? 'auto' : ''}" data-i="${k}"><div class="box">✓</div><div><div class="num">STEP ${k + 1}${q.log.kind === 'speed' && k > 0 ? ' · ticks itself when you play' : ''}</div><div class="txt">${t}</div></div></div>`).join('')}</div>
-    ${q.log.kind === 'speed' ? `<a class="fire" href="#/sprint" style="display:block;text-align:center;text-decoration:none">🎮 Play Speed Sprint ${ME.rounds_today ? `(round ${ME.rounds_today + 1} = booster)` : ''}</a>` : inputUI(q)}
-    <button class="fire" id="fireBtn" disabled>🔥 Fire this neuron · +${q.sparks} ⚡</button>
-    <div class="muted" id="fireHint" style="text-align:center;margin-top:6px"></div>
-    ${ME.support && q.id === 'joy' ? `<div class="support">Your check-in suggests things may be hard right now. In the US, call or text <b>988</b> any time. NeuroTrail is not treatment.</div>` : ''}`;
-  $('#p-play').innerHTML = `<div class="play"><div class="left glass" style="--c:${q.color}">
-    ${picker}
-    <div class="q-top"><div class="q-icon">${q.icon}</div><div class="reward">${s === 'done' ? '✓' : `+${q.sparks} ⚡`}<small>${s === 'done' ? 'LIT TODAY' : 'REWARD'}</small></div></div>
-    <div class="eyebrow" style="margin-top:8px">MISSION ${i + 1} OF ${ids.length}</div>
-    <div class="q-title">${q.title}</div><div class="q-region">Lights up: ${q.region_name} (${q.stop})</div>
-    <span class="badge ${TIER[q.tier]}">${q.tier}</span>${q.lancet_paf ? `<span class="badge b-cohort">${q.lancet_paf}% of dementia cases linked</span>` : ''}
-    ${body}${ev}
-    <div class="navrow"><a href="#/play/${prev}">← ${QMAP[prev].title}</a><a href="#/">Home</a><a href="#/play/${nxt}">${QMAP[nxt].title} →</a></div>
-  </div><div></div></div>`;
-  if (s === 'done') return;
-  const panel = $('#p-play');
-  $$('.stp', panel).forEach(el => el.onclick = async () => {
-    if (el.classList.contains('auto')) return toast('This step ticks itself when you play Speed Sprint.');
-    const k = +el.dataset.i, on = !el.classList.contains('on');
-    el.classList.toggle('on', on); if (on) sparkStream(q.id, 40);
-    try { ME = await api(`/api/player/${enc(ME.name)}/step`, { quest: q.id, index: k, done: on }); } catch (e) { toast(e.message); }
-    const sd = ME.steps[q.id].filter(Boolean).length; $('.progress-strip i', panel).style.width = sd / steps.length * 100 + '%';
-    $('#stepCount').textContent = `${sd} of ${steps.length} steps done${sd === steps.length ? ' · all done!' : ''}`; refreshFire(q);
-  });
-  const setV = (k, val, unit) => { inputs[q.id][k] = val; const b = $('#lv_' + k); if (b) { b.textContent = val + (unit || ''); b.style.opacity = 1; }
-    const r = $(`input[data-k="${k}"]`, panel); if (r) r.value = val;
-    if (q.log.kind === 'steps') { const v = inputs[q.id], g = v.goal || 3826; $('.meter i', panel).style.width = Math.min(100, v.n / g * 100) + '%'; }
-    refreshFire(q); };
-  $$('input[type=range]', panel).forEach(el => el.oninput = () => setV(el.dataset.k, +el.value, el.dataset.unit));
-  $$('[data-up],[data-dn]', panel).forEach(b => b.onclick = () => { const k = b.dataset.up || b.dataset.dn, st = +b.dataset.st, cur = inputs[q.id][k] ?? +b.dataset.def;
-    const unit = $(`input[data-k="${k}"]`, panel)?.dataset.unit; setV(k, +(b.dataset.up ? Math.min(+b.dataset.max, cur + st) : Math.max(+b.dataset.min, cur - st)).toFixed(2), unit); });
-  $$('[data-goal]', panel).forEach(b => b.onclick = () => { inputs[q.id].goal = +b.dataset.goal; renderPlay(); });
-  $$('[data-pick]', panel).forEach(b => b.onclick = () => { inputs[q.id][b.dataset.pick] = b.dataset.val; renderPlay(); });
-  $('#fireBtn').onclick = () => fire(q);
-  refreshFire(q);
-}
-// Tap-only controls (no keyboard needed). A value counts only after you move it.
-function ctl(q, k, label, min, max, step, def, unit = '') {
-  const v = inputs[q.id] ||= {}, val = v[k] ?? def, set = v[k] != null;
-  return `<div class="sl"><div class="lbl">${label}<b id="lv_${k}" style="${set ? '' : 'opacity:.45'}">${val}${unit}${set ? '' : ' (set me)'}</b></div>
-    <div style="display:flex;gap:8px;align-items:center"><button class="chip" data-dn="${k}" data-st="${step}" data-min="${min}" data-def="${def}">−</button>
-    <input type="range" min="${min}" max="${max}" step="${step}" value="${val}" data-k="${k}" data-unit="${unit}" style="flex:1">
-    <button class="chip" data-up="${k}" data-st="${step}" data-max="${max}" data-def="${def}">+</button></div></div>`;
-}
-function chips(q, k, opts) { const v = inputs[q.id] ||= {}; return `<div class="chips">${opts.map(o => `<button class="chip ${v[k] === o ? 'on' : ''}" data-pick="${k}" data-val="${esc(o)}">${esc(o)}</button>`).join('')}</div>`; }
-function inputUI(q) {
-  const v = inputs[q.id] ||= {}, k = q.log.kind;
-  if (k === 'bp') return `<div class="inputs"><label>Reading 1</label>${ctl(q, 's1', 'Systolic (top)', 80, 220, 1, 125, ' mmHg')}${ctl(q, 'd1', 'Diastolic (bottom)', 40, 130, 1, 80, ' mmHg')}
-    <label>Reading 2 (one minute later)</label>${ctl(q, 's2', 'Systolic (top)', 80, 220, 1, 125, ' mmHg')}${ctl(q, 'd2', 'Diastolic (bottom)', 40, 130, 1, 80, ' mmHg')}</div>`;
-  if (k === 'steps') { const goal = v.goal || 3826, n = +v.n || 0; return `<div class="inputs"><label>Today's target</label><div class="chips">${[3826, 9826].map(g => `<button class="chip ${goal === g ? 'on' : ''}" data-goal="${g}">${g.toLocaleString()} · ${g === 3826 ? 'minimum dose' : 'optimal dose'}</button>`).join('')}</div>
-      ${ctl(q, 'n', 'Steps today (from your phone or watch)', 0, 25000, 100, 5000)}<div class="meter"><i style="width:${Math.min(100, n / goal * 100)}%"></i></div></div>`; }
-  if (k === 'connect') return `<div class="inputs"><label>Who did you talk to?</label>${chips(q, 'who', ['Family', 'Partner', 'Friend', 'Neighbor', 'Colleague', 'Someone new'])}${ctl(q, 'mins', 'Minutes', 0, 120, 5, 15, ' min')}</div>`;
-  if (k === 'hearing') return `<div class="inputs"><label>Your path today</label>${chips(q, 'path', ['Wore my hearing aids all day', 'Took a hearing screening', 'Booked an audiologist'])}</div>`;
-  if (k === 'joy') return `<div class="inputs"><label>Pick your activity</label>${chips(q, 'act', q.log.menu)}
-      <label>Scheduled for</label>${chips(q, 'at', ['Morning', 'Midday', 'Afternoon', 'Evening'])}
-      ${ctl(q, 'before', 'Mood before', 0, 10, 1, 5, '/10')}${ctl(q, 'after', 'Mood after', 0, 10, 1, 5, '/10')}</div>`;
-  if (k === 'sleep') return `<div class="inputs">${ctl(q, 'h', 'Hours slept last night', 2, 12, .25, 7, ' h')}</div>`;
-  if (k === 'labs') return `<div class="inputs"><div class="muted">Optional: set them only if you found your numbers.</div>${ctl(q, 'ldl', 'LDL cholesterol', 40, 250, 1, 100, ' mg/dL')}${ctl(q, 'a1c', 'HbA1c', 4, 12, .1, 5.6, '%')}</div>`;
-  if (k === 'check') return `<div class="inputs"><label>Today's trigger</label>${chips(q, 'trigger', ['Morning coffee', 'After meals', 'Stress', 'With friends', 'Driving', 'Alcohol'])}
-      <label>Your substitute</label>${chips(q, 'sub', ['5-minute walk', 'Glass of water', 'Gum', 'Deep breaths', 'Call someone'])}</div>`;
-  return '';
-}
-function missing(q) {
-  const v = inputs[q.id] || {}, k = q.log.kind;
-  if (k === 'bp' && ['s1', 'd1', 's2', 'd2'].some(x => v[x] == null)) return 'set both readings (top and bottom)';
-  if (k === 'steps' && !(v.n > 0)) return 'set your step count';
-  if (k === 'connect' && !(v.who && v.mins >= 10)) return 'pick who, and 10+ minutes';
-  if (k === 'hearing' && !v.path) return 'pick your path';
-  if (k === 'joy' && !v.act) return 'pick an activity';
-  return '';
-}
-function refreshFire(q) {
-  const b = $('#fireBtn'); if (!b) return;
-  const left = (ME.steps[q.id] || []).filter(x => !x).length, m = missing(q);
-  b.disabled = left > 0 || !!m;
-  $('#fireHint').textContent = left ? `${left} step${left > 1 ? 's' : ''} to go` : m ? `Almost: ${m}` : 'Ready. Fire it!';
-}
-async function fire(q) {
-  const v = inputs[q.id] || {}, k = q.log.kind; let value = null, extra = {};
-  if (k === 'bp') { value = (v.s1 + v.s2) / 2; extra = { readings: [[v.s1, v.d1], [v.s2, v.d2]] }; }
-  if (k === 'steps') { value = v.n; extra = { goal: v.goal || 3826 }; }
-  if (k === 'connect') { value = v.mins; extra = { who: v.who }; }
-  if (k === 'hearing') extra = { path: v.path };
-  if (k === 'joy') { value = (v.after ?? 5) - (v.before ?? 5); extra = { activity: v.act, at: v.at, before: v.before ?? 5, after: v.after ?? 5 }; }
-  if (k === 'sleep') value = v.h ?? 7;
-  if (k === 'labs') extra = { ldl: v.ldl ?? null, a1c: v.a1c ?? null };
-  if (k === 'check') extra = { trigger: v.trigger, substitute: v.sub };
-  if (k === 'speed') value = ME.best_speed;
+async function passkeyLogin() {
   try {
-    const r = await api(`/api/player/${enc(ME.name)}/complete`, { quest: q.id, value, extra }); ME = r;
-    sparkStream(q.id, 220, true); sparkStream(q.id, 90); bloom.strength = 2.2; setTimeout(() => (bloom.strength = .55), 700);
-    const fl = document.createElement('div'); fl.className = 'float-gain'; fl.textContent = `+${r.gained} ⚡`; fl.style.left = '30%'; fl.style.top = '45%'; document.body.appendChild(fl); setTimeout(() => fl.remove(), 1700);
-    if (k === 'bp' && value >= 180) toast('⚠ 180+ is very high. If readings stay this high, contact a clinician promptly.', 6000);
-    else if (k === 'steps') toast(value >= 9826 ? '🏅 Optimal dose reached (UK Biobank HR 0.49)' : value >= 3826 ? '✅ Minimum dose reached. Next: 9,826' : `${(3826 - value).toLocaleString()} more steps to the minimum dose`, 4000);
-    else if (k === 'joy' && extra.after > extra.before) toast(`Mood ${extra.before} → ${extra.after}. That's behavioural activation working.`, 4000);
-    renderHUD(); paintRegions(); renderPlay();
-    if (r.leveled_up) setTimeout(() => { $('#luName').textContent = `Level ${r.level.index} · ${r.level.name}`; $('#luText').textContent = `${r.sparks.toLocaleString()} sparks banked.`; openOv('levelup'); }, 1300);
-  } catch (e) { toast(e.message); }
+    const { key, options } = await api('/auth/login/options', {});
+    const credential = await SimpleWebAuthnBrowser.startAuthentication({ optionsJSON: options });
+    await api('/auth/login/verify', { key, credential });
+    AUTH = await api('/auth/me'); toast(`Welcome back, ${AUTH.name}`); location.hash = '#/today'; route();
+  } catch (e) { toast(e.name === 'NotAllowedError' ? 'Passkey sign-in was cancelled.' : `Couldn't sign in: ${e.message}`, 5000); }
+}
+async function savePasskey(after) {
+  try {
+    const { key, options } = await api('/auth/register/options', {});
+    const credential = await SimpleWebAuthnBrowser.startRegistration({ optionsJSON: options });
+    await api('/auth/register/verify', { key, credential });
+    AUTH = await api('/auth/me'); renderWho(); toast('🔑 Saved. Next time, sign in with your fingerprint, face or device PIN.', 5000); after?.();
+  } catch (e) { toast(e.name === 'NotAllowedError' ? 'Passkey setup was cancelled. You can do it later in Me → Security.' : `Passkey not saved: ${e.message}`, 6000); }
 }
 
-// ================================================================ SPRINT
+// ================================================================== ONBOARDING (about 2 minutes)
+let OB = null;
+async function pageOnboard() {
+  bodyClass('onboard');
+  if (!QUESTS.length) await loadQuests();
+  OB ||= { step: 0, age: 65, female: null, toldbp: null, sbp: null, knowsbp: false, diabetes: null, current_smoker: null, sleep_hours: 7, hearing_trouble: null, feel_down: null };
+  ME = await refresh().catch(() => null);
+  obRender();
+}
+const dots = n => `<div class="progressdots" aria-label="Step ${n + 1} of 4">${[0, 1, 2, 3].map(i => `<i class="${i <= n ? 'on' : ''}"></i>`).join('')}</div>`;
+function obRender() {
+  const s = OB.step;
+  if (s === 0) {
+    main.innerHTML = `${dots(0)}<div class="card pop"><div class="eyebrow">About you</div><h1>How old are you?</h1>
+      ${stepper('obAge', OB.age, ' years', 'Age')}
+      <h2 style="margin-top:22px">Sex</h2><p class="muted">The survey data we compare with recorded sex, so we use it to match you fairly.</p>
+      <div class="yesno"><button data-v="1" class="${OB.female === true ? 'on' : ''}">Female</button><button data-v="0" class="${OB.female === false ? 'on' : ''}">Male</button></div>
+      <button class="btn big" id="next" style="margin-top:22px" ${OB.female == null ? 'disabled' : ''}>Next</button></div>`;
+    wireStepper(main, 'obAge', () => OB.age, v => { OB.age = v; }, { min: 18, max: 100, step: 1, unit: ' years' });
+    choice(main, '.yesno button', v => { OB.female = v === '1'; $('#next').disabled = false; });
+    $('#next').onclick = () => { OB.step = 1; obRender(); };
+  } else if (s === 1) {
+    main.innerHTML = `${dots(1)}<div class="card pop"><div class="eyebrow">Quick check · 90 seconds</div><h1>Speed Sprint</h1>
+      <p>Match each symbol to its number using the key. This is how we'll track your <b>processing speed</b> over time, compared only with <b>you</b>. Today's score becomes your "first try" that you race later.</p>
+      <p class="muted">Speed training was the one brain exercise linked to fewer dementia diagnoses in a 10-year trial (ACTIVE). One round is a baseline, not a test result.</p>
+      <button class="btn big" id="go">▶ Start the 90-second sprint</button>
+      <div style="margin-top:10px"><button class="btn alt big" id="skip">Skip for now</button></div></div>`;
+    $('#go').onclick = () => { main.innerHTML = `${dots(1)}<div id="sprintBox"></div>`; runSprint($('#sprintBox'), { onDone: () => { OB.step = 2; obRender(); }, doneLabel: 'Next: 6 quick questions' }); };
+    $('#skip').onclick = () => { OB.step = 2; obRender(); };
+  } else if (s === 2) {
+    const yn = (k, a = 'Yes', b = 'No', c = null) => `<div class="yesno" data-k="${k}"><button data-v="1" class="${OB[k] === true ? 'on' : ''}">${a}</button><button data-v="0" class="${OB[k] === false ? 'on' : ''}">${b}</button>${c ? `<button data-v="u" class="${OB[k] === 'u' ? 'on' : ''}">${c}</button>` : ''}</div>`;
+    main.innerHTML = `${dots(2)}<div class="card pop"><div class="eyebrow">6 quick taps</div><h1>A little about your health</h1>
+      <div class="q"><b>1. Has a doctor ever told you that you have high blood pressure?</b>${yn('toldbp', 'Yes', 'No', 'Not sure')}
+        <div id="bpBox" style="margin-top:10px">${OB.knowsbp ? `<p class="muted">Your usual top number (systolic):</p>${stepper('obSbp', OB.sbp ?? 130, ' mmHg', 'Systolic blood pressure')}` : '<button class="linkbtn" id="knowbp">I know my latest reading (optional)</button>'}</div></div>
+      <div class="q"><b>2. Do you have diabetes?</b>${yn('diabetes')}</div>
+      <div class="q"><b>3. Do you smoke now?</b>${yn('current_smoker')}</div>
+      <div class="q"><b>4. How many hours do you usually sleep a night?</b>${stepper('obSleep', OB.sleep_hours, ' h', 'Sleep hours')}</div>
+      <div class="q"><b>5. Do you have trouble hearing, even with hearing aids?</b>${yn('hearing_trouble')}</div>
+      <div class="q"><b>6. In the last 2 weeks, have you often felt down, depressed or hopeless?</b>${yn('feel_down')}</div>
+      <button class="btn big" id="next" style="margin-top:12px">See what matters for me</button><p class="muted" id="miss" aria-live="polite"></p></div>`;
+    $$('.yesno', main).forEach(g => choice(g, 'button', v => { const k = g.dataset.k; OB[k] = v === 'u' ? 'u' : v === '1'; }));
+    wireStepper(main, 'obSleep', () => OB.sleep_hours, v => { OB.sleep_hours = v; }, { min: 3, max: 12, step: .5, unit: ' h' });
+    const wireBp = () => { if ($('#obSbp')) wireStepper(main, 'obSbp', () => OB.sbp ?? 130, v => { OB.sbp = v; }, { min: 80, max: 220, step: 2, unit: ' mmHg' }); };
+    $('#knowbp') && ($('#knowbp').onclick = () => { OB.knowsbp = true; OB.sbp = 130; $('#bpBox').innerHTML = `<p class="muted">Your usual top number (systolic):</p>${stepper('obSbp', 130, ' mmHg', 'Systolic blood pressure')}`; wireBp(); });
+    wireBp();
+    $('#next').onclick = async () => {
+      const need = ['toldbp', 'diabetes', 'current_smoker', 'hearing_trouble', 'feel_down'].filter(k => OB[k] == null);
+      if (need.length) { $('#miss').textContent = `Please answer ${need.length} more question${need.length > 1 ? 's' : ''} (tap Yes or No).`; return; }
+      store.set('nt-toldbp', OB.toldbp === true ? '1' : '0');
+      const body = { age: OB.age, female: OB.female, diabetes: OB.diabetes, current_smoker: OB.current_smoker, sleep_hours: OB.sleep_hours,
+        hearing_trouble: OB.hearing_trouble, feel_down: OB.feel_down, sbp: OB.knowsbp ? OB.sbp : null };
+      try { ME = await api('/api/me/onboard', body); } catch (e) { toast(e.message); return; }
+      OB.step = OB.feel_down ? 3 : 4; obRender();
+    };
+  } else if (s === 3) {
+    main.innerHTML = `${dots(3)}<div class="pop">${SUPPORT}<button class="btn big" id="next" style="margin-top:16px">Continue to my results</button></div>`;
+    $('#next').onclick = () => { OB.step = 4; obRender(); };
+  } else {
+    const ia = iconArray(ME.profile), plan = planFor(ME), L = ME.lever;
+    const top = Object.values(L.per_factor).filter(f => f.known && f.significant && f.points > .1).sort((a, b) => b.points - a.points);
+    main.innerHTML = `${dots(3)}<div class="stack pop">
+      <div class="card"><div class="eyebrow">The big picture</div><h1>Out of 100 people with dementia…</h1>
+        <p>…about <b>45</b> cases are linked to <b>14 things that can change</b>, according to the 2024 Lancet Commission. ${ia.youN ? `The <b style="color:var(--gold)">gold ones (${ia.youN})</b> are linked to factors you told us apply to you.` : 'None of the factors you told us about are on the list. A great place to start from.'}</p>
+        ${ia.html}
+        <p class="muted">This describes whole populations, not your personal chance. <a href="${LANCET_URL}" target="_blank" rel="noopener">Lancet 2024 ↗</a></p></div>
+      <div class="card"><div class="eyebrow">What matters most for you</div>
+        ${top.length ? `<p>In a CDC survey of ${L.n.toLocaleString()} adults 60+, people with these factors scored lower on a <b>thinking-speed test</b> than people at healthy targets:</p>
+          ${top.map(f => `<div class="lever"><b>${esc(f.label)}</b><span class="size ${sizeCls(f.size)}">${f.size}</span><span class="muted" style="grid-column:1/-1">about ${f.points.toFixed(1)} points lower on average (range ${f.ci[0].toFixed(1)} to ${f.ci[1].toFixed(1)})</span></div>`).join('')}`
+          : '<p>Your answers are at the healthy targets for every factor with a clear link in the survey data. Keep it up, and keep checking.</p>'}
+        ${L.per_factor.sbp && !L.per_factor.sbp.known ? '<p class="muted">Blood pressure: unknown. It has the strongest trial evidence (SPRINT MIND), so measuring it is one of your first habits.</p>' : ''}
+        <p class="muted">Links in survey data, not proof of cause. Points are on a 0–133 test. <button class="linkbtn" data-how>How we know</button></p></div>
+      <div class="card next"><div class="eyebrow">Your first 3 habits</div>
+        <div class="plan">${plan.map(id => `<a href="#/habit/${id}"><span class="ico">${HABIT[id].ico}</span>${HABIT[id].name}<span class="go">Start →</span></a>`).join('')}</div></div>
+      <div class="card"><h2>🔑 Save your progress</h2><p>Use a <b>passkey</b>: your fingerprint, face or device PIN. No password to remember or leak.</p>
+        <button class="btn big" id="save">Save with a passkey</button><div style="margin-top:10px"><button class="btn alt big" id="later">Not now, go to Today</button></div></div></div>`;
+    const done = (hash = '#/today') => { OB = null; AUTH.onboarded = true; if (location.hash === hash) route(); else location.hash = hash; };
+    $('#save').onclick = () => savePasskey(() => done());
+    $('#later').onclick = () => done();
+    $('[data-how]').onclick = () => done('#/me/how');
+    $$('.plan a', main).forEach(a => a.onclick = e => { e.preventDefault(); done(a.getAttribute('href')); });
+  }
+}
+
+// ================================================================== TODAY
+async function pageToday() {
+  const plan = planFor(ME), next = plan.find(id => !habitDone(id)), R = ME.rings, L = ME.lever;
+  const top = Object.entries(L.per_factor).filter(([, f]) => f.known && f.significant && f.points > .1).sort((a, b) => b[1].points - a[1].points).slice(0, 3);
+  const unknown = Object.entries(L.per_factor).filter(([, f]) => !f.known);
+  const h = new Date().getHours(), hi = h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+  const nDone = plan.filter(habitDone).length;
+  main.innerHTML = `<div class="stack">
+    ${ME.support ? SUPPORT : ''}
+    <div class="hello">${buddy(nDone === 3 ? 'wow' : 'happy', 96)}<div class="bubble"><b>${hi}!</b> ${nDone === 3 ? 'All 3 habits done today. That is how it adds up.' : nDone ? `${nDone} of 3 habits done. Nice momentum.` : 'One small step today is enough.'}
+      ${ME.streak ? `<br>🔥 ${ME.streak}-day streak <span class="muted">(one rest day a week never breaks it)</span>` : ''}</div></div>
+    ${next ? `<a class="card next" href="#/habit/${next}" style="display:block;text-decoration:none;color:inherit"><div class="eyebrow">Your next step</div><h2>${HABIT[next].ico} ${HABIT[next].name}</h2><p>${esc(nextWhy(next))}</p><span class="btn">Start →</span></a>`
+      : `<a class="card next" href="#/checks" style="display:block;text-decoration:none;color:inherit"><div class="eyebrow">All habits done</div><h2>🎯 Want a quick check?</h2><p>Play a 90-second Speed Sprint and race your first try. Or rest: rest counts too.</p><span class="btn">Go to Checks →</span></a>`}
+    <div class="grid">
+      <div class="card"><div class="eyebrow">Today's 3 habits</div><div class="plan">${plan.map(id => `<a href="#/habit/${id}" class="${habitDone(id) ? 'done' : ''}"><span class="ico">${HABIT[id].ico}</span>${HABIT[id].name}<span class="go">${habitDone(id) ? '✓ Done' : 'Start →'}</span></a>`).join('')}</div></div>
+      <div class="card"><div class="eyebrow">Care rings · last 7 days</div><div class="rings">${ring('Move', R.move.points, R.move.goal, '#5BE3A4')}${ring('Mind', R.mind.points, R.mind.goal, '#A994FF')}${ring('Body', R.body.points, R.body.goal, '#6BE7F5')}</div>
+        <p class="muted">Each habit fills a ring by how strong its evidence is. Trial-backed habits count more.</p></div></div>
+    <div class="grid">
+      <div class="card"><div class="eyebrow">What matters most for you</div>
+        ${top.length ? top.map(([k, f]) => `<div class="lever"><b>${esc(f.label)}</b><span class="size ${sizeCls(f.size)}">${f.size}</span>
+          <span class="muted" style="grid-column:1/-1">about ${f.points.toFixed(1)} points lower on a thinking-speed test, on average (CDC survey, adults 60+)${FACTOR_HABIT[k] ? ` · <a href="#/habit/${FACTOR_HABIT[k]}">habit</a>` : ''}</span></div>`).join('') : '<p>No factor with a clear link is off target right now.</p>'}
+        ${unknown.length ? `<p class="muted">Not known yet: ${unknown.map(([, f]) => esc(f.label)).join(', ')}. ${unknown.some(([k]) => k === 'sbp') ? '<a href="#/habit/bp">Measure it</a>.' : ''}${unknown.some(([k]) => k === 'phq9') ? ' <a href="#/habit/mood">Take the mood check</a>.' : ''}</p>` : ''}
+        <details class="drawer"><summary>Try a change</summary><div id="tryBox"></div></details></div>
+      <div class="card" id="tipCard"><div class="eyebrow">Tip of the day</div>${tip()}</div></div>
+    <div id="askBox"></div>
+  </div>`;
+  wireTry();
+  coachStatus().then(ok => { if (ok && $('#askBox')) askCard(); });
+}
+function nextWhy(id) {
+  const L = ME.lever.per_factor;
+  return { bp: ME.profile.sbp == null ? 'Your blood pressure is unknown, and lowering it is the step with the strongest trial evidence for the brain (SPRINT MIND).' : 'Blood pressure is the brain-health step with the strongest trial evidence.',
+    labs: L.diabetes?.points > .1 ? 'Diabetes had the biggest link to slower thinking in the survey data. Knowing your HbA1c is the first step.' : 'Cholesterol and blood sugar: know your numbers.',
+    sleep: 'Sleeping much more or less than 6–8 hours was linked to slower thinking in the survey.',
+    smoke: 'Smoking was linked to slower thinking, and quitting at any age helps.',
+    mood: 'Mood is linked to thinking speed. 8 short questions, about 2 minutes.',
+    steps: 'Walking more is linked to lower dementia risk in a study of 78,000 people.',
+    connect: 'Social isolation is one of the 14 changeable dementia risk factors.',
+    hearing: 'Hearing loss is the largest single changeable risk factor in the Lancet 2024 report.',
+    joy: 'Planning one enjoyable thing is a proven way to lift low mood.' }[id] || '';
+}
+const TIPS = [
+  ['Blood pressure', 'Lowering top-number blood pressure to under 120 (vs under 140) reduced mild memory problems in the SPRINT MIND trial.', 'https://jamanetwork.com/journals/jama/fullarticle/2723256'],
+  ['Hearing', 'In the ACHIEVE trial, hearing aids slowed thinking decline over 3 years in older adults at higher risk.', 'https://doi.org/10.1016/S0140-6736(23)01406-X'],
+  ['Walking', 'In 78,430 UK adults, about 9,800 steps a day was linked to about half the dementia risk; even 3,800 helped.', 'https://jamanetwork.com/journals/jamaneurology/fullarticle/2795819'],
+  ['Stroke', 'Know BE-FAST: Balance, Eyes, Face, Arm, Speech, Time to call 911. Fast treatment saves brain.', 'https://pubmed.ncbi.nlm.nih.gov/28082668/'],
+];
+const tip = () => { const [h, t, u] = TIPS[new Date().getDate() % TIPS.length]; return `<h3>${h}</h3><p>${t}</p><a href="${u}" target="_blank" rel="noopener">Source ↗</a>`; };
+function wireTry() {
+  const p = { ...ME.profile }, box = $('#tryBox');
+  const S = { sbp: p.sbp ? Math.round(p.sbp) : 140, sleep: p.sleep_hours ?? 7, smoke: !!p.current_smoker };
+  box.innerHTML = `<p class="muted">See how the survey model's points change if one thing changes. A "what if", not a promise.</p>
+    <div class="q"><b>Blood pressure (top number)</b>${stepper('trSbp', S.sbp, ' mmHg', 'Blood pressure')}</div>
+    <div class="q"><b>Sleep</b>${stepper('trSleep', S.sleep, ' h', 'Sleep')}</div>
+    ${p.current_smoker ? `<div class="q"><b>Smoking</b><div class="yesno"><button data-v="1" class="on">Still smoking</button><button data-v="0">Quit</button></div></div>` : ''}
+    <div class="bubble" id="trOut" aria-live="polite">…</div>`;
+  let t; const go = () => { clearTimeout(t); t = setTimeout(async () => {
+    const body = { sbp: S.sbp, diabetes: !!p.diabetes, current_smoker: S.smoke, active_min_week: p.active_min_week ?? 0, sedentary_min_day: p.sedentary_min_day ?? 360, sleep_hours: S.sleep, phq9: p.phq9 };
+    const r = await api('/api/lever', body), now = ME.lever.points;
+    $('#trOut').innerHTML = `Points linked to your factors: <b>${now.toFixed(1)}</b> now${ME.profile.sbp == null ? ' (blood pressure not counted: unknown)' : ''} → <b>${r.points.toFixed(1)}</b> with these values. Lower is better.`;
+  }, 200); };
+  wireStepper(box, 'trSbp', () => S.sbp, v => { S.sbp = v; go(); }, { min: 90, max: 200, step: 5, unit: ' mmHg' });
+  wireStepper(box, 'trSleep', () => S.sleep, v => { S.sleep = v; go(); }, { min: 3, max: 12, step: .5, unit: ' h' });
+  choice(box, '.yesno button', v => { S.smoke = v === '1'; go(); });
+  go();
+}
+async function coachStatus() { if (COACH == null) COACH = await api('/api/coach/status').then(s => !!s.claude).catch(() => false); return COACH; }
+function askCard() {
+  $('#askBox').innerHTML = `<div class="card"><div class="eyebrow">Ask a question</div><p class="muted">An AI assistant (Claude) that can read your logs and run the same models. It can be wrong; it is not a doctor.</p>
+    <div class="chips">${['What should I focus on this week?', 'Why does blood pressure matter for my brain?', 'Make me a 7-day plan'].map(q => `<button class="chip" data-q="${esc(q)}">${q}</button>`).join('')}</div>
+    <div id="askOut" aria-live="polite" style="margin-top:12px"></div></div>`;
+  $$('[data-q]').forEach(b => b.onclick = async () => {
+    $('#askOut').innerHTML = '<div class="bubble">Thinking…</div>';
+    try { const r = await api('/api/me/coach', { text: b.dataset.q }); $('#askOut').innerHTML = `<div class="bubble">${esc(r.text).replace(/\n/g, '<br>')}</div>`; }
+    catch (e) { $('#askOut').innerHTML = `<p class="caveat">${esc(e.message)}</p>`; }
+  });
+}
+
+// ================================================================== HABIT PAGE
+async function loadQuests() { QUESTS = await api('/api/quests'); QMAP = Object.fromEntries(QUESTS.map(q => [q.id, q])); }
+async function pageHabit(id) {
+  if (!QUESTS.length) await loadQuests();
+  if (id === 'mood') return pageMood();
+  const q = QMAP[id]; if (!q || id === 'speed') { location.hash = '#/today'; return; }
+  const H = HABIT[id], done = habitDone(id), v = {}, last = ME.profile || {};
+  const chipset = (cid, opts) => `<div class="chips" id="${cid}">${opts.map((w, i) => `<button class="chip ${i ? '' : 'on'}" aria-pressed="${!i}" data-v="${esc(w)}">${esc(w)}</button>`).join('')}</div>`;
+  const input = {
+    bp: () => { v.s = last.sbp ? Math.round(last.sbp) : 125; v.d = 80; return `<div id="bpCuff"><p><b>Your reading</b> (set it to what the cuff shows):</p>
+      <div class="q"><b>Top number (systolic)</b>${stepper('hS', v.s, ' mmHg', 'Systolic')}</div><div class="q"><b>Bottom number (diastolic)</b>${stepper('hD', v.d, ' mmHg', 'Diastolic')}</div></div>
+      <button class="linkbtn" id="noCuff">I don't have a blood pressure cuff</button><div id="noCuffBox"></div>`; },
+    steps: () => { v.n = 4000; return `<div class="q"><b>Steps today</b> (from your phone or watch)${stepper('hN', v.n, ' steps', 'Steps')}</div><p class="muted">Levels from a UK study of 78,430 people: about 3,800 (minimum) and 9,800 (best) steps a day.</p>`; },
+    connect: () => { v.who = 'Family'; v.mins = 15; return `<div class="q"><b>Who did you talk to?</b>${chipset('hWho', ['Family', 'Partner', 'Friend', 'Neighbor', 'Someone new'])}</div><div class="q"><b>For how long?</b>${stepper('hM', v.mins, ' min', 'Minutes')}</div>`; },
+    hearing: () => { v.path = 'Wore my hearing aids all day'; return `<div class="q"><b>What did you do?</b>${chipset('hPath', ['Wore my hearing aids all day', 'Took a hearing screening', 'Booked a hearing test'])}</div>`; },
+    joy: () => { v.act = q.log.menu[0]; v.before = 5; v.after = 6; return `<div class="q"><b>Your activity</b>${chipset('hAct', q.log.menu)}</div>
+      <div class="q"><b>Mood before (0–10)</b>${stepper('hB', 5, '', 'Mood before')}</div><div class="q"><b>Mood after (0–10)</b>${stepper('hA', 6, '', 'Mood after')}</div>`; },
+    check: () => { v.trigger = 'Morning coffee'; v.sub = '5-minute walk'; return `<div class="q"><b>Your biggest trigger today</b>${chipset('hTr', ['Morning coffee', 'After meals', 'Stress', 'With friends', 'Driving', 'Alcohol'])}</div>
+      <div class="q"><b>Your substitute</b>${chipset('hSub', ['5-minute walk', 'Glass of water', 'Gum', 'Deep breaths', 'Call someone'])}</div><p>Free coaching: <b>1-800-QUIT-NOW</b> (CDC).</p>`; },
+    sleep: () => { v.h = last.sleep_hours ?? 7; return `<div class="q"><b>Hours you slept last night</b>${stepper('hH', v.h, ' h', 'Sleep hours')}</div>`; },
+    labs: () => { v.ldl = null; v.a1c = null; return `<p>Found your numbers? Add them (optional). Otherwise tap Done once you've checked or booked a test.</p>
+      <div class="q"><b>LDL cholesterol</b> <button class="linkbtn" data-add="ldl">add</button><div id="ldlBox"></div></div><div class="q"><b>HbA1c</b> <button class="linkbtn" data-add="a1c">add</button><div id="a1cBox"></div></div>`; },
+  }[q.log.kind];
+  main.innerHTML = `<div class="stack" style="max-width:760px">
+    <a href="#/today" class="ghost">← Today</a>
+    <div class="card"><div class="eyebrow">${H.ring} habit · ${esc(q.tier)}</div><h1>${H.ico} ${H.name}</h1>
+      ${done ? '<p class="card done-sheet">✓ Done today. You can log again if you like.</p>' : ''}
+      <h3>How to do it</h3><ol class="steps-list">${q.steps.map(s => `<li>${esc(s)}</li>`).join('')}</ol>
+      <div id="hIn">${input ? input() : ''}</div>
+      <button class="btn big" id="done" style="margin-top:16px">✓ Done</button>
+      <div id="sheet" aria-live="polite"></div>
+      <details><summary>Why this habit? The evidence</summary>${q.evidence.map(e => `<p>• ${esc(e.claim)} <a href="${e.url}" target="_blank" rel="noopener">source ↗</a></p>`).join('')}
+        ${q.nhanes ? `<p>In our CDC survey analysis: ${esc(q.nhanes.label)} ↔ ${fmt(q.nhanes.dsst_points)} points on the thinking-speed test (95% range ${fmt(q.nhanes.dsst_ci[0])} to ${fmt(q.nhanes.dsst_ci[1])}), ${q.nhanes.p_value < .05 ? 'a clear link' : 'no clear link'}. Association, not cause.</p>` : ''}
+        ${q.caveat ? `<p class="caveat">⚠ ${esc(q.caveat)}</p>` : ''}</details></div></div>`;
+  const r = $('#hIn');
+  const pick = (cid, k) => $('#' + cid, r) && choice(r, `#${cid} .chip`, val => { v[k] = val; });
+  if (q.log.kind === 'bp') {
+    wireStepper(r, 'hS', () => v.s, x => { v.s = x; }, { min: 80, max: 220, step: 1, unit: ' mmHg' }); wireStepper(r, 'hD', () => v.d, x => { v.d = x; }, { min: 40, max: 130, step: 1, unit: ' mmHg' });
+    $('#noCuff').onclick = () => { v.nocuff = true; $('#bpCuff').hidden = true; $('#noCuff').hidden = true;
+      $('#noCuffBox').innerHTML = `<div class="bubble"><b>No cuff? Three easy options:</b><ul class="plain"><li>Many pharmacies have a free blood pressure kiosk.</li><li>Ask at your next doctor or clinic visit.</li><li>Home upper-arm cuffs are widely sold; look for one listed at validatebp.org.</li></ul>Tap Done when you've found where to check. We won't record a number.</div>`; $('#done').textContent = '✓ Done: I know where to check'; };
+  }
+  if (q.log.kind === 'steps') wireStepper(r, 'hN', () => v.n, x => { v.n = x; }, { min: 0, max: 40000, step: 500, unit: ' steps', fmtv: x => x.toLocaleString() });
+  if (q.log.kind === 'connect') { pick('hWho', 'who'); wireStepper(r, 'hM', () => v.mins, x => { v.mins = x; }, { min: 5, max: 180, step: 5, unit: ' min' }); }
+  if (q.log.kind === 'hearing') pick('hPath', 'path');
+  if (q.log.kind === 'joy') { pick('hAct', 'act'); wireStepper(r, 'hB', () => v.before, x => { v.before = x; }, { min: 0, max: 10, step: 1 }); wireStepper(r, 'hA', () => v.after, x => { v.after = x; }, { min: 0, max: 10, step: 1 }); }
+  if (q.log.kind === 'check') { pick('hTr', 'trigger'); pick('hSub', 'sub'); }
+  if (q.log.kind === 'sleep') wireStepper(r, 'hH', () => v.h, x => { v.h = x; }, { min: 2, max: 12, step: .25, unit: ' h' });
+  if (q.log.kind === 'labs') $$('[data-add]', r).forEach(b => b.onclick = () => { const k = b.dataset.add; b.hidden = true; v[k] = k === 'ldl' ? 100 : 5.6;
+    $(`#${k}Box`).innerHTML = stepper('h_' + k, v[k], k === 'ldl' ? ' mg/dL' : ' %', k);
+    wireStepper(r, 'h_' + k, () => v[k], x => { v[k] = x; }, k === 'ldl' ? { min: 40, max: 250, step: 1, unit: ' mg/dL' } : { min: 4, max: 12, step: .1, unit: ' %', fmtv: x => x.toFixed(1) }); });
+  $('#done').onclick = async () => {
+    const k = q.log.kind; let value = null, extra = {};
+    if (k === 'bp') { if (v.nocuff) extra = { path: 'no-cuff' }; else { value = v.s; extra = { readings: [[v.s, v.d]] }; } }
+    if (k === 'steps') value = v.n;
+    if (k === 'connect') { value = v.mins; extra = { who: v.who }; }
+    if (k === 'hearing') extra = { path: v.path };
+    if (k === 'joy') { value = v.after - v.before; extra = { activity: v.act, before: v.before, after: v.after }; }
+    if (k === 'check') extra = { trigger: v.trigger, substitute: v.sub };
+    if (k === 'sleep') value = v.h;
+    if (k === 'labs') extra = { ldl: v.ldl, a1c: v.a1c };
+    $('#done').disabled = true;
+    try { ME = await api('/api/me/complete', { quest: q.id, value, extra }); } catch (e) { toast(e.message); $('#done').disabled = false; return; }
+    const R = ME.rings[H.ring.toLowerCase()];
+    let note = '';
+    if (k === 'bp' && value >= 180) note = '<p class="caveat"><b>180 or higher is very high.</b> Rest 5 minutes and measure again. If it stays this high, or you have chest pain, weakness, vision or speech changes, call 911.</p>';
+    else if (k === 'bp' && value >= 130) note = '<p>130 or above is worth talking about with your doctor. Measure on a few different days to see your usual level.</p>';
+    else if (k === 'steps') note = `<p>${value >= 9800 ? 'You reached the "best" level from the UK study. 🏅' : value >= 3800 ? `Above the minimum level. ${(9800 - value).toLocaleString()} more reaches the best level.` : `${(3800 - value).toLocaleString()} more steps reaches the minimum level.`}</p>`;
+    else if (k === 'joy' && v.after > v.before) note = `<p>Mood ${v.before} → ${v.after}. Noticing that is part of how this works.</p>`;
+    const nxt = planFor(ME).find(x => !habitDone(x));
+    $('#sheet').innerHTML = `<div class="card done-sheet pop" style="margin-top:14px"><h2>✓ Nice work!</h2><p><b>+${ME.gained} points</b> to your ${H.ring} ring (${R.points} / ${R.goal} this week).</p>${note}
+      <div class="row">${nxt ? `<a class="btn" href="#/habit/${nxt}">Next: ${HABIT[nxt].name} →</a>` : '<a class="btn" href="#/checks">Try a check →</a>'}<a class="ghost" href="#/today">Back to Today</a></div></div>`;
+    $('#sheet').scrollIntoView({ behavior: calm() ? 'auto' : 'smooth', block: 'center' });
+  };
+}
+const PHQ8 = ['Little interest or pleasure in doing things', 'Feeling down, depressed, or hopeless', 'Trouble falling or staying asleep, or sleeping too much', 'Feeling tired or having little energy',
+  'Poor appetite or overeating', 'Feeling bad about yourself, or that you are a failure or have let yourself or your family down', 'Trouble concentrating on things, such as reading or watching TV',
+  'Moving or speaking so slowly that other people could have noticed, or being so fidgety or restless that you have been moving around a lot more than usual'];
+const PHQO = ['Not at all', 'Several days', 'More than half the days', 'Nearly every day'];
+function pageMood() {
+  const a = Array(8).fill(null);
+  main.innerHTML = `<div class="stack" style="max-width:760px"><a href="#/today" class="ghost">← Today</a>
+    <div class="card"><div class="eyebrow">Mind habit · 2 minutes</div><h1>💛 Mood check</h1>
+      <p>Over the <b>last 2 weeks</b>, how often have you been bothered by the following? (PHQ-8, a standard questionnaire.)</p>
+      ${PHQ8.map((t, i) => `<div class="q"><b>${i + 1}. ${t}</b><div class="yesno" data-i="${i}">${PHQO.map((o, j) => `<button data-v="${j}">${o}</button>`).join('')}</div></div>`).join('')}
+      <button class="btn big" id="moodGo">See my result</button><p class="muted" id="moodMiss" aria-live="polite"></p><div id="moodOut" aria-live="polite"></div></div></div>`;
+  $$('.yesno', main).forEach(g => choice(g, 'button', v => { a[+g.dataset.i] = +v; }));
+  $('#moodGo').onclick = async () => {
+    const left = a.filter(x => x == null).length; if (left) { $('#moodMiss').textContent = `${left} question${left > 1 ? 's' : ''} left.`; return; }
+    $('#moodMiss').textContent = '';
+    const r = await api('/api/me/mood', { answers: a }); ME = r.player;
+    const band = r.score < 5 ? 'few or no symptoms' : r.score < 10 ? 'mild symptoms' : r.score < 15 ? 'moderate symptoms' : r.score < 20 ? 'moderately severe symptoms' : 'severe symptoms';
+    $('#moodOut').innerHTML = (r.support ? SUPPORT : '') + `<div class="card" style="margin-top:14px"><h2>Your score: ${r.score} of 24</h2><p>That usually means <b>${band}</b>. This is a screening questionnaire, not a diagnosis.</p>
+      ${r.support ? '<p>Scores of 10 or more are a good reason to talk with a doctor. Planning enjoyable activities (the "Do something you enjoy" habit) is one proven self-help step.</p>' : '<p>Thanks for checking in. Mood changes; check again in a couple of weeks.</p>'}
+      <a class="btn" href="#/today">Back to Today</a></div>`;
+    $('#moodOut').scrollIntoView({ block: 'start' });
+  };
+}
+
+// ================================================================== CHECKS
+async function pageChecks() {
+  const [S, V, P] = await Promise.all([api('/api/me/games'), api('/api/me/voice'), api('/api/me/progress?days=365')]);
+  const rounds = P.speed.length;
+  const stat = c => {
+    if (c.id === 'speed') return rounds ? `${rounds} round${rounds > 1 ? 's' : ''} · first ${ME.first_speed} · best ${ME.best_speed}` : 'Not played yet';
+    if (c.id === 'voice') { const n = V.history.length; return n ? `${n} recording${n > 1 ? 's' : ''}` : 'Not tried yet'; }
+    const s = S[c.id]; return s?.plays ? `${s.plays} play${s.plays > 1 ? 's' : ''} · first ${s.history[0]} · last ${s.last}` : 'Not played yet';
+  };
+  const plays = c => c.id === 'speed' ? rounds : c.id === 'voice' ? V.history.length : S[c.id]?.plays || 0;
+  const card = c => `<a class="card checkcard" href="#/check/${c.id}"><span class="ico" aria-hidden="true">${c.ico}</span><h3>${c.name}</h3><span>${c.what}</span>
+    <span class="stat">${stat(c)}</span>${plays(c) && plays(c) < 3 ? '<span class="muted">Learning your baseline: play on 3 days to see a trend</span>' : ''}</a>`;
+  main.innerHTML = `<div class="stack"><div><h1>🎯 Checks</h1><p class="sub">Short tasks modeled on real thinking tests. You're compared <b>only with yourself</b>, so changes over weeks mean more than any single score. Not a diagnosis.</p></div>
+    <div class="grid3">${CHECKS.filter(c => c.main).map(card).join('')}</div>
+    <h2>More checks</h2><div class="grid3">${CHECKS.filter(c => !c.main).map(card).join('')}</div>
+    <p class="muted">Honest note: only speed training has trial evidence linked to fewer dementia diagnoses (ACTIVE). Practicing other brain games mostly improves the game itself (Simons 2016).</p></div>`;
+}
+async function pageCheck(id) {
+  if (id === 'speed') {
+    main.innerHTML = `<div class="sprint-wrap"><a href="#/checks" class="ghost" style="margin-bottom:12px">← Checks</a><div id="sprintBox"></div></div>`;
+    return runSprint($('#sprintBox'), {});
+  }
+  if (id === 'voice') { main.innerHTML = '<a href="#/checks" class="ghost">← Checks</a><div id="p-voice"></div>'; return pageVoice(); }
+  main.innerHTML = '<div id="p-game"></div>'; return pageGame(id);
+}
+
+// ------------------------------------------------------------------ Speed Sprint: race your ghost (your first try)
 const SYM = ['◆', '▲', '●', '■', '★', '✚', '⬟', '☾', '♥'];
 let G = null;
-function pageSprint() {
-  $('#p-sprint').innerHTML = `<div class="sprint-wrap"><div class="arcade" id="arcadeBody"></div></div>`;
-  $('#arcadeBody').innerHTML = `<div class="eyebrow">SPEED SPRINT · 90 SECONDS</div><h2 style="font:700 40px 'Space Grotesk';margin:10px 0">Match the symbol to its number</h2>
-    <p class="muted" style="max-width:560px;margin:0 auto">A digital task modeled on the Digit Symbol Substitution Test. Tap the keypad (or keys 1–9).
-    Speed training with boosters was the only ACTIVE-trial arm linked to fewer dementia diagnoses (HR 0.75).</p>
-    <div class="a-big">${ME.best_speed ?? '–'}</div><div class="muted">personal best · ${ME.rounds_today} round${ME.rounds_today === 1 ? '' : 's'} today ${ME.rounds_today >= 2 ? '· booster done ✓' : ''}</div>
-    <div class="row" style="justify-content:center"><button class="cta" id="goBtn">▶ Start ${ME.rounds_today ? 'booster round' : 'sprint'}</button></div>`;
-  $('#goBtn').onclick = startGame;
+function STOP_SPRINT() { if (G) G.over = true; G = null; }
+function runSprint(box, { onDone, doneLabel }) {
+  const ghost = ME?.first_speed;
+  box.innerHTML = `<div class="arcade"><div class="eyebrow">Speed Sprint · 90 seconds</div><h2>Match the symbol to its number</h2>
+    <p class="muted" style="max-width:560px;margin:0 auto">Look at the big symbol, find it in the key, and tap its number (or press keys 1–9). Go fast, but try not to make mistakes.</p>
+    ${ghost != null ? `<p>Race your <b>first try: ${ghost}</b> correct. The grey bar shows your ghost's pace.</p>` : '<p>This round sets your baseline. Later you will race it.</p>'}
+    <button class="btn big" id="goBtn" style="max-width:420px">▶ Start</button></div>`;
+  $('#goBtn', box).onclick = () => startSprint(box, ghost, onDone, doneLabel);
 }
-function startGame() {
+function startSprint(box, ghost, onDone, doneLabel) {
   const d = [1, 2, 3, 4, 5, 6, 7, 8, 9].sort(() => Math.random() - .5);
-  G = { key: Object.fromEntries(SYM.map((s, i) => [s, d[i]])), t0: performance.now(), ok: 0, bad: 0, combo: 0, best: 0, tgt: SYM[Math.floor(Math.random() * 9)], over: false };
-  $('#arcadeBody').innerHTML = `<div class="a-top"><div class="a-stat"><small>CORRECT</small><span id="aOk">0</span></div>
-      <div class="timer"><svg width="120" height="120"><circle cx="60" cy="60" r="52" stroke="rgba(255,255,255,.1)" stroke-width="8" fill="none"/><circle id="tRing" cx="60" cy="60" r="52" stroke="#59F0FF" stroke-width="8" fill="none" stroke-linecap="round" stroke-dasharray="326.7" style="filter:drop-shadow(0 0 8px #59F0FF)"/></svg><div class="t" id="tLeft">90</div></div>
-      <div class="a-stat"><small>ERRORS</small><span id="aBad">0</span></div></div>
+  G = { key: Object.fromEntries(SYM.map((s, i) => [s, d[i]])), t0: performance.now(), ok: 0, bad: 0, combo: 0, best: 0, tgt: SYM[Math.floor(Math.random() * 9)], over: false, box, ghost, onDone, doneLabel };
+  box.innerHTML = `<div class="arcade"><div class="a-top"><div class="a-stat"><small>CORRECT</small><span id="aOk">0</span></div>
+      <div class="timer"><svg width="120" height="120" aria-hidden="true"><circle cx="60" cy="60" r="52" stroke="#2E3768" stroke-width="8" fill="none"/><circle id="tRing" cx="60" cy="60" r="52" stroke="#6BE7F5" stroke-width="8" fill="none" stroke-linecap="round" stroke-dasharray="326.7"/></svg><div class="t" id="tLeft" aria-label="seconds left">90</div></div>
+      <div class="a-stat"><small>MISSES</small><span id="aBad">0</span></div></div>
+    ${ghost != null ? `<div class="race"><div class="ghostbar"><span>You</span><div><i id="barYou"></i></div><b id="nYou">0</b></div><div class="ghostbar g"><span>First try</span><div><i id="barGhost"></i></div><b id="nGhost">0</b></div></div>` : ''}
     <div class="symbol" id="sym">${G.tgt}</div><div class="combo" id="combo"></div>
-    <div class="keyrow">${SYM.slice().sort((a, b) => G.key[a] - G.key[b]).map(s => `<div><b>${s}</b><span>${G.key[s]}</span></div>`).join('')}</div>
-    <div class="pad">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => `<button data-n="${n}">${n}</button>`).join('')}</div>`;
-  $$('.pad button').forEach(b => b.onclick = () => answer(+b.dataset.n, b)); tick();
+    <div class="keyrow" aria-label="Key">${SYM.slice().sort((a, b) => G.key[a] - G.key[b]).map(s => `<div><b>${s}</b><span>${G.key[s]}</span></div>`).join('')}</div>
+    <div class="pad">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => `<button data-n="${n}" aria-label="${n}">${n}</button>`).join('')}</div></div>`;
+  $$('.pad button', box).forEach(b => b.onclick = () => answer(+b.dataset.n, b));
+  tick();
 }
 function answer(n, btn) {
   if (!G || G.over) return;
-  btn = btn || $(`.pad button[data-n="${n}"]`); btn?.classList.add('hit'); setTimeout(() => btn?.classList.remove('hit'), 100);
+  btn = btn || $(`.pad button[data-n="${n}"]`, G.box); btn?.classList.add('hit'); setTimeout(() => btn?.classList.remove('hit'), 100);
   const sym = $('#sym'); sym.classList.remove('ok', 'bad'); void sym.offsetWidth;
   if (G.key[G.tgt] === n) { G.ok++; G.combo++; G.best = Math.max(G.best, G.combo); sym.classList.add('ok'); } else { G.bad++; G.combo = 0; sym.classList.add('bad'); }
-  let nx; do { nx = SYM[Math.floor(Math.random() * 9)]; } while (nx === G.tgt); G.tgt = nx; setTimeout(() => (sym.textContent = G.tgt), 90);
-  $('#aOk').textContent = G.ok; $('#aBad').textContent = G.bad; $('#combo').textContent = G.combo >= 3 ? `×${G.combo} COMBO` : '';
+  let nx; do { nx = SYM[Math.floor(Math.random() * 9)]; } while (nx === G.tgt); G.tgt = nx; setTimeout(() => { if (G) sym.textContent = G.tgt; }, 90);
+  $('#aOk').textContent = G.ok; $('#aBad').textContent = G.bad; $('#combo').textContent = G.combo >= 5 ? `${G.combo} in a row!` : '';
 }
 addEventListener('keydown', e => { if (G && !G.over && /^[1-9]$/.test(e.key)) answer(+e.key); });
 function tick() {
   if (!G || G.over) return;
-  const left = Math.max(0, 90 - (performance.now() - G.t0) / 1000);
-  $('#tLeft').textContent = Math.ceil(left); $('#tRing').style.strokeDashoffset = 326.7 * (1 - left / 90); if (left <= 10) $('#tRing').setAttribute('stroke', '#FF5A6E');
-  if (left <= 0) return endGame(); requestAnimationFrame(tick);
+  const el = (performance.now() - G.t0) / 1000, left = Math.max(0, 90 - el);
+  $('#tLeft').textContent = Math.ceil(left); $('#tRing').style.strokeDashoffset = 326.7 * (1 - left / 90); if (left <= 10) $('#tRing').setAttribute('stroke', '#FF8FA3');
+  if (G.ghost != null) { const gNow = Math.floor(G.ghost * Math.min(1, el / 90)), mx = Math.max(G.ghost, G.ok, 1) * 1.1;
+    $('#barYou').style.width = G.ok / mx * 100 + '%'; $('#barGhost').style.width = gNow / mx * 100 + '%'; $('#nYou').textContent = G.ok; $('#nGhost').textContent = gNow; }
+  if (left <= 0) return endSprint(); setTimeout(tick, 100);
 }
-async function endGame() {
-  G.over = true; const prevBest = ME.best_speed ?? -1;
-  const r = await api(`/api/player/${enc(ME.name)}/speed`, { correct: G.ok, wrong: G.bad, best_combo: G.best });
-  const acc = G.ok / Math.max(1, G.ok + G.bad); ME = r; renderHUD();
-  $('#arcadeBody').innerHTML = `<div class="eyebrow">ROUND ${r.rounds_today} COMPLETE</div><div class="a-big">${G.ok}</div><div class="muted">correct in 90 seconds · ${(acc * 100).toFixed(0)}% accuracy · best combo ×${G.best}</div>
-    ${G.ok > prevBest ? '<div style="margin-top:10px"><span class="pb">NEW PERSONAL BEST</span></div>' : ''}
-    ${r.history.length > 1 ? '<div style="max-width:620px;height:180px;margin:20px auto"><canvas id="hChart"></canvas></div>' : ''}
-    <div class="row" style="justify-content:center">${r.rounds_today < 2 ? '<button class="cta" id="againBtn">⚡ Booster round (step 3)</button>' : `<a class="cta" href="#/play/speed" style="text-decoration:none">🔥 Claim your quest →</a>`}<a class="ghost" href="#/gym" style="text-decoration:none">Brain Gym</a></div>`;
-  if (r.history.length > 1) chart('hChart', { type: 'line', data: { labels: r.history.map((_, i) => i + 1), datasets: [{ label: 'correct', data: r.history, borderColor: '#59F0FF', backgroundColor: 'rgba(89,240,255,.15)', fill: true, tension: .35 }] }, options: chartOpts({ plugins: { legend: { display: false } } }) });
-  $('#againBtn') && ($('#againBtn').onclick = startGame); G = null;
-}
-
-// ================================================================ PROGRESS
-async function pageProgress() {
-  const [P, GS, GC] = await Promise.all([api(`/api/player/${enc(ME.name)}/progress?days=30`), api(`/api/player/${enc(ME.name)}/games`), api('/api/games')]), T = P.totals;
-  const short = d => d.slice(5);
-  const empty = (msg) => `<div class="empty">${msg}</div>`;
-  $('#p-progress').innerHTML = `<div class="scrollpage"><div class="wrap">
-    <div class="h1">Your progress</div><div class="sub">Everything you log is stored locally in a SQLite database <span class="dbnote">🗄 data/neurotrail.db</span> and charted here.</div>
-    <div class="kpis5">
-      <div class="kpi"><div class="v">${T.quests}</div><div class="l">quests completed</div></div>
-      <div class="kpi"><div class="v">${T.sparks.toLocaleString()}</div><div class="l">sparks earned</div></div>
-      <div class="kpi"><div class="v">${T.streak}</div><div class="l">day streak</div></div>
-      <div class="kpi"><div class="v">${T.active_days}</div><div class="l">active days</div></div>
-      <div class="kpi"><div class="v">${P.speed.length ? Math.max(...P.speed.map(s => s.correct)) : '–'}</div><div class="l">Speed Sprint best</div></div></div>
-    <div class="charts">
-      <div class="glass chartcard"><h4>⚡ Sparks per day</h4><div class="muted">last 30 days</div><canvas id="cSparks"></canvas></div>
-      <div class="glass chartcard"><h4>🗓 Consistency</h4><div class="muted">each square is a day; brighter = more quests</div>
-        <div class="heat">${P.days.map((d, i) => `<div title="${d}: ${P.quests_per_day[i]} quests" style="background:${P.quests_per_day[i] ? `rgba(89,240,255,${.2 + P.quests_per_day[i] / 9 * .8})` : 'rgba(255,255,255,.06)'}"></div>`).join('')}</div></div>
-      <div class="glass chartcard"><h4>🩺 Blood pressure</h4><div class="muted">average of your two readings · SPRINT MIND target 120</div>${P.bp.length ? '<canvas id="cBP"></canvas>' : empty('Log Pressure Point to start your BP trend.')}</div>
-      <div class="glass chartcard"><h4>👟 Steps</h4><div class="muted">UK Biobank doses: 3,826 (HR 0.75) · 9,826 (HR 0.49)</div>${P.steps.length ? '<canvas id="cSteps"></canvas>' : empty('Log Step Street to start your steps chart.')}</div>
-      <div class="glass chartcard"><h4>🌙 Sleep</h4><div class="muted">hours per night · 7–8 h band</div>${P.sleep.length ? '<canvas id="cSleep"></canvas>' : empty('Log Sleep Station to see your sleep.')}</div>
-      <div class="glass chartcard"><h4>⚡ Speed Sprint rounds</h4><div class="muted">correct answers in 90 s (your own trend only)</div>${P.speed.length ? '<canvas id="cSpeed"></canvas>' : empty('Play a Speed Sprint round.')}</div>
-      <div class="glass chartcard"><h4>🎛 Lever score over time</h4><div class="muted">NHANES model re-run on your rolling 7-day values (lower is better)</div>${P.lever.length ? '<canvas id="cLever"></canvas>' : empty('Complete quests to build this history.')}</div>
-      <div class="glass chartcard"><h4>🧠 Quest mix</h4><div class="muted">all-time completions</div>${Object.keys(P.quest_counts).length ? '<canvas id="cMix"></canvas>' : empty('No quests yet.')}</div>
-    </div>
-    <div class="glass chartcard" style="margin-top:16px"><h4>🧩 Brain Gym</h4><div class="muted">every game you've played (stored in game_results)</div>
-      <div class="gymgrid" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr));margin-top:10px">${GC.games.map(g => { const s = GS[g.id]; return `<a class="qtile" href="${g.id === 'speed' ? '#/sprint' : '#/game/' + g.id}" style="--c:${g.color};display:block">
-        <div style="display:flex;gap:10px;align-items:center"><span style="font-size:22px">${g.icon}</span><b>${g.title}</b></div>
-        <div class="muted" style="margin-top:6px">${s.plays} plays · best ${s.best ?? '–'} ${g.unit}</div></a>`; }).join('')}</div></div>
-    <div class="glass chartcard" style="margin-top:16px"><h4>📜 Activity log</h4><div class="muted">newest first, straight from the database</div>
-      ${P.log.length ? `<table class="t"><tr><th>When</th><th>Quest</th><th>Value</th><th>Sparks</th></tr>${P.log.map(l => `<tr><td>${l.ts.replace('T', ' ')}</td><td>${QMAP[l.quest]?.icon} ${QMAP[l.quest]?.title}</td><td>${l.value ?? ''} ${l.activity ? '· ' + esc(l.activity) : ''}${l.who ? '· ' + esc(l.who) : ''}${l.path ? esc(l.path) : ''}</td><td>+${l.sparks}</td></tr>`).join('')}</table>` : empty('Your log is empty. Play a quest!')}</div>
-  </div></div>`;
-  chart('cSparks', { type: 'bar', data: { labels: P.days.map(short), datasets: [{ label: 'sparks', data: P.sparks_per_day, backgroundColor: 'rgba(255,200,61,.7)', borderRadius: 6 }] }, options: chartOpts({ plugins: { legend: { display: false } } }) });
-  if (P.bp.length) chart('cBP', { type: 'line', data: { labels: P.bp.map(b => short(b.date)), datasets: [{ label: 'systolic', data: P.bp.map(b => b.value), borderColor: '#FF5A6E', backgroundColor: 'rgba(255,90,110,.15)', fill: true, tension: .3 }, { label: 'target 120', data: P.bp.map(() => 120), borderColor: 'rgba(61,220,151,.8)', borderDash: [6, 6], pointRadius: 0 }] }, options: chartOpts() });
-  if (P.steps.length) chart('cSteps', { type: 'bar', data: { labels: P.steps.map(b => short(b.date)), datasets: [{ type: 'bar', label: 'steps', data: P.steps.map(b => b.value), backgroundColor: 'rgba(61,220,151,.7)', borderRadius: 6 }, { type: 'line', label: '3,826', data: P.steps.map(() => 3826), borderColor: '#FFC83D', borderDash: [5, 5], pointRadius: 0 }, { type: 'line', label: '9,826', data: P.steps.map(() => 9826), borderColor: '#59F0FF', borderDash: [5, 5], pointRadius: 0 }] }, options: chartOpts() });
-  if (P.sleep.length) chart('cSleep', { type: 'line', data: { labels: P.sleep.map(b => short(b.date)), datasets: [{ label: 'hours', data: P.sleep.map(b => b.value), borderColor: '#7C8CFF', backgroundColor: 'rgba(124,140,255,.15)', fill: true, tension: .3 }, { label: '7 h', data: P.sleep.map(() => 7), borderColor: 'rgba(255,255,255,.3)', borderDash: [4, 4], pointRadius: 0 }, { label: '8 h', data: P.sleep.map(() => 8), borderColor: 'rgba(255,255,255,.3)', borderDash: [4, 4], pointRadius: 0 }] }, options: chartOpts() });
-  if (P.speed.length) chart('cSpeed', { type: 'line', data: { labels: P.speed.map((_, i) => `#${i + 1}`), datasets: [{ label: 'correct', data: P.speed.map(s => s.correct), borderColor: '#FFC83D', backgroundColor: 'rgba(255,200,61,.15)', fill: true, tension: .3 }] }, options: chartOpts({ plugins: { legend: { display: false } } }) });
-  if (P.lever.length) chart('cLever', { type: 'line', data: { labels: P.lever.map(l => short(l.date)), datasets: [{ label: 'years', data: P.lever.map(l => l.years), borderColor: '#9B7BFF', backgroundColor: 'rgba(155,123,255,.15)', fill: true, tension: .3 }] }, options: chartOpts({ plugins: { legend: { display: false } } }) });
-  if (Object.keys(P.quest_counts).length) chart('cMix', { type: 'doughnut', data: { labels: Object.keys(P.quest_counts), datasets: [{ data: Object.values(P.quest_counts), backgroundColor: Object.keys(P.quest_counts).map(t => QUESTS.find(q => q.title === t)?.color || '#888'), borderWidth: 0 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#C9D0EE' } } } } });
+async function endSprint() {
+  const g = G; g.over = true; const prevBest = ME.best_speed;
+  let r; try { r = await api('/api/me/speed', { correct: g.ok, wrong: g.bad, best_combo: g.best }); } catch (e) { toast(e.message); return; }
+  ME = r; const acc = g.ok / Math.max(1, g.ok + g.bad);
+  const vs = g.ghost == null ? '<p>Baseline set. Next time you race this score.</p>' : `<p>You <b>${g.ok}</b> vs your first try <b>${g.ghost}</b>: ${g.ok > g.ghost ? `${g.ok - g.ghost} more 🎉` : g.ok === g.ghost ? 'a tie' : 'a little behind. Scores bounce around by a few from day to day; the trend over weeks is what matters.'}</p>`;
+  g.box.innerHTML = `<div class="arcade pop"><div class="eyebrow">Round complete</div><div class="a-big">${g.ok}</div><div class="muted">correct in 90 seconds · ${(acc * 100).toFixed(0)}% accurate</div>
+    ${prevBest != null && g.ok > prevBest ? '<div style="margin-top:10px"><span class="pb">New personal best</span></div>' : ''}${vs}
+    ${r.history.length > 1 ? '<div class="chartbox" style="max-width:620px;margin:16px auto"><canvas id="hChart" aria-label="Your Speed Sprint scores over time"></canvas></div>' : ''}
+    ${r.history.length < 3 ? '<p class="muted">Learning your baseline: play on 3 days to see a trend.</p>' : ''}
+    <div class="row" style="justify-content:center">${g.onDone ? `<button class="btn" id="nextBtn">${g.doneLabel || 'Next'}</button>` : '<button class="btn" id="againBtn">↻ Play again</button><a class="ghost" href="#/checks">Back to Checks</a>'}</div></div>`;
+  if (r.history.length > 1) chart('hChart', { type: 'line', data: { labels: r.history.map((_, i) => `#${i + 1}`), datasets: [{ label: 'correct', data: r.history, borderColor: '#6BE7F5', backgroundColor: 'rgba(107,231,245,.15)', fill: true, tension: .3 }] }, options: chartOpts({ plugins: { legend: { display: false } } }) });
+  $('#nextBtn') && ($('#nextBtn').onclick = g.onDone);
+  $('#againBtn') && ($('#againBtn').onclick = () => runSprint(g.box, {}));
+  G = null;
 }
 
-// ================================================================ COACH (AI agent)
-const SUGGEST = ["What's my biggest lever right now?", 'Build my weekly plan', 'How did I do this week?', 'Why does blood pressure matter for my brain?', 'What if I walked 150 minutes a week?'];
-async function pageCoach() {
-  $('#p-coach').innerHTML = `<div class="coach"><div class="glass chat">
-      <div class="chat-head"><div><div class="eyebrow">🤖 NEUROCOACH · AI AGENT</div><div class="muted">Claude with 5 tools: your lever model, your activity log, quest evidence, what-if simulation, and plan saving. It only cites numbers its tools return.</div></div></div>
-      <div class="msgs" id="msgs"></div>
-      <div class="suggest">${SUGGEST.map(s => `<button class="chip" data-s="${esc(s)}">${s}</button>`).join('')}</div>
-      <div class="composer"><input id="ask" placeholder="Ask your coach…" autocomplete="off"><button class="cta" id="askBtn">Send</button></div></div>
-    <div class="glass panel" style="overflow-y:auto"><div class="eyebrow">📅 SAVED PLANS</div><div id="plans" style="margin-top:10px"></div></div></div>`;
-  const [h, cs] = await Promise.all([api(`/api/player/${enc(ME.name)}/coach`), api('/api/coach/status')]);
-  $('.chat-head').insertAdjacentHTML('beforeend', cs.claude ? `<span class="dbnote">● Claude Opus 5.5 connected</span>`
-    : `<span class="dbnote" style="color:#FFC83D;border-color:rgba(255,200,61,.4);background:rgba(255,200,61,.1)" title="Set ANTHROPIC_API_KEY and restart the server">● Offline coach (Claude not connected)</span>`);
-  renderMsgs(h.messages); renderPlans(h.plans);
-  $$('#p-coach [data-s]').forEach(b => b.onclick = () => send(b.dataset.s));
-  $('#askBtn').onclick = () => { const t = $('#ask').value.trim(); if (t) send(t); };
-  $('#ask').onkeydown = e => { if (e.key === 'Enter') $('#askBtn').click(); };
+// ================================================================== MY BRAIN (Learn | Mine)
+let ATL = null, BMODE = 'learn', DSEL = null, DSTAGE = 0, MINE = null, PICKBOUND = false;
+const hex = h => { const n = parseInt(h.slice(1), 16); return [(n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255]; };
+const VIEW = { alzheimers: [.9, -.45, .1, true], parkinsons: [1, .1, .1, true], stroke: [-1, .3, .2], huntingtons: [1, .2, .2, true], als: [-.6, 1, .2], ftd: [-.5, .2, 1], ms: [-.8, .3, .7] };
+const GROUPS = [['lower', '✅ You can lower your risk'], ['live', '🤝 You can live better with it'], ['early', '🩺 No proven prevention: early help matters']];
+async function pageBrain(mode, arg) {
+  ATL ||= await api('/api/atlas');
+  if (mode === 'mine' || mode === 'learn') BMODE = mode;
+  DSEL = mode === 'learn' && arg ? arg : null;
+  if (DSEL) DSTAGE = 0;
+  const stage = $('#stage');
+  if (!brainView) {
+    stage.innerHTML = '<div class="stagehint">Drag to turn · tap a part to learn what it does</div>';
+    try { const { createBrain } = await import('./brain3d.js?v=1'); brainView = await createBrain(stage); window.NT = { brain: brainView }; }
+    catch (e) { stage.innerHTML = `<div class="empty">The 3D brain couldn't load on this device (${esc(e.message)}). Everything else still works.</div>`; }
+  }
+  brainView?.start();
+  if (brainView && !PICKBOUND) { PICKBOUND = true; bindPick(); }
+  if (BMODE === 'mine') MINE = await api('/api/me/brain');
+  main.innerHTML = `<div class="brainpane"><h1>🧠 My Brain</h1>
+    <div class="seg" role="tablist"><button role="tab" aria-selected="${BMODE === 'learn'}" class="${BMODE === 'learn' ? 'on' : ''}" data-m="learn">Learn</button><button role="tab" aria-selected="${BMODE === 'mine'}" class="${BMODE === 'mine' ? 'on' : ''}" data-m="mine">Mine</button></div>
+    <div id="bp"></div><div id="rinfo" class="regioninfo" aria-live="polite"></div></div>`;
+  $$('.seg button').forEach(b => b.onclick = () => { location.hash = `#/brain/${b.dataset.m}`; });
+  BMODE === 'learn' ? (DSEL ? diseaseDetail() : learnList()) : mineView();
 }
-function bubble(m) {
-  return `<div class="msg ${m.role}">${esc(m.content)}${m.tools?.length ? `<div class="toolchips">${m.tools.map(t => `<span>🔧 ${esc(t.label)}</span>`).join('')}</div>` : ''}
-    ${m.role === 'assistant' ? `<div class="src">${m.source === 'claude' ? 'CLAUDE OPUS 5.5 AGENT' : 'OFFLINE COACH (rules, same tools)'}</div>` : ''}</div>`;
+const RN = () => Object.fromEntries(ATL.regions.map(r => [r.id, r]));
+function learnList() {
+  brainView?.set({}, false); brainView?.home();
+  $('#bp').innerHTML = `<p>Seven brain diseases: <b>which parts each one affects</b>, how it changes over time, and <b>what you can do at home</b>.</p>
+    ${GROUPS.map(([g, t]) => `<div class="dgroup"><h3>${t}</h3>${ATL.diseases.filter(d => d.group === g).map(d => `<a class="dbtn" href="#/brain/learn/${d.id}"><span aria-hidden="true">${d.icon}</span><div>${esc(d.name)}<small>${esc(d.what.split('. ')[0])}.</small></div></a>`).join('')}</div>`).join('')}
+    <h3 style="margin-top:22px">Myth or fact? <span class="muted">(tap a card)</span></h3>
+    <div class="grid3">${MYTHS.map((m, i) => `<button class="myth" data-my="${i}"><b>Myth:</b> ${m[0]}</button>`).join('')}</div>`;
+  $$('[data-my]').forEach(b => b.onclick = () => { const m = MYTHS[+b.dataset.my]; b.classList.add('flip'); b.innerHTML = `<b>Fact:</b> ${m[1]} <a href="${m[2]}" target="_blank" rel="noopener">source ↗</a>`; });
 }
-function renderMsgs(ms) {
-  const box = $('#msgs');
-  box.innerHTML = ms.length ? ms.map(bubble).join('') : `<div class="msg assistant">Hi ${esc(ME.name)}! I'm your NeuroTrail coach. I read your own logs and run the real NHANES model before I answer. Try a suggestion below.</div>`;
-  box.scrollTop = box.scrollHeight;
+const MYTHS = [
+  ['Dementia is a normal part of getting old.', 'Dementia is caused by diseases. Many people live into their 90s without it.', 'https://www.alz.org/alzheimers-dementia/what-is-alzheimers/myths'],
+  ['Nothing can be done to lower dementia risk.', 'About 45% of cases are linked to 14 changeable factors, like blood pressure and hearing.', LANCET_URL],
+  ['Brain-training games prevent dementia.', 'Practice mostly improves the practiced game. Speed training is the one type linked to fewer diagnoses in a trial.', 'https://doi.org/10.1177/1529100616661983'],
+  ['A stroke only happens to old people.', 'Strokes can happen at any age. Know BE-FAST and call 911 right away.', 'https://pubmed.ncbi.nlm.nih.gov/28082668/'],
+];
+function diseaseDetail() {
+  const d = ATL.diseases.find(x => x.id === DSEL); if (!d) { DSEL = null; return learnList(); }
+  const st = d.stages[Math.min(DSTAGE, d.stages.length - 1)], N = RN(), deep = d.stages.slice(0, DSTAGE + 1).some(s => s.regions.some(r => !r.startsWith('c')));
+  $('#bp').innerHTML = `<a class="ghost" href="#/brain/learn">← All diseases</a>
+    <div class="card" style="margin-top:12px;border-color:${d.color}"><h2>${d.icon} ${esc(d.name)}</h2><p>${esc(d.what)}</p>
+    <h3>Where in the brain</h3>
+    ${d.stages.length > 1 ? `<label for="stageSlider" class="muted">Typical order of spread (approximate; it varies from person to person)</label>
+      <input type="range" id="stageSlider" min="0" max="${d.stages.length - 1}" value="${DSTAGE}" aria-valuetext="${esc(st.label)}">
+      <div class="stagelbls">${d.stages.map((s, i) => `<span class="${i === DSTAGE ? 'on' : ''}">${esc(s.label)}</span>`).join('')}</div>` : ''}
+    <div class="bubble" style="margin-top:8px"><b>${esc(st.label)}</b>${st.when ? ` · ${esc(st.when)}` : ''}<br>${esc(st.symptoms || '')}
+      <div class="muted" style="margin-top:6px">Highlighted: ${st.regions.map(r => N[r]?.name).filter(Boolean).slice(0, 6).map(esc).join(', ')}${st.regions.length > 6 ? '…' : ''}${deep ? ' (the see-through view shows deep parts)' : ''}</div></div>
+    <h3>How it varies</h3><p>${esc(d.varies)}</p>
+    ${d.id === 'stroke' ? `<h3>Spot a stroke: BE-FAST</h3><div class="befast">${[['B', 'Balance loss'], ['E', 'Eyes: vision loss'], ['F', 'Face drooping'], ['A', 'Arm weakness'], ['S', 'Speech trouble'], ['T', 'Time: call 911']].map(([l, t]) => `<div><b>${l}</b>${t}</div>`).join('')}</div>` : ''}
+    <h3>What you can do at home</h3>${d.home.map(h => `<div class="lever"><b>${esc(h.do)}</b>${h.mission && HABIT[h.mission] ? `<a class="ghost" href="#/habit/${h.mission}">Habit →</a>` : h.game ? `<a class="ghost" href="#/check/${h.game}">Check →</a>` : '<span></span>'}<span class="muted" style="grid-column:1/-1">${esc(h.why)} <a href="${h.url}" target="_blank" rel="noopener">source ↗</a></span></div>`).join('')}
+    <div class="support-card" style="margin-top:14px;border-color:var(--gold);background:#3A3217"><b>When to call a doctor:</b> ${esc(d.doctor)}</div>
+    <p class="muted">Source: <a href="${d.source[1]}" target="_blank" rel="noopener">${esc(d.source[0])} ↗</a>. Regions are mapped to the nearest areas of a standard brain atlas, so the picture is a guide, not a scan of anyone.</p></div>`;
+  $('#stageSlider') && ($('#stageSlider').oninput = e => { DSTAGE = +e.target.value; diseaseDetail(); $('#stageSlider')?.focus(); });
+  const colors = {}, c = hex(d.color);
+  d.stages.forEach((s, i) => { if (i > DSTAGE) return; for (const r of s.regions) colors[r] = [...c, i === DSTAGE ? .85 : .45]; });
+  brainView?.set(colors, deep);
+  const v = VIEW[d.id] || [-1, .2, .3]; brainView?.fly(v[0], v[1], v[2], !!v[3]);
 }
-function renderPlans(ps) {
-  $('#plans').innerHTML = ps.length ? ps.map(p => `<div class="plan"><b>${esc(p.title)}</b><div class="muted">${p.created_at.replace('T', ' ')} · ${p.source === 'claude' ? 'by Claude agent' : 'offline coach'}</div>
-    ${p.items.map(i => `<div class="pi"><b>${esc(i.day)}</b><span>${QMAP[i.quest_id]?.icon || ''}</span><a href="#/play/${i.quest_id}" style="color:#DDE2FA;text-decoration:none">${esc(i.action)}</a></div>`).join('')}</div>`).join('')
-    : '<div class="muted">No plans yet. Ask: "Build my weekly plan".</div>';
+function mineView() {
+  const S = MINE.skills;
+  const C = { learning: '#8A93C2', improving: '#5BE3A4', steady: '#6BE7F5', dipping: '#FFD166' };
+  const st = s => s.plays < 3 ? 'learning' : s.status === 'baseline' ? 'steady' : s.status;
+  const W = { learning: 'learning your baseline', improving: 'improving', steady: 'steady', dipping: 'dipping: worth keeping an eye on' };
+  const colors = {};
+  for (const s of S) { if (!s.plays) continue; const sk = ATL.skills.find(x => x.id === s.id); for (const r of sk.regions) colors[r] = [...hex(C[st(s)]), .8]; }
+  brainView?.set(colors, true); brainView?.fly(-1, .35, .55);
+  const link = { memory: '#/check/recall', speed: '#/check/speed', movement: '#/check/reaction', language: '#/check/fluency', spatial: '#/check/corsi' };
+  $('#bp').innerHTML = `<div class="card"><h2>Your skills map</h2><p>Each skill is linked to brain areas by decades of research. We color those areas from <b>your checks</b>, compared only with your own first tries. Grey until you've played 3 times.</p>
+    ${S.map(s => `<div class="lever"><b>${s.icon} ${esc(s.name)}</b><span class="size" style="background:${C[st(s)]}33;color:${C[st(s)]}">${s.plays ? W[st(s)] : 'not tested'}</span>
+      <span class="muted" style="grid-column:1/-1">${s.plays} play${s.plays === 1 ? '' : 's'} · <a href="${link[s.id] || '#/checks'}">${s.plays ? 'play again' : 'test it'}</a></span></div>`).join('')}
+    <p class="muted">A game score tracks a skill, not brain tissue. A steady dip over weeks is worth mentioning to a doctor; one bad day isn't.</p></div>
+    <div class="card" style="margin-top:16px"><div class="eyebrow">Research preview</div><h2>🩻 MRI scans</h2>
+      <p>We tested our own MRI measures on 436 real scans and <b>they weren't reliable enough</b> to put a number on your brain. So here you can <b>learn from real research scans</b>, and check that your own file opens.</p>
+      <div class="seg"><button class="on" data-mr="sample">Try a real research scan</button><button data-mr="upload">Upload my scan</button></div><div id="mriBox"></div></div>`;
+  const show = m => { $$('[data-mr]').forEach(b => b.classList.toggle('on', b.dataset.mr === m)); m === 'sample' ? mriSamples() : mriUpload(); };
+  $$('[data-mr]').forEach(b => b.onclick = () => show(b.dataset.mr)); show('sample');
 }
-async function send(text) {
-  const box = $('#msgs'); $('#ask').value = '';
-  box.insertAdjacentHTML('beforeend', bubble({ role: 'user', content: text }) + '<div class="msg assistant typing" id="typing"><span></span><span></span><span></span> thinking & running tools…</div>');
-  box.scrollTop = box.scrollHeight;
-  try {
-    const r = await api(`/api/player/${enc(ME.name)}/coach`, { text });
-    $('#typing')?.remove(); box.insertAdjacentHTML('beforeend', bubble({ role: 'assistant', content: r.text, tools: r.tools, source: r.source }));
-    if (r.note) toast(r.note, 5000);
-    box.scrollTop = box.scrollHeight;
-    const h = await api(`/api/player/${enc(ME.name)}/coach`); renderPlans(h.plans);
-  } catch (e) { $('#typing')?.remove(); toast(e.message); }
+async function mriSamples() {
+  const list = await api('/api/mri/samples'), box = $('#mriBox');
+  box.innerHTML = `<p class="muted">From the OASIS-1 study (Washington University). Pick one person:</p><div class="chips">${list.map(s => `<button class="chip" data-f="${esc(s.file)}">${s.female ? '♀' : '♂'} ${Math.round(s.Age)} y · ${s.status === 'cognitively normal' ? 'healthy volunteer' : 'dementia diagnosis'}</button>`).join('')}</div><div id="mriOut" aria-live="polite"></div>`;
+  $$('[data-f]', box).forEach(b => b.onclick = async () => {
+    $$('[data-f]', box).forEach(x => x.classList.toggle('on', x === b));
+    $('#mriOut').innerHTML = '<p class="muted">Loading the real scan…</p>';
+    const fd = new FormData(); fd.append('file', b.dataset.f);
+    try {
+      const r = await postForm('/api/me/mri/sample', fd), v = r.view;
+      $('#mriOut').innerHTML = `<div class="mslices" style="margin-top:12px">${Object.entries(r.images).map(([k, src]) => `<img src="${src}" alt="${k} slice of the scan">`).join('')}</div>
+        <h3>${r.female ? 'Woman' : 'Man'}, ${Math.round(r.age)} · ${r.status === 'cognitively normal' ? 'healthy volunteer' : `dementia diagnosis${r.cdr ? ` (CDR ${r.cdr})` : ''}`}</h3>
+        <p>Using OASIS's own validated brain-volume measure, about <b>${v.per100_lower} of 100</b> healthy people the same age and sex have even less brain tissue than this person.</p>
+        <div class="bubble"><b>The lesson:</b> even this validated measure, at our best cut-off, flags about <b>${v.healthy_flag_per100} of 100</b> healthy people over 60, but only <b>${v.dementia_flag_per100} of 100</b> people with dementia. ${v.flag ? 'This scan is past the cut-off.' : 'This scan is not past the cut-off.'} One MRI number can't screen a person. That's why we don't score uploads.</div>`;
+    } catch (e) { $('#mriOut').innerHTML = `<p class="caveat">${esc(e.message)}</p>`; }
+  });
 }
-
-// ================================================================ LEVERS
-let simT, OASIS = null;
-async function pageLevers() {
-  const p = ME.profile, L = ME.lever;
-  $('#p-levers').innerHTML = `<div class="scrollpage"><div class="wrap">
-    <div class="h1">🎛 What if…</div><div class="sub"><b>Move a slider to see how a habit change would move your score.</b> Survey-weighted regression on real CDC NHANES 2011–2014 data (adults 60+, n=${L.n.toLocaleString()}), adjusted for age, sex, education and income. Outcome: Digit Symbol Substitution Test (processing speed). Years = DSST points ÷ ${Math.abs(L.age_coef).toFixed(2)} points lost per year of age. Associations, not guarantees.</div>
-    <div class="cr-grid">
-      <div class="glass card"><svg class="gauge" viewBox="0 0 300 170"><defs><linearGradient id="gg" x1="0" x2="1"><stop offset="0" stop-color="#3DDC97"/><stop offset=".5" stop-color="#FFC83D"/><stop offset="1" stop-color="#FF5A6E"/></linearGradient></defs>
-        <path d="M30 150 A120 120 0 0 1 270 150" stroke="rgba(255,255,255,.08)" stroke-width="22" fill="none" stroke-linecap="round"/><path d="M30 150 A120 120 0 0 1 270 150" stroke="url(#gg)" stroke-width="22" fill="none" stroke-linecap="round" opacity=".9"/>
-        <g id="needle" style="transform-origin:150px 150px;transition:transform 1s cubic-bezier(.2,1.4,.4,1)"><line x1="150" y1="150" x2="150" y2="44" stroke="white" stroke-width="4" stroke-linecap="round"/><circle cx="150" cy="150" r="9" fill="white"/></g>
-        <text x="22" y="168" fill="#9AA3C7" font-size="11">−5 yrs</text><text x="244" y="168" fill="#9AA3C7" font-size="11">+5 yrs</text></svg>
-        <div class="yrs-big" id="lvY"></div><div class="muted" style="text-align:center" id="lvCI"></div><h3>What if…</h3><div id="sliders"></div></div>
-      <div class="glass card"><div class="eyebrow">YEARS LINKED TO EACH FACTOR (vs healthy target, 95% CI)</div><div id="factors" style="margin-top:12px"></div>
-        <p class="muted">Colored = significant in NHANES and counted in your total. Grey = can't be told apart from zero, shown but not counted.</p></div></div>
-    <h3>🩻 Optional: MRI brain age</h3><p class="muted">Model trained on real OASIS MRI summaries from cognitively normal adults. Try a real public OASIS participant, or enter nWBV and eTIV from a radiology volumetry report.</p>
-    <div class="cr-grid"><div class="glass card" id="mriIn"></div><div class="glass card" style="height:340px"><canvas id="mriChart"></canvas></div></div></div></div>`;
-  const S = [['sbp', 'Systolic BP', 90, 200, 1, 'mmHg'], ['active_min_week', 'Active minutes / week', 0, 600, 10, 'min'], ['sleep_hours', 'Sleep', 4, 10, .5, 'h'], ['phq9', 'Mood score (PHQ-9, lower = better)', 0, 27, 1, ''], ['sedentary_min_day', 'Sitting / day', 0, 900, 10, 'min']];
-  const sim = { sbp: Math.round(p.sbp), active_min_week: Math.min(600, p.active_min_week), sleep_hours: p.sleep_hours, phq9: p.phq9, sedentary_min_day: Math.min(900, p.sedentary_min_day), diabetes: p.diabetes, current_smoker: p.current_smoker };
-  $('#sliders').innerHTML = S.map(([k, l, a, b, s, u]) => `<div class="sl"><div class="lbl">${l}<b id="v_${k}">${sim[k]} ${u}</b></div><input type="range" min="${a}" max="${b}" step="${s}" value="${sim[k]}" data-k="${k}"></div>`).join('')
-    + `<div class="chips"><button class="chip ${sim.current_smoker ? 'on' : ''}" data-t="current_smoker">Smoker</button><button class="chip ${sim.diabetes ? 'on' : ''}" data-t="diabetes">Diabetes</button></div>`;
-  const run = async () => drawLever(await api('/api/lever', sim));
-  $$('#sliders input').forEach(el => el.oninput = () => { sim[el.dataset.k] = +el.value; $('#v_' + el.dataset.k).textContent = `${el.value} ${S.find(x => x[0] === el.dataset.k)[5]}`; clearTimeout(simT); simT = setTimeout(run, 120); });
-  $$('#sliders [data-t]').forEach(b => b.onclick = () => { sim[b.dataset.t] = !sim[b.dataset.t]; b.classList.toggle('on'); run(); });
-  drawLever(L); mriUI();
-}
-function drawLever(r) {
-  const y = r.years, amt = plainAmount(y); $('#lvY').textContent = !amt ? 'On target 🎉' : y > 0 ? `≈ ${amt} older` : 'Better than target'; $('#lvY').style.color = y > 1 ? '#FF8A7A' : y > 0 ? '#FFC83D' : '#3DDC97';
-  $('#lvCI').textContent = `how your thinking speed compares with you at every healthy target (range ${fmt(r.ci[0])} to ${fmt(r.ci[1])} yrs)`;
-  $('#needle').style.transform = `rotate(${Math.max(-90, Math.min(90, y / 5 * 90))}deg)`;
-  const max = Math.max(3, ...Object.values(r.per_factor).map(f => Math.abs(f.ci[1]))) * 1.1, X = v => 50 + v / max * 50;
-  $('#factors').innerHTML = Object.values(r.per_factor).map(f => { const col = f.significant ? (f.years > 0 ? '#FF7A6E' : '#3DDC97') : '#5B6390', a = X(Math.min(0, f.years)), b = X(Math.max(0, f.years));
-    return `<div class="factor"><div>${f.label}<div class="muted">you ${Math.round(f.value * 10) / 10} · target ${f.target}</div></div><div class="fbar"><div class="zero"></div><div class="bar" style="left:${a}%;width:${b - a}%;background:${col};box-shadow:0 0 12px ${col}"></div><div class="ci" style="left:${X(f.ci[0])}%;width:${X(f.ci[1]) - X(f.ci[0])}%"></div></div><div style="text-align:right;font-weight:700">${fmt(f.years)} yrs</div></div>`; }).join('');
-}
-async function mriUI() {
-  OASIS ||= await api('/api/oasis');
-  const dem = OASIS.filter(o => o.status !== 'cognitively normal');
-  $('#mriIn').innerHTML = `<div class="chips" style="margin-bottom:10px"><button class="chip on" data-m="oasis">Real OASIS participant</button><button class="chip" data-m="own">My own values</button></div><div id="mriForm"></div><div id="mriOut" style="margin-top:14px"></div>`;
-  const form = (m) => {
-    $$('#mriIn [data-m]').forEach(b => b.classList.toggle('on', b.dataset.m === m));
-    $('#mriForm').innerHTML = m === 'oasis' ? `<select id="oSel">${OASIS.map(o => `<option value="${o.ID}" ${o.ID === dem[0].ID ? 'selected' : ''}>${o.ID} · ${o.Age} y · ${o.status}</option>`).join('')}</select>`
-      : `<div class="grid2"><div><label class="tiny">nWBV (0.60–0.90)</label><input id="oN" type="number" step=".005" value="0.75"></div><div><label class="tiny">eTIV (cm³)</label><input id="oE" type="number" value="1450"></div></div><p class="muted">Age ${ME.profile.age}, ${ME.profile.female ? 'female' : 'male'} from your profile.</p>`;
-    const go = async () => {
-      let age, female, nwbv, etiv, label = '';
-      if (m === 'oasis') { const o = OASIS.find(x => x.ID === $('#oSel').value); ({ Age: age, nWBV: nwbv, eTIV: etiv } = o); female = !!o.female; label = `Actual OASIS status: <b>${o.status}</b>${o.CDR != null ? ` (CDR ${o.CDR})` : ''}.`; }
-      else { age = ME.profile.age; female = ME.profile.female; nwbv = +$('#oN').value; etiv = +$('#oE').value; }
-      const r = await api('/api/brainage', { age, female, nwbv, etiv });
-      $('#mriOut').innerHTML = `<div class="tiny">MRI BRAIN AGE</div><div style="font:700 56px 'Space Grotesk'">${r.brain_age.toFixed(0)} <span style="font-size:18px;color:#9AA3C7">vs age ${age}</span></div>
-        <div>Bias-corrected gap <b style="color:${r.gap > 0 ? '#FF8A7A' : '#3DDC97'}">${fmt(r.gap)} yrs</b></div>
-        <p class="muted">Model error (MAE) ${r.mae.toFixed(1)} yrs. Smallest change detectable between two scans: ±${r.sdc.toFixed(1)} yrs (20 real repeat scans). ${Math.abs(r.gap) < r.sdc ? 'This gap is inside the noise band.' : 'This gap is larger than scan-to-scan noise.'} ${label}</p>`;
-      const n = OASIS.filter(o => o.status === 'cognitively normal');
-      chart('mriChart', { type: 'scatter', data: { datasets: [
-        { label: 'cognitively normal', data: n.map(o => ({ x: o.Age, y: o.brain_age })), backgroundColor: 'rgba(89,240,255,.45)', pointRadius: 3 },
-        { label: 'dementia (CDR ≥ 0.5)', data: dem.map(o => ({ x: o.Age, y: o.brain_age })), backgroundColor: 'rgba(255,122,110,.6)', pointRadius: 3 },
-        { label: 'selected', data: [{ x: age, y: r.brain_age }], backgroundColor: '#FFC83D', pointRadius: 11, pointStyle: 'star', borderColor: '#FFC83D', borderWidth: 2 }] }, options: chartOpts() });
-    };
-    $$('#mriForm select, #mriForm input').forEach(el => el.onchange = go); go();
+function mriUpload() {
+  $('#mriBox').innerHTML = `<label class="drop" id="mdrop"><input type="file" id="mfile" accept=".nii,.gz" hidden><span style="font-size:2rem" aria-hidden="true">📂</span><b>Choose a NIfTI file (.nii or .nii.gz)</b><span class="muted">It stays on this computer.</span></label><div id="mriOut" aria-live="polite"></div>`;
+  const up = async f => {
+    $('#mriOut').innerHTML = '<p class="muted">Reading your file…</p>';
+    const fd = new FormData(); fd.append('file', f);
+    try {
+      const r = await postForm('/api/me/mri/upload', fd), F = r.format;
+      $('#mriOut').innerHTML = `${Object.keys(r.images).length ? `<div class="mslices">${Object.entries(r.images).map(([k, src]) => `<img src="${src}" alt="${k} slice of your scan">`).join('')}</div>` : ''}
+        <p>${F.ok ? '✅ Your file opened and matches the research format (skull-stripped, standard space).' : `⚠ ${esc((F.issues || []).join(" ") || 'This file is not in the research format our tools expect.')}`}</p>
+        <div class="bubble">We <b>won't put a number on your scan</b>. Our hippocampus, ventricle and whole-brain measures all failed our accuracy and repeat-scan tests. A radiologist's report on your scan is the trustworthy source. <a href="#/me/how">See the test results</a>.</div>`;
+    } catch (e) { $('#mriOut').innerHTML = `<p class="caveat">${esc(e.message)}</p>`; }
   };
-  $$('#mriIn [data-m]').forEach(b => b.onclick = () => form(b.dataset.m)); form('oasis');
+  $('#mfile').onchange = e => e.target.files[0] && up(e.target.files[0]);
+  const d = $('#mdrop'); d.ondragover = e => { e.preventDefault(); d.classList.add('over'); }; d.ondragleave = () => d.classList.remove('over'); d.ondrop = e => { e.preventDefault(); d.classList.remove('over'); e.dataTransfer.files[0] && up(e.dataTransfer.files[0]); };
+}
+function bindPick() {
+  let down = null; const cv = brainView.canvas;
+  cv.addEventListener('pointerdown', e => { down = [e.clientX, e.clientY]; });
+  cv.addEventListener('pointerup', e => {
+    if (ROUTE !== 'brain' || !down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 6) return;
+    const rid = brainView.pick(e.clientX, e.clientY), r = rid && RN()[rid]; if (!r) return;
+    const hits = ATL.diseases.filter(d => d.stages.some(s => s.regions.includes(rid))).map(d => `${d.icon} ${esc(d.name.replace(' (motor neurone disease)', ''))}`);
+    $('#rinfo').innerHTML = `<div class="card pop" style="position:relative"><button class="close" id="rclose" aria-label="Close">✕</button><div class="eyebrow">${r.kind === 'cortex' ? 'Outer layer (cortex)' : r.kind === 'fluid' ? 'Fluid space' : 'Deep structure'}</div>
+      <h3 style="padding-right:50px">${esc(r.name)}</h3><p>${esc(r.function || '')}</p>${hits.length ? `<p class="muted">Affected in: ${hits.join(', ')}</p>` : ''}</div>`;
+    $('#rclose').onclick = () => { $('#rinfo').innerHTML = ''; };
+  });
 }
 
-// ================================================================ SCIENCE
-async function pageScience() {
-  const S = await api('/api/science'), c = S.cognition, b = S.brainage, a = S.associations, cv = b.clinical_validity, tr = b.test_retest, lo = b.longitudinal, bm = b[b.chosen_model];
-  const fair = [...Object.entries(c.fairness.race_eth), ...Object.entries(c.fairness.female)];
-  $('#p-science').innerHTML = `<div class="scrollpage"><div class="wrap">
-    <div class="h1">Everything is real. Here's the proof.</div><div class="sub">Computed by <code>models/train_cognition.py</code> and <code>models/train_brainage.py</code> from raw public data. Re-run them to reproduce every number.</div>
-    <div class="kpis"><div class="kpi"><div class="v">${c.n.toLocaleString()}</div><div class="l">NHANES adults 60+ with a real DSST score</div></div>
-      <div class="kpi"><div class="v">R² ${c.gbm_full.r2_mean.toFixed(3)}</div><div class="l">processing-speed model, repeated 5-fold CV (MAE ${c.gbm_full.mae_mean.toFixed(1)})</div></div>
-      <div class="kpi"><div class="v">AUC ${cv.auc.toFixed(2)}</div><div class="l">MRI brain-age gap: dementia vs age-matched normals (95% CI ${cv.auc_ci[0].toFixed(2)}–${cv.auc_ci[1].toFixed(2)})</div></div>
-      <div class="kpi"><div class="v">ICC ${tr.icc_1_1.toFixed(3)}</div><div class="l">test-retest on ${tr.n_pairs} real repeat MRIs · SDC ±${tr.smallest_detectable_change_years.toFixed(1)} yrs</div></div></div>
-    <h3>1 · Processing-speed model (CDC NHANES 2011–2014)</h3>
-    <div class="two"><div class="glass card"><table class="t"><tr><th>Model</th><th>R²</th><th>MAE</th></tr>
-      <tr><td>Predict the mean</td><td class="num">0.000</td><td class="num">${c.baseline_predict_mean_mae.toFixed(2)}</td></tr>
-      <tr><td>Linear: age, sex, education, income</td><td class="num">${c.linear_demographics.r2_mean.toFixed(3)}</td><td class="num">${c.linear_demographics.mae_mean.toFixed(2)}</td></tr>
-      <tr><td>Gradient boosting: demographics</td><td class="num">${c.gbm_demographics.r2_mean.toFixed(3)}</td><td class="num">${c.gbm_demographics.mae_mean.toFixed(2)}</td></tr>
-      <tr><td><b>Gradient boosting: + 16 modifiable factors</b></td><td class="num"><b>${c.gbm_full.r2_mean.toFixed(3)}</b></td><td class="num"><b>${c.gbm_full.mae_mean.toFixed(2)}</b></td></tr></table>
-      <p class="muted">ΔR² = ${c.delta_r2_full_vs_demographics.mean.toFixed(3)} from modifiable factors (range ${c.delta_r2_full_vs_demographics.min.toFixed(3)}–${c.delta_r2_full_vs_demographics.max.toFixed(3)} over 5 seeds).</p></div>
-      <div class="glass card" style="height:320px"><canvas id="oofChart"></canvas></div></div>
-    <h3>2 · Factor associations (survey-weighted, cluster-robust SEs)</h3>
-    <div class="glass card"><table class="t"><tr><th>Change</th><th>DSST points</th><th>95% CI</th><th>≈ years</th><th>p</th></tr>${a.contrasts.map(x => `<tr><td>${x.label}</td><td class="num">${fmt(x.dsst_points, 2)}</td><td class="num">${fmt(x.dsst_ci[0], 2)} to ${fmt(x.dsst_ci[1], 2)}</td><td class="num">${fmt(x.years)}</td><td class="num ${x.p_value < .05 ? 'sig' : 'nsig'}">${x.p_value.toPrecision(2)}</td></tr>`).join('')}</table>
-    <p class="muted">n = ${a.n.toLocaleString()} · R² ${a.r2.toFixed(3)} · age effect ${a.age_coef.toFixed(3)} points/yr. Cross-sectional: reverse causation possible.</p></div>
-    <h3>3 · Fairness audit (race was not a model input)</h3>
-    <div class="glass card"><table class="t"><tr><th>Group</th><th>n</th><th>MAE</th><th>Mean bias (pred − actual)</th></tr>${fair.map(([g, v]) => `<tr><td>${g}${v.low_n_warning ? ' ⚠ small n' : ''}</td><td class="num">${v.n}</td><td class="num">${v.mae.toFixed(2)}</td><td class="num" style="color:${Math.abs(v.mean_bias) > 2 ? '#FFC83D' : '#C9D0EE'}">${fmt(v.mean_bias, 2)}</td></tr>`).join('')}</table>
-    <p class="muted">Error is similar across groups, but predictions run too high for Non-Hispanic Black and Other Hispanic participants and too low for Non-Hispanic White participants. That's why NeuroTrail reports within-person change and factor associations, never a cognitive diagnosis.</p></div>
-    <h3>4 · MRI brain-age model (OASIS)</h3>
-    <div class="glass card"><p class="muted">Trained on ${b.n_normal} cognitively normal OASIS-1 adults aged 18–96 (normalized brain volume, intracranial volume, sex). MAE ${bm.mae_mean.toFixed(1)} yrs (r = ${bm.r_mean.toFixed(2)}) vs ${b.baseline_mae_predict_mean.toFixed(1)} predicting the mean. Gap ${fmt(cv.mean_gap_dementia)} yrs in dementia (n=${cv.n_dementia}) vs ${fmt(cv.mean_gap_normal)} in age-matched normals (Mann–Whitney p = ${cv.mannwhitney_p.toExponential(1)}). Longitudinal (OASIS-2, ${lo.n_subjects} people, ${lo.n_sessions} scans): brain volume falls ${Math.abs(lo.nondemented_nwbv_pts_per_year).toFixed(2)} nWBV-points/yr in nondemented vs ${Math.abs(lo.demented_nwbv_pts_per_year).toFixed(2)} in dementia (p = ${lo.demented_vs_nd_p.toExponential(1)}). Honest limit: image CNNs reach MAE ≈ 2–4 yrs.</p></div>
-    <h3>5 · Quest weighting</h3>
-    <div class="glass card"><table class="t"><tr><th>Quest</th><th>Evidence tier</th><th>Lancet 2024 PAF</th><th>Sparks</th><th>Key source</th></tr>${QUESTS.map(q => `<tr><td>${q.icon} ${q.title}</td><td>${q.tier}</td><td class="num">${q.lancet_paf ? q.lancet_paf + '%' : '–'}</td><td class="num">${q.sparks}</td><td><a href="${q.evidence[0].url}" target="_blank" style="color:#59F0FF">link ↗</a></td></tr>`).join('')}</table>
-    <p class="muted">sparks = 20 + tier bonus (RCT 30 · cohort 15 · mixed 5) + 5 × PAF%. ${S.lancet}</p></div>
-    <h3>6 · Architecture</h3>
-    <div class="glass card"><p class="muted"><b>Python backend</b> (FastAPI): NHANES/OASIS models (scikit-learn, statsmodels), evidence catalog, game logic, <b>SQLite</b> database (players, quest_logs, step_progress, speed_rounds, coach_messages, plans).
-    <b>AI coach</b>: Claude Opus 5.5 agent with 5 tools grounded in your data; falls back to a rule-based offline coach with the same tools. <b>Front end</b>: one HTML/JS page with Three.js (WebGL brain) and Chart.js. Nothing leaves your device except coach messages sent to Claude.</p></div>
-  </div></div>`;
-  chart('oofChart', { type: 'scatter', data: { datasets: [{ label: 'out-of-fold predictions (800 sample)', data: S.oof.map(([x, y]) => ({ x, y })), backgroundColor: 'rgba(155,123,255,.35)', pointRadius: 2.5 }] }, options: chartOpts() });
+// ================================================================== ME
+async function pageMe(section) {
+  FACTS ||= await api('/api/facts');
+  main.innerHTML = `<div class="stack"><h1>🙂 Me</h1>
+    <nav class="chips" aria-label="Sections">${[['progress', '📈 Progress'], ['connect', '⌚ Connect a device'], ['answers', '📝 My answers'], ['security', '🔑 Security'], ['how', '🔬 How we know'], ['help', '💛 Support']].map(([k, t]) => `<a class="chip" href="#/me/${k}">${t}</a>`).join('')}</nav>
+    <section class="card" id="s-progress"><h2>📈 Progress</h2><div class="grid" id="charts"></div></section>
+    <section class="card" id="s-connect"><h2>⌚ Connect a device</h2><div id="wbox"></div></section>
+    <section class="card" id="s-answers"><h2>📝 My answers</h2><div id="abox"></div></section>
+    <section class="card" id="s-security"><h2>🔑 Security</h2>
+      ${AUTH.passkey ? '<p>✅ Saved with a passkey. You sign in with your fingerprint, face or device PIN. There is no password to steal.</p>' : '<p>⚠ Not saved yet. This browser session is your only way back in.</p>'}
+      <div class="row"><button class="btn" id="addPk">${AUTH.passkey ? 'Add another passkey' : 'Save with a passkey'}</button><button class="ghost" id="signout">Sign out</button></div>
+      <p class="muted">Passkeys (WebAuthn / FIDO2) are bound to this site, so a look-alike site can't phish them. Your health data is stored in a local SQLite database on this computer.</p></section>
+    <section class="card" id="s-how"><h2>🔬 How we know</h2>${howWeKnow()}</section>
+    <section class="card" id="s-help"><h2>💛 Support</h2><ul class="plain"><li><b>988</b>: call or text the US Suicide & Crisis Lifeline, 24/7.</li><li><b>911</b>: emergencies, including any stroke sign (BE-FAST).</li>
+      <li><b>1-800-QUIT-NOW</b>: free help to stop smoking (CDC).</li><li><b>1-800-272-3900</b>: Alzheimer's Association 24/7 helpline, for memory worries and caregivers.</li></ul></section></div>`;
+  $('#addPk').onclick = () => savePasskey(() => pageMe('security'));
+  $('#signout').onclick = async () => { if (!AUTH.passkey && !confirm('You have not saved a passkey. If you sign out, you cannot get back to this progress. Sign out anyway?')) return; await api('/auth/logout', {}); AUTH = { signed_in: false }; renderWho(); history.replaceState(null, '', '/'); route(); };
+  answersBox(); progressCharts(); wearBox();
+  if (section) setTimeout(() => $('#s-' + section)?.scrollIntoView({ block: 'start' }), 60);
+}
+function howWeKnow() {
+  const F = FACTS, N = F.nhanes, O = F.oasis;
+  return `<h3>What NeuroTrail is for</h3><div class="tablewrap"><table class="t"><tr><th>It is</th><th>It is not</th></tr>
+    <tr><td>A habit coach built on published evidence</td><td>A diagnosis or a dementia risk score</td></tr>
+    <tr><td>Personal tracking against your own first tries</td><td>A comparison with other people's scores</td></tr>
+    <tr><td>Education about how brain diseases affect the brain</td><td>A reading of your MRI</td></tr></table></div>
+    <h3>Model 1: habits and thinking speed (CDC NHANES 2011–2014)</h3>
+    <p>${N.complete_cases.toLocaleString()} adults 60+ with complete answers. Survey-weighted regression on the Digit Symbol test (0–133 points). Adding habits to age, sex, education and income improved prediction from R² ${N.r2_demographics.toFixed(2)} to ${N.r2_full.toFixed(2)} (cross-validated).</p>
+    <div class="tablewrap"><table class="t"><tr><th>Change</th><th>Points on the test</th><th>Clear link?</th></tr>${N.contrasts.map(c => `<tr><td>${esc(c.label)}</td><td>${fmt(c.dsst_points)} (${fmt(c.dsst_ci[0])} to ${fmt(c.dsst_ci[1])})</td><td>${c.p_value < .05 ? 'Yes' : 'No'} (p=${c.p_value.toPrecision(2)})</td></tr>`).join('')}</table></div>
+    <p class="muted">Fairness check: the prediction model's average error differs by group (${Object.entries(N.fairness_mean_bias).map(([g, b]) => `${esc(g)} ${fmt(b)}`).join(', ')} points), so we only use these numbers for "what if" comparisons within one person, never to rank people.</p>
+    <h3>Model 2: real MRI scans (OASIS-1, ${O.volumes} volumes)</h3>
+    <p>${O.people} people plus ${O.rescans} repeat scans (${esc(O.rescan_note)}). OASIS's validated brain-volume measure separates dementia from healthy scans with AUC ${F.nwbv_model.auc.toFixed(2)} (95% CI ${F.nwbv_model.auc_ci.map(x => x.toFixed(2)).join('–')}): useful for research, not for screening one person.</p>
+    <h3>What we built, tested and removed</h3>
+    ${F.removed.map(r => `<div class="lever"><b>❌ ${esc(r.what)}</b><span></span><span class="muted" style="grid-column:1/-1">${esc(r.why)}</span></div>`).join('')}
+    <p class="muted">Every number in this section is read from <code>models/artifacts/facts.json</code>, written by the training scripts in the repository.</p>`;
+}
+function answersBox() {
+  const p = { ...ME.profile }, box = $('#abox');
+  const yn = (k, label) => `<div class="q"><b>${label}</b><div class="yesno" data-k="${k}"><button data-v="1" class="${p[k] ? 'on' : ''}">Yes</button><button data-v="0" class="${p[k] ? '' : 'on'}">No</button></div></div>`;
+  box.innerHTML = `<p class="muted">Change these any time. Habits you log in the last 7 days take priority (for blood pressure and sleep).</p>
+    <div class="q"><b>Blood pressure (top number)</b>${p.sbp == null ? '<p class="muted">Unknown. <button class="linkbtn" id="setBp">Add my reading</button></p><div id="bpS"></div>' : stepper('aSbp', Math.round(p.sbp), ' mmHg', 'Blood pressure')}</div>
+    <div class="q"><b>Usual sleep</b>${stepper('aSleep', p.sleep_hours ?? 7, ' h', 'Sleep')}</div>
+    ${yn('diabetes', 'Diabetes')}${yn('current_smoker', 'Smoke now')}${yn('hearing_trouble', 'Trouble hearing')}
+    <button class="btn" id="saveAns">Save my answers</button>`;
+  const wireBp = () => wireStepper(box, 'aSbp', () => p.sbp, v => { p.sbp = v; }, { min: 80, max: 220, step: 1, unit: ' mmHg' });
+  if (p.sbp != null) { p.sbp = Math.round(p.sbp); wireBp(); }
+  $('#setBp') && ($('#setBp').onclick = () => { p.sbp = 125; $('#bpS').innerHTML = stepper('aSbp', 125, ' mmHg', 'Blood pressure'); wireBp(); });
+  wireStepper(box, 'aSleep', () => p.sleep_hours ?? 7, v => { p.sleep_hours = v; }, { min: 2, max: 12, step: .5, unit: ' h' });
+  $$('.yesno', box).forEach(g => choice(g, 'button', v => { p[g.dataset.k] = v === '1'; }));
+  $('#saveAns').onclick = async () => { ME = await api('/api/me/profile', { sbp: p.sbp, sleep_hours: p.sleep_hours, diabetes: p.diabetes, current_smoker: p.current_smoker, hearing_trouble: p.hearing_trouble }); toast('Saved ✓'); };
+}
+async function progressCharts() {
+  const P = await api('/api/me/progress?days=30'), box = $('#charts'), sh = d => d.slice(5), bp = P.bp.filter(b => b.value != null);
+  box.innerHTML = [
+    `<div><h3>⚡ Speed Sprint</h3><p class="muted">Correct answers in 90 seconds. Compared only with you.</p>${P.speed.length ? '<div class="chartbox"><canvas id="cSpeed"></canvas></div>' : '<div class="empty">Play a Speed Sprint to start this chart.</div>'}</div>`,
+    `<div><h3>🩺 Blood pressure</h3><p class="muted">Top number. Trial target: under 120 (SPRINT MIND).</p>${bp.length ? '<div class="chartbox"><canvas id="cBP"></canvas></div>' : '<div class="empty">Log a reading in the blood pressure habit.</div>'}</div>`,
+    `<div><h3>👟 Steps</h3><p class="muted">Dashed lines at 3,826 and 9,826 steps.</p>${P.steps.length ? '<div class="chartbox"><canvas id="cSteps"></canvas></div>' : '<div class="empty">Log steps in the walking habit.</div>'}</div>`,
+    `<div><h3>🌙 Sleep</h3><p class="muted">Hours per night.</p>${P.sleep.length ? '<div class="chartbox"><canvas id="cSleep"></canvas></div>' : '<div class="empty">Log sleep in the sleep habit.</div>'}</div>`,
+  ].join('') + `<p class="muted" style="grid-column:1/-1">${P.totals.quests} habits logged · ${P.totals.active_days} active days · ${P.totals.streak}-day streak</p>`;
+  const line = (id, labels, data, color, extra = []) => chart(id, { type: 'line', data: { labels, datasets: [{ data, borderColor: color, backgroundColor: color + '33', fill: true, tension: .3, label: 'you' }, ...extra] }, options: chartOpts({ plugins: { legend: { display: false } } }) });
+  if (P.speed.length) line('cSpeed', P.speed.map(r => sh(r.date)), P.speed.map(r => r.correct), '#6BE7F5');
+  if (bp.length) line('cBP', bp.map(b => sh(b.date)), bp.map(b => b.value), '#FF8FA3', [{ data: bp.map(() => 120), borderColor: '#5BE3A4', borderDash: [6, 4], pointRadius: 0, label: 'target 120' }]);
+  if (P.steps.length) line('cSteps', P.steps.map(s => sh(s.date)), P.steps.map(s => s.value), '#5BE3A4', [{ data: P.steps.map(() => 3826), borderColor: '#FFD166', borderDash: [6, 4], pointRadius: 0 }, { data: P.steps.map(() => 9826), borderColor: '#A994FF', borderDash: [6, 4], pointRadius: 0 }]);
+  if (P.sleep.length) line('cSleep', P.sleep.map(s => sh(s.date)), P.sleep.map(s => s.value), '#A994FF');
+}
+async function wearBox() {
+  const W = await api('/api/me/wearables'), S = W.summary, days = Object.entries(W.days), box = $('#wbox');
+  box.innerHTML = `<p>Bring in steps and sleep from your phone or watch to <b>see</b> them here. (Watch sleep is shown, not fed into the survey model, which was built on self-reported sleep.)</p>
+    <label class="drop" id="wdrop"><input type="file" id="wfile" accept=".zip,.xml,.csv" hidden><span style="font-size:2rem" aria-hidden="true">⌚</span><b>Choose your Apple Health export.zip</b><span class="muted">or a CSV with a date column and steps / sleep_hours</span></label>
+    <p class="muted">iPhone: Health app → your photo → Export All Health Data.</p><div id="wmsg" aria-live="polite"></div>
+    ${S.days_with_data ? `<div class="vstats">${S.steps != null ? `<div><b>${Math.round(S.steps).toLocaleString()}</b><span>steps a day</span></div>` : ''}${S.sleep_hours != null ? `<div><b>${S.sleep_hours.toFixed(1)} h</b><span>sleep a night</span></div>` : ''}${S.resting_hr != null ? `<div><b>${Math.round(S.resting_hr)}</b><span>resting heart rate</span></div>` : ''}</div>
+      <p class="muted">${S.days_with_data} days imported (${S.from} to ${S.to}).</p><div class="chartbox"><canvas id="wch"></canvas></div>` : ''}`;
+  if (days.length) chart('wch', { type: 'bar', data: { labels: days.map(d => d[0].slice(5)), datasets: [{ label: 'steps', data: days.map(d => d[1].steps ?? null), backgroundColor: 'rgba(91,227,164,.75)', borderRadius: 4 }] }, options: chartOpts() });
+  const up = async f => { $('#wmsg').innerHTML = '<p class="muted">Reading your file… (large exports can take a minute)</p>';
+    const fd = new FormData(); fd.append('file', f);
+    try { const j = await postForm('/api/me/wearables', fd); ME = j.player; toast(`Imported ${j.imported_days} days ✓`); wearBox(); } catch (e) { $('#wmsg').innerHTML = `<p class="caveat">⚠ ${esc(e.message)}</p>`; } };
+  $('#wfile').onchange = e => e.target.files[0] && up(e.target.files[0]);
+  const d = $('#wdrop'); d.ondragover = e => { e.preventDefault(); d.classList.add('over'); }; d.ondragleave = () => d.classList.remove('over'); d.ondrop = e => { e.preventDefault(); d.classList.remove('over'); e.dataTransfer.files[0] && up(e.dataTransfer.files[0]); };
 }
 
-// ================================================================ ONBOARDING
-const PHQ = ['Little interest or pleasure in doing things', 'Feeling down, depressed, or hopeless', 'Trouble falling or staying asleep, or sleeping too much', 'Feeling tired or having little energy', 'Poor appetite or overeating', 'Feeling bad about yourself, or that you are a failure', 'Trouble concentrating on things', 'Moving or speaking slowly, or being fidgety or restless', 'Thoughts that you would be better off dead, or of hurting yourself'];
-const PHQO = ['Not at all', 'Several days', 'More than half the days', 'Nearly every day'];
-const EDU = ['Less than 9th grade', '9–11th grade', 'High school / GED', 'Some college / AA', 'College graduate+'];
-let OB = null, obStep = 0;
-function openOnboard() { OB = { age: 65, female: true, educ: 4, income_pir: 2.5, sbp: 130, diabetes: false, current_smoker: false, active_min_week: 90, sedentary_min_day: 420, sleep_hours: 7, phq: Array(9).fill(0) }; obStep = 0; openOv('onboard'); renderOb(); }
-function stepper(k, min, max, step, unit = '') { return `<div class="toggle" style="align-items:center"><button class="chip" data-dec="${k}" data-st="${step}" data-min="${min}">−</button><b style="font:700 22px 'Space Grotesk';min-width:90px;text-align:center" id="ob_${k}">${OB[k]}${unit}</b><button class="chip" data-inc="${k}" data-st="${step}" data-max="${max}">+</button></div>`; }
-function renderOb() {
-  const pages = [
-    () => `<div class="eyebrow">BASE CAMP · 1 OF 5</div><h2>About you</h2><p class="muted">The same questions CDC's NHANES asked 3,014 adults aged 60+. Stored only in your local database.</p>
-      <div class="q-grid ob"><div><label>Age</label>${stepper('age', 18, 100, 1)}</div>
-      <div><label>Sex</label><div class="toggle"><button class="chip ${OB.female ? 'on' : ''}" data-b="female" data-v="1">Female</button><button class="chip ${!OB.female ? 'on' : ''}" data-b="female" data-v="0">Male</button></div></div>
-      <div><label>Education</label><select data-k="educ">${EDU.map((e, i) => `<option value="${i + 1}" ${OB.educ === i + 1 ? 'selected' : ''}>${e}</option>`).join('')}</select></div>
-      <div><label>Household income vs poverty line: <b>${OB.income_pir}×</b></label><input type="range" min="0" max="5" step=".1" data-k="income_pir" value="${OB.income_pir}"></div></div>`,
-    () => `<div class="eyebrow">BASE CAMP · 2 OF 5</div><h2>Heart & metabolism</h2>
-      <div class="q-grid ob"><div><label>Systolic BP (top number)</label>${stepper('sbp', 80, 220, 2, ' mmHg')}</div><div></div>
-      <div><label>Diagnosed diabetes?</label><div class="toggle"><button class="chip ${OB.diabetes ? 'on' : ''}" data-b="diabetes" data-v="1">Yes</button><button class="chip ${!OB.diabetes ? 'on' : ''}" data-b="diabetes" data-v="0">No</button></div></div>
-      <div><label>Currently smoke?</label><div class="toggle"><button class="chip ${OB.current_smoker ? 'on' : ''}" data-b="current_smoker" data-v="1">Yes</button><button class="chip ${!OB.current_smoker ? 'on' : ''}" data-b="current_smoker" data-v="0">No</button></div></div></div>`,
-    () => `<div class="eyebrow">BASE CAMP · 3 OF 5</div><h2>Daily life</h2>
-      <div class="q-grid ob"><div><label>Active minutes / week (vigorous ×2): <b>${OB.active_min_week}</b></label><input type="range" min="0" max="900" step="10" data-k="active_min_week" value="${OB.active_min_week}"></div>
-      <div><label>Sitting minutes / day: <b>${OB.sedentary_min_day}</b></label><input type="range" min="0" max="1140" step="10" data-k="sedentary_min_day" value="${OB.sedentary_min_day}"></div>
-      <div><label>Usual sleep on weeknights: <b>${OB.sleep_hours} h</b></label><input type="range" min="2" max="12" step=".5" data-k="sleep_hours" value="${OB.sleep_hours}"></div></div>`,
-    () => `<div class="eyebrow">BASE CAMP · 4 OF 5</div><h2>Mood check (PHQ-9)</h2><p class="muted">Over the last 2 weeks, how often have you been bothered by…</p>
-      <div class="phq">${PHQ.map((q, i) => `<div class="pq"><div>${i + 1}. ${q}</div><div class="chips">${PHQO.map((o, j) => `<button class="chip ${OB.phq[i] === j ? 'on' : ''}" data-phq="${i}" data-v="${j}">${o}</button>`).join('')}</div></div>`).join('')}</div>`,
-    () => `<div class="reveal"><div class="eyebrow">BASE CAMP · 5 OF 5</div><h2>Your starting levers</h2><div id="revealBody"><p class="muted">Running the NHANES model…</p></div></div>`,
-  ];
-  $('#obDots').innerHTML = pages.map((_, i) => `<i class="${i <= obStep ? 'on' : ''}"></i>`).join('');
-  $('#obBody').innerHTML = pages[obStep]();
-  $('#obBack').style.visibility = obStep ? 'visible' : 'hidden'; $('#obNext').textContent = obStep === 4 ? 'Start playing →' : 'Next →';
-  $$('#obBody [data-k]').forEach(el => el.oninput = () => { OB[el.dataset.k] = +el.value; if (el.type === 'range') el.previousElementSibling.querySelector('b').textContent = el.value + (el.dataset.k === 'income_pir' ? '×' : el.dataset.k === 'sleep_hours' ? ' h' : ''); });
-  $$('#obBody [data-b]').forEach(el => el.onclick = () => { OB[el.dataset.b] = el.dataset.v === '1'; renderOb(); });
-  $$('#obBody [data-inc],[data-dec]').forEach(el => el.onclick = () => { const k = el.dataset.inc || el.dataset.dec, st = +el.dataset.st;
-    OB[k] = el.dataset.inc ? Math.min(+el.dataset.max, OB[k] + st) : Math.max(+el.dataset.min, OB[k] - st); $('#ob_' + k).textContent = OB[k] + (k === 'sbp' ? ' mmHg' : ''); });
-  $$('#obBody [data-phq]').forEach(el => el.onclick = () => { OB.phq[+el.dataset.phq] = +el.dataset.v; el.parentElement.querySelectorAll('.chip').forEach(c => c.classList.toggle('on', c === el)); });
-  if (obStep === 4) (async () => {
-    const r = await api('/api/lever', { ...OB, phq9: OB.phq.reduce((a, b) => a + b, 0) });
-    const top = Object.values(r.per_factor).filter(f => f.years > .05 && f.significant).slice(0, 3);
-    $('#revealBody').innerHTML = `<div class="yrs grad">${Math.abs(r.years).toFixed(1)} yrs</div><p>Your modifiable factors are associated with processing speed like someone <b>${Math.abs(r.years).toFixed(1)} years ${r.years >= 0 ? 'older' : 'younger'}</b> than you'd be at every healthy target (95% CI ${fmt(r.ci[0])} to ${fmt(r.ci[1])}).</p>
-      ${top.length ? `<p class="muted">Biggest levers: ${top.map(f => `<b style="color:#FFC83D">${f.label}</b> (${fmt(f.years)} yrs)`).join(', ')}.</p>` : '<p class="muted">You\'re at or near target on the factors with significant associations. Quests keep you there.</p>'}
-      <p class="muted">Survey-weighted NHANES model (n=${r.n.toLocaleString()}); counts only factors with a significant association. An association, not a diagnosis.</p>`;
-  })();
-}
-$('#obBack').onclick = () => { obStep = Math.max(0, obStep - 1); renderOb(); };
-$('#obNext').onclick = async () => { if (obStep < 4) { obStep++; renderOb(); return; } ME = await api(`/api/player/${enc(ME.name)}/onboard`, OB); closeOv('onboard'); enter(); };
-
-// ================================================================ PLAYERS / BOOT
-function openOv(id) { $('#' + id).classList.add('open'); }
-function closeOv(id) { $('#' + id).classList.remove('open'); }
-$$('[data-close]').forEach(b => b.onclick = () => closeOv(b.dataset.close));
-$('#playerBtn').onclick = async (e) => {
-  if (e.target.closest('.menu')) return;
-  const ps = await api('/api/players');
-  $('#playerMenu').innerHTML = `<div class="tiny" style="padding:4px 10px">TEAM BOARD · SPARKS THIS WEEK</div>` + ps.map((p, i) => `<div class="mi" data-p="${esc(p.name)}"><span>${['🥇', '🥈', '🥉'][i] || '·'} ${esc(p.name)}</span><b>${p.week_sparks} ⚡</b></div>`).join('')
-    + `<div class="mi" id="addP">+ Add a player</div><p class="muted" style="padding:0 6px">Competition was the only gamified arm in STEP UP whose effect outlasted the game.</p>`;
-  $('#playerBtn').classList.toggle('open');
-  $$('#playerMenu [data-p]').forEach(m => m.onclick = () => { localStorage.setItem('nt_player', m.dataset.p); $('#playerBtn').classList.remove('open'); boot(); });
-  $('#addP').onclick = () => { $('#playerBtn').classList.remove('open'); localStorage.removeItem('nt_player'); showWelcome(); };
-};
-async function startAs(n) {
-  try { const p = await api('/api/players', { name: n }); localStorage.setItem('nt_player', p.name); closeOv('welcome'); await boot(); }
-  catch (e) { toast(`Couldn't reach the NeuroTrail server (${e.message}). Start it with: python3 web/server.py`, 6000); }
-}
-$('#startBtn').onclick = () => { const n = $('#newName').value.trim(); if (!n) { $('#newName').focus(); return toast('Type your name, or use Play as Guest'); } startAs(n); };
-$('#newName').onkeydown = e => e.key === 'Enter' && $('#startBtn').click();
-$('#guestBtn').onclick = async () => { const ps = await api('/api/players').catch(() => []); let i = 1; while (ps.some(p => p.name === `Guest ${i}`)) i++; startAs(`Guest ${i}`); };
-$('#promptBtn').onclick = () => { const n = (prompt('Your name') || '').trim().slice(0, 24); if (n) startAs(n); };
-async function showWelcome() {
-  openOv('welcome'); setTimeout(() => $('#newName').focus(), 50);
-  const ps = await api('/api/players').catch(() => []);
-  $('#existing').innerHTML = ps.length ? `<div class="tiny" style="width:100%">OR CONTINUE AS</div>` + ps.map(p => `<button class="chip" data-p="${esc(p.name)}">${esc(p.name)} · ${p.sparks} ⚡</button>`).join('') : '';
-  $$('#existing [data-p]').forEach(b => b.onclick = () => { localStorage.setItem('nt_player', b.dataset.p); closeOv('welcome'); boot(); });
-}
-function enter() { renderHUD(); paintRegions(); if (!location.hash || location.hash === '#') location.hash = '#/'; route(); }
-async function boot() {
-  const name = localStorage.getItem('nt_player');
-  if (!name) return showWelcome();
-  try { ME = await api(`/api/player/${enc(name)}`); } catch { localStorage.removeItem('nt_player'); return showWelcome(); }
-  if (!ME.onboarded) return openOnboard();
-  enter();
-}
-
+// ================================================================== BOOT
+window.NTX = { api, toast, chart, chartOpts, fmt, renderHUD: renderWho, QMAP: () => QMAP, getME: () => ME, setME: m => { ME = m; } };
 (async () => {
-  if (location.protocol === 'file:') { document.body.insertAdjacentHTML('beforeend', '<div class="overlay open"><div class="modal"><h2>Open the app through its server</h2><p>Run <code>python3 web/server.py</code>, then open <b>http://localhost:8600</b>.</p></div></div>'); return; }
-  try { QUESTS = await api('/api/quests'); } catch { toast('NeuroTrail server not reachable. Start it with: python3 web/server.py', 10000); return; }
-  QMAP = Object.fromEntries(QUESTS.map(q => [q.id, q]));
-  window.NTX = { api, toast, chart, chartOpts, renderHUD, fmt, QMAP: () => QMAP, getME: () => ME, setME: (m) => { ME = m; } };
-  frame(); await loadBrain(); await boot();
-  window.NT = { camera, hemis, step: (dt, n = 1) => { for (let i = 0; i < n; i++) update(dt); composer.render(); }, get me() { return ME; } };
+  applySettings();
+  try { AUTH = await api('/auth/me'); } catch { AUTH = { signed_in: false }; }
+  await loadQuests().catch(() => {});
+  route();
 })();

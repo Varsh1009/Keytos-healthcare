@@ -1,0 +1,163 @@
+{
+ "nhanes": {
+  "surveyed_60plus_with_dsst": 3014,
+  "complete_cases": 2597,
+  "r2_full": 0.45094042461774464,
+  "r2_demographics": 0.40689685634248224,
+  "delta_r2": 0.054236945417153515,
+  "fairness_mean_bias": {
+   "Mexican American": -0.11270583518469986,
+   "Non-Hispanic Asian": -1.1342200404352052,
+   "Non-Hispanic Black": 5.055476706855062,
+   "Non-Hispanic White": -2.9932471261057603,
+   "Other Hispanic": 4.593719113622826,
+   "Other/Multiracial": -2.293713502934169
+  },
+  "contrasts": [
+   {
+    "label": "Systolic BP 150 \u2192 120 mmHg",
+    "dsst_points": 1.7067872051526183,
+    "dsst_ci": [
+     0.7141915954834376,
+     2.7266112604981343
+    ],
+    "p_value": 0.0009215664261812254
+   },
+   {
+    "label": "Diabetes \u2192 no diabetes",
+    "dsst_points": 3.597467736045073,
+    "dsst_ci": [
+     2.1152992738877097,
+     5.069206753359446
+    ],
+    "p_value": 1.8401720855982456e-06
+   },
+   {
+    "label": "Smoker \u2192 non-smoker",
+    "dsst_points": 2.599097477516013,
+    "dsst_ci": [
+     0.6883751569656134,
+     4.554893784809383
+    ],
+    "p_value": 0.008914264129412791
+   },
+   {
+    "label": "Inactive (0) \u2192 150 active min/week",
+    "dsst_points": 0.06728586529205507,
+    "dsst_ci": [
+     -0.17416902931671163,
+     0.30499029045934134
+    ],
+    "p_value": 0.5913731959878297
+   },
+   {
+    "label": "Depression score 10 \u2192 2 (PHQ-9)",
+    "dsst_points": 3.176118912566395,
+    "dsst_ci": [
+     1.6444960285300116,
+     4.7093332518058855
+    ],
+    "p_value": 3.545902366480204e-05
+   },
+   {
+    "label": "Sleep 5 h \u2192 7 h",
+    "dsst_points": 1.4784206973688834,
+    "dsst_ci": [
+     0.2529143520880247,
+     2.731379021715272
+    ],
+    "p_value": 0.01944182786859722
+   },
+   {
+    "label": "Sitting 600 \u2192 360 min/day",
+    "dsst_points": -0.1435282005668469,
+    "dsst_ci": [
+     -1.0321935133820521,
+     0.712009238054416
+    ],
+    "p_value": 0.7537618982181375
+   }
+  ]
+ },
+ "oasis": {
+  "people": 416,
+  "rescans": 20,
+  "volumes": 436,
+  "normal_first_sessions": 316,
+  "dementia": 100,
+  "rescan_note": "20 young adults aged 19-34, same scanner, days apart"
+ },
+ "nwbv_model": {
+  "mae": 8.179283902660698,
+  "auc": 0.7168817204301076,
+  "auc_ci": [
+   0.6447793485951081,
+   0.7893353906760227
+  ]
+ },
+ "teaching_view": {
+  "threshold": 2.21,
+  "healthy60_flag_pct": 4.081632653061225,
+  "dementia_flag_pct": 12.0,
+  "n_healthy60": 98,
+  "n_dementia": 100,
+  "note": "nWBV is computed by the OASIS team's own pipeline; we cannot compute it for uploaded scans."
+ },
+ "removed": [
+  {
+   "what": "3D CNN brain age",
+   "why": "In people 60+ it was no better than guessing the average age (error 7.63 vs 7.62 years). Its overall 7.1-year error came from the wide 18-96 age range.",
+   "bands": {
+    "18-39": {
+     "n": 154,
+     "mae": 6.2001553201056145,
+     "guess_mean_mae": 3.3157362118401084
+    },
+    "40-59": {
+     "n": 64,
+     "mae": 8.637144595384598,
+     "guess_mean_mae": 4.404296875
+    },
+    "60-96": {
+     "n": 98,
+     "mae": 7.631901799416055,
+     "guess_mean_mae": 7.624323198667223
+    }
+   },
+   "auc": 0.7290322580645161
+  },
+  {
+   "what": "Region intensity index (57 regions)",
+   "why": "It flagged 81% of healthy adults 60+ with at least one 'abnormal' region, and missed ventricle enlargement entirely.",
+   "healthy60_flagged_pct": 80.61224489795919
+  },
+  {
+   "what": "Our 3 MRI tissue measures (hippocampus, ventricles, overall)",
+   "why": "None reached our bar (dementia AUC >= 0.70 and repeat-scan ICC >= 0.90).",
+   "measures": {
+    "hippo_gm": {
+     "auc": 0.5678494623655914,
+     "icc": 0.8060869252143525
+    },
+    "vent_csf": {
+     "auc": 0.6286021505376344,
+     "icc": 0.9117991120840202
+    },
+    "bpf": {
+     "auc": 0.663010752688172,
+     "icc": 0.6633300457732503
+    }
+   }
+  },
+  {
+   "what": "'Years older' and 'brain age' wording",
+   "why": "A single survey snapshot can't tell you how old your brain is."
+  },
+  {
+   "what": "NHANES percentiles for our digital games",
+   "why": "Different words, timing and format from the NHANES interview; you're compared only with yourself."
+  }
+ ],
+ "measured_alzheimers_map_note": "Earlier region map partly reflected fluid next to brain folds, not tissue loss; kept only as an exploratory note.",
+ "db_tables": 11
+}

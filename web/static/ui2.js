@@ -40,7 +40,7 @@ function greeting() { const h = new Date().getHours(); return h < 12 ? 'Good mor
 // ------------------------------------------------------------ HOME
 export async function pageHome() {
   const M = me(), L = M.lever, P = plainLever(L);
-  const [GS, games, VH] = await Promise.all([X().api(`/api/player/${enc(M.name)}/games`), X().api('/api/games'), X().api(`/api/player/${enc(M.name)}/voice`)]);
+  const [GS, games, VH] = await Promise.all([X().api(`/api/me/games`), X().api('/api/games'), X().api(`/api/me/voice`)]);
   // Today's plan: 1) the mission for your biggest lever, 2) voice check, 3) the game you've played least
   const q1 = (P.top && QUEST_FOR[P.top.label]) || Object.keys(M.trail).find(k => M.trail[k] !== 'done') || 'steps';
   const Q = X().QMAP(), q = Q[q1];
@@ -82,7 +82,7 @@ export async function pageHome() {
       <div class="glass st"><div class="stv">Lv ${Lv.index}</div><div class="stl">${Lv.name}${Lv.next_at ? ` · ${Lv.next_at - M.sparks} to go` : ''}</div><div class="lvbar"><i style="width:${frac * 100}%"></i></div></div>
     </section>
 
-    <section class="explore">${[['✅', 'All missions', '#/play', 'Every daily mission'], ['🧩', 'Games', '#/gym', '7 brain games'], ['🎙️', 'Voice', '#/voice', 'How you speak'], ['📱', 'My data', '#/data', 'Watch, MRI, what-ifs'], ['🤖', 'Coach', '#/coach', 'Ask anything'], ['📈', 'Progress', '#/progress', 'Your charts']]
+    <section class="explore">${[['🧠', 'Brain Atlas', '#/atlas', 'Diseases on a real brain'], ['🧩', 'Games', '#/gym', '7 brain games'], ['🎙️', 'Voice', '#/voice', 'How you speak'], ['📱', 'My data', '#/data', 'Watch, MRI, what-ifs'], ['🤖', 'Coach', '#/coach', 'Ask anything'], ['✅', 'All missions', '#/play', 'Every daily mission']]
       .map(([i, t, h, s]) => `<a class="tile glass" href="${h}"><span>${i}</span><b>${t}</b><small>${s}</small></a>`).join('')}</section>
   </div></div>`;
 }
@@ -90,17 +90,16 @@ export async function pageHome() {
 // ------------------------------------------------------------ VOICE CHECK
 let REC = null;
 export async function pageVoice() {
-  const [T, VH] = await Promise.all([X().api('/api/voice/tasks'), X().api(`/api/player/${enc(me().name)}/voice`)]);
+  const [T, VH] = await Promise.all([X().api('/api/voice/tasks'), X().api(`/api/me/voice`)]);
   $('#p-voice').innerHTML = `<div class="scrollpage"><div class="wrap">
     <div class="h1">🎙️ Voice check</div>
-    <div class="sub">Speak for about a minute. We measure <b>how</b> you talk (your pace, pauses and pitch), not what you say. Audio is analyzed and then thrown away; only the numbers are saved.</div>
+    <div class="sub">Speak for about a minute. We measure <b>how</b> you talk (your pace, pauses and pitch), not what you say. The sound is analyzed on this computer and thrown away; only the numbers are saved. Experimental: compared only with you.</div>
     <div class="cr-grid">
       <div class="glass card">
         <div class="chips" style="margin-bottom:12px"><button class="chip on" data-t="reading">📖 Read aloud</button><button class="chip" data-t="free">💬 Tell a story</button></div>
         <div class="vprompt" id="vprompt">${esc(T.reading)}</div>
         <div class="recwrap"><button class="recbtn" id="rec"><span>🎙️</span></button><canvas id="wave" width="600" height="80"></canvas><div class="muted" id="rstat">Tap the mic, read the text at your normal pace, then tap again to stop.</div></div>
         <p class="muted">Why: in a 2018 study, people with early memory problems spoke more slowly and paused more than healthy peers (Tóth et al., <a href="${T.evidence}" target="_blank" style="color:var(--cyan)">source ↗</a>). Here you only compare with <b>yourself</b> over time. It's not a diagnosis.</p>
-        <p class="muted">Mic not working in this window? Open <b>http://localhost:8600/#/voice</b> in Chrome.</p>
       </div>
       <div class="glass card" id="vout">${VH.history.length ? '' : '<div class="empty">Your results show up here after your first recording.</div>'}</div>
     </div></div></div>`;
@@ -111,8 +110,8 @@ export async function pageVoice() {
 }
 async function startRec() {
   let stream;
-  try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false } }); }
-  catch (e) { X().toast('Microphone blocked: allow mic access (or open the app in Chrome).', 5000); return; }
+  try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } }); }
+  catch (e) { X().toast('Microphone not available. Allow microphone access for this page and try again.', 5000); return; }
   const ctx = new AudioContext(), src = ctx.createMediaStreamSource(stream), proc = ctx.createScriptProcessor(4096, 1, 1), chunks = [];
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition; let words = 0, sr = null;
   if (SR) { try { sr = new SR(); sr.continuous = true; sr.onresult = e => { words = 0; for (const r of e.results) words += r[0].transcript.trim().split(/\s+/).filter(Boolean).length; }; sr.start(); } catch { sr = null; } }
@@ -135,7 +134,7 @@ async function stopRec(task) {
   $('#rstat').textContent = 'Analyzing your speech…';
   const fd = new FormData(); fd.append('file', new Blob([wav], { type: 'audio/wav' }), 'voice.wav'); fd.append('task', task);
   if (R.sr && task === 'free' && R.words()) fd.append('words', R.words());
-  const r = await fetch(`/api/player/${enc(me().name)}/voice`, { method: 'POST', body: fd }); const j = await r.json();
+  const r = await fetch(`/api/me/voice`, { method: 'POST', body: fd }); const j = await r.json();
   if (!r.ok) { $('#rstat').textContent = '⚠ ' + (j.detail || 'Could not analyze'); return; }
   X().setME(j.player); X().renderHUD();
   $('#rstat').textContent = j.sparks_gained ? `Done! +${j.sparks_gained} ⚡` : 'Done! (today\'s sparks already earned)';
@@ -172,7 +171,7 @@ function renderVoiceHistory(h) {
 
 // ------------------------------------------------------------ MY DATA
 export async function pageData() {
-  const W = await X().api(`/api/player/${enc(me().name)}/wearables`), S = W.summary, days = Object.entries(W.days);
+  const W = await X().api(`/api/me/wearables`), S = W.summary, days = Object.entries(W.days);
   $('#p-data').innerHTML = `<div class="scrollpage"><div class="wrap">
     <div class="h1">📱 My data</div><div class="sub">Bring in real data from your phone or watch, analyze an MRI scan, or play with "what if" sliders. Everything stays on this computer.</div>
     <div class="cr-grid">
@@ -194,7 +193,7 @@ export async function pageData() {
   </div></div>`;
   if (days.length) X().chart('wch', { type: 'bar', data: { labels: days.map(d => d[0].slice(5)), datasets: [{ label: 'steps', data: days.map(d => d[1].steps ?? null), backgroundColor: 'rgba(61,220,151,.7)', borderRadius: 4, yAxisID: 'y' }, { type: 'line', label: 'sleep (h)', data: days.map(d => d[1].sleep_hours ?? null), borderColor: '#7C8CFF', yAxisID: 'y1', tension: .3, spanGaps: true }] }, options: X().chartOpts({ scales: { y: { ticks: { color: '#9AA3C7' } }, y1: { position: 'right', ticks: { color: '#9AA3C7' }, grid: { display: false } }, x: { ticks: { color: '#9AA3C7' } } } }) });
   const up = async f => { $('#wmsg').innerHTML = '<p class="muted">Reading your file… (big Apple exports can take a minute)</p>';
-    const fd = new FormData(); fd.append('file', f); const r = await fetch(`/api/player/${enc(me().name)}/wearables`, { method: 'POST', body: fd }); const j = await r.json();
+    const fd = new FormData(); fd.append('file', f); const r = await fetch(`/api/me/wearables`, { method: 'POST', body: fd }); const j = await r.json();
     if (!r.ok) { $('#wmsg').innerHTML = `<p class="caveat">⚠ ${esc(j.detail)}</p>`; return; } X().setME(j.player); X().toast(`Imported ${j.imported_days} days ✓`); pageData(); };
   $('#wfile').onchange = e => e.target.files[0] && up(e.target.files[0]);
   const d = $('#wdrop'); d.ondragover = e => { e.preventDefault(); d.classList.add('over'); }; d.ondragleave = () => d.classList.remove('over'); d.ondrop = e => { e.preventDefault(); d.classList.remove('over'); e.dataTransfer.files[0] && up(e.dataTransfer.files[0]); };

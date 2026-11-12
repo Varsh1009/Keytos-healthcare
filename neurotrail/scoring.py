@@ -18,8 +18,8 @@ ART = Path(__file__).resolve().parents[1] / "models" / "artifacts"
 TARGETS = {"sbp": 120.0, "diabetes": 0.0, "current_smoker": 0.0, "active_min_week": 150.0,
            "phq9": 0.0, "sleep_dev": 0.0, "sedentary_min_day": 360.0}
 LEVER_LABELS = {"sbp": "Blood pressure", "diabetes": "Diabetes", "current_smoker": "Smoking",
-                "active_min_week": "Activity (self-report)", "phq9": "Mood (PHQ-9)",
-                "sleep_dev": "Sleep (distance from 7 h)", "sedentary_min_day": "Sitting time"}
+                "active_min_week": "Activity (self-report)", "phq9": "Mood (PHQ-8)",
+                "sleep_dev": "Sleep (outside 6-8 h)", "sedentary_min_day": "Sitting time"}
 
 
 @lru_cache
@@ -45,46 +45,56 @@ def _draws(n: int = 20000) -> tuple[np.ndarray, list[str]]:
                                    np.array(a["cov"]), n), a["names"]
 
 
+def _size(points: float) -> str:
+    return "Bigger" if points >= 2 else "Medium" if points >= 0.75 else "Smaller" if points > 0.1 else "On target"
+
+
 def lever_age(profile: dict) -> dict:
     """
-    Years of processing-speed aging associated with the player's modifiable
-    factors versus healthy targets, from the NHANES survey-weighted model.
+    "What matters most for you": for each modifiable factor, how many points lower people scored
+    on the NHANES processing-speed test (DSST) at your value vs the healthy target, after adjusting
+    for age, sex, education and income (survey-weighted, cross-sectional association).
 
-    years = sum_k beta_k (x_user_k - x_target_k) / (-beta_age)
-    Positive = your current factors go with slower speed typical of an older
-    person. 95% CI by Monte Carlo over the coefficient covariance.
+    Safety floors so nobody is rewarded for unhealthy extremes:
+      * blood pressure: no credit below 120 (low BP can cause falls); unknown BP is left out.
+      * mood: PHQ scores 0-4 count as on target.
+      * sleep: 6-8 hours counts as on target (dead zone of 1 h around 7 h).
+    Only factors significant in NHANES (p<0.05) count; the others are shown greyed.
+    No "years" are shown to users; points are the unit.
     """
     draws, names = _draws()
-    age_b = draws[:, names.index("age")]
+    sbp = profile.get("sbp")
     x = {
-        "sbp": float(np.clip(profile["sbp"], 90, 200)),
-        "diabetes": float(profile["diabetes"]),
-        "current_smoker": float(profile["current_smoker"]),
-        "active_min_week": float(np.clip(profile["active_min_week"], 0, 3000)),
-        "phq9": float(np.clip(profile["phq9"], 0, 27)),
-        "sleep_dev": abs(float(np.clip(profile["sleep_hours"], 2, 12)) - 7),
-        "sedentary_min_day": float(np.clip(profile["sedentary_min_day"], 0, 1140)),
+        "sbp": None if sbp is None else max(float(np.clip(sbp, 90, 200)), 120.0),
+        "diabetes": float(bool(profile["diabetes"])),
+        "current_smoker": float(bool(profile["current_smoker"])),
+        "active_min_week": float(np.clip(profile.get("active_min_week") or 0, 0, 3000)),
+        "phq9": None if profile.get("phq9") is None else max(float(np.clip(profile["phq9"], 0, 27)), 4.0),
+        "sleep_dev": max(abs(float(np.clip(profile["sleep_hours"], 2, 12)) - 7) - 1, 0.0),
+        "sedentary_min_day": float(np.clip(profile.get("sedentary_min_day") or 360, 0, 1140)),
     }
-    # Only factors with a statistically significant NHANES association (p<0.05)
-    # enter the headline total. Null associations (e.g. self-reported activity,
-    # sitting time) are shown but excluded, because their point estimates are
-    # noise or confounded (people with more education sit more and score higher).
+    target = {**TARGETS, "phq9": 4.0}
     per, total = {}, np.zeros(len(draws))
     for k, v in x.items():
-        pts = draws[:, names.index(k)] * (v - TARGETS[k])
-        yrs = -(pts / -age_b)  # flip so "older" is positive
         sig = _p_value(k) < 0.05
+        if v is None:
+            per[k] = {"label": LEVER_LABELS[k], "value": None, "target": target[k], "points": None, "ci": None,
+                      "significant": bool(sig), "known": False, "size": "Unknown"}
+            continue
+        lower = -draws[:, names.index(k)] * (v - target[k])     # points lower than at target (positive = worse)
         if sig:
-            total += yrs
-        per[k] = {"label": LEVER_LABELS[k], "value": v, "target": TARGETS[k],
-                  "years": float(np.median(yrs)),
-                  "ci": [float(np.percentile(yrs, 2.5)), float(np.percentile(yrs, 97.5))],
-                  "significant": bool(sig), "in_total": bool(sig)}
-    return {"years": float(np.median(total)),
+            total += lower
+        p = float(np.median(lower))
+        per[k] = {"label": LEVER_LABELS[k], "value": v, "target": target[k], "points": p,
+                  "ci": [float(np.percentile(lower, 2.5)), float(np.percentile(lower, 97.5))],
+                  "significant": bool(sig), "known": True, "size": _size(p) if sig else "Not shown in data"}
+    order = sorted(per.items(), key=lambda kv: (not kv[1]["significant"], not kv[1]["known"], -(kv[1]["points"] or 0)))
+    return {"points": float(np.median(total)),
             "ci": [float(np.percentile(total, 2.5)), float(np.percentile(total, 97.5))],
-            "per_factor": dict(sorted(per.items(), key=lambda kv: -kv[1]["years"])),
-            "age_coef": associations()["age_coef"], "n": associations()["n"],
-            "rule": "Total sums factors with p<0.05 in NHANES; others shown, not counted."}
+            "per_factor": dict(order), "n": associations()["n"],
+            "age_coef": associations()["age_coef"],
+            "rule": "Points = how much lower people scored on a speed test (DSST) at your value vs the healthy target, "
+                    "in NHANES 2011-2014 adults 60+. Only factors with a clear link (p<0.05) count."}
 
 
 def _p_value(key: str) -> float:

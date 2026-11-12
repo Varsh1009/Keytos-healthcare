@@ -15,16 +15,17 @@ import numpy as np
 import pandas as pd
 import uvicorn
 import base64
+import json
 import random
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from neurotrail import coach, db, games as gym, scoring, voice as vox, wearables  # noqa: E402
+from neurotrail import auth, coach, db, diseases, games as gym, regions as RG, scoring, tissue, voice as vox, wearables  # noqa: E402
 from neurotrail.quests import LANCET_CITE, QUEST_BY_ID, QUESTS, TIER_BONUS  # noqa: E402
 from neurotrail.state import Player, today  # noqa: E402
 
@@ -32,6 +33,38 @@ WEB = Path(__file__).resolve().parent
 ART = ROOT / "models" / "artifacts"
 app = FastAPI(title="NeuroTrail")
 app.mount("/static", StaticFiles(directory=WEB / "static"), name="static")
+
+
+class MeRouter:
+    """Resolve /api/me/... to the signed-in player; refuse direct /api/player/... from the browser."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            path = scope["path"]
+            if path.startswith("/api/player/"):
+                return await JSONResponse({"detail": "Use /api/me (sign in first)"}, 401)(scope, receive, send)
+            if path.startswith("/api/me"):
+                cookies = {}
+                for k, v in scope.get("headers", []):
+                    if k == b"cookie":
+                        for part in v.decode().split(";"):
+                            if "=" in part:
+                                a, b = part.strip().split("=", 1)
+                                cookies[a] = b
+                name = auth.player_for(cookies.get(auth.COOKIE))
+                if not name:
+                    return await JSONResponse({"detail": "Not signed in"}, 401)(scope, receive, send)
+                from urllib.parse import quote
+                rest = path[len("/api/me"):]
+                new = f"/api/player/{quote(name)}{rest}"
+                scope = {**scope, "path": new, "raw_path": new.encode()}
+        return await self.app(scope, receive, send)
+
+
+app.add_middleware(MeRouter)
 
 
 @app.middleware("http")
@@ -50,6 +83,24 @@ def get(name: str) -> Player:
     return p
 
 
+RING_OF = {"steps": "move", "bp": "body", "labs": "body", "smoke": "body", "sleep": "body", "hearing": "body",
+           "connect": "mind", "joy": "mind", "speed": "mind"}
+RING_GOAL = 150
+
+
+def _rings(p: Player) -> dict:
+    """Weekly care rings (last 7 days): evidence-weighted habit points + check points."""
+    cut = (date.today() - timedelta(days=6)).isoformat()
+    r = {"move": 0, "mind": 0, "body": 0}
+    for l in p.logs:
+        if l["date"] >= cut:
+            r[RING_OF.get(l["quest"], "mind")] += l["sparks"]
+    for g in db.games(p.name):
+        if g["date"] >= cut:
+            r["mind"] += g["sparks"]
+    return {k: {"points": v, "goal": RING_GOAL} for k, v in r.items()}
+
+
 def snapshot(p: Player) -> dict:
     rounds = db.rounds(p.name)
     return {
@@ -57,8 +108,10 @@ def snapshot(p: Player) -> dict:
         "level": p.level(), "streak": p.streak(), "week": p.week(), "trail": p.trail_status(),
         "steps": {q.id: p.steps_today(q.id) for q in p.active_quests()},
         "lever": scoring.lever_age(p.profile()) if p.onboarded else None,
-        "support": p.phq9 >= 10 or p.phq_item9 > 0,
+        "support": bool(p.phq9 is not None and p.phq9 >= 10) or p.feel_down,
         "best_speed": max((r["correct"] for r in rounds), default=None),
+        "first_speed": rounds[0]["correct"] if rounds else None,
+        "rings": _rings(p),
         "rounds_today": sum(r["date"] == today() for r in rounds),
     }
 
@@ -83,8 +136,7 @@ def quests() -> list[dict]:
     return out
 
 
-@app.get("/api/players")
-def players() -> list[dict]:
+def _players_unused() -> list[dict]:
     week0 = (date.today() - timedelta(days=6)).isoformat()
     rows = []
     for n in db.list_players():
@@ -95,14 +147,91 @@ def players() -> list[dict]:
 
 
 class NewPlayer(BaseModel):
-    name: str = Field(min_length=1, max_length=24)
+    name: str = Field(default="Guest", max_length=24)
 
 
-@app.post("/api/players")
-def add_player(body: NewPlayer) -> dict:
-    name = body.name.strip()
-    p = Player.load(name) or Player.create(name)
-    return snapshot(p)
+# ====================================================================== Auth (passkeys + guest)
+import secrets as _secrets
+
+
+def _set_cookie(resp: JSONResponse, token: str) -> JSONResponse:
+    resp.set_cookie(auth.COOKIE, token, httponly=True, samesite="strict", max_age=60 * 60 * 12, path="/")
+    return resp
+
+
+def _cookie(request: Request) -> str | None:
+    return request.cookies.get(auth.COOKIE)
+
+
+@app.get("/auth/me")
+def auth_me(request: Request) -> dict:
+    name = auth.player_for(_cookie(request))
+    if not name:
+        return {"signed_in": False}
+    p = Player.load(name)
+    if p is None:
+        return {"signed_in": False}
+    return {"signed_in": True, "name": name, "guest": bool(p and p.guest), "passkey": auth.has_passkey(name),
+            "onboarded": bool(p and p.onboarded)}
+
+
+@app.post("/auth/guest")
+def auth_guest(body: NewPlayer | None = None) -> JSONResponse:
+    base = (body.name.strip() if body and body.name.strip() else "Guest")[:20]
+    name = base
+    while Player.load(name) is not None:
+        name = f"{base}-{_secrets.token_hex(2)}"
+    p = Player.create(name)
+    p.guest = True
+    p.save()
+    return _set_cookie(JSONResponse({"name": name}), auth.new_session(name, "guest"))
+
+
+@app.post("/auth/register/options")
+def auth_register_options(request: Request) -> dict:
+    name = auth.player_for(_cookie(request))
+    if not name:
+        raise HTTPException(401, "Start as a guest first, then save with a passkey.")
+    return auth.register_options(name)
+
+
+class WebAuthnIn(BaseModel):
+    key: str
+    credential: dict
+
+
+@app.post("/auth/register/verify")
+def auth_register_verify(body: WebAuthnIn) -> dict:
+    try:
+        name = auth.register_verify(body.key, body.credential)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(400, f"Passkey not saved: {e}")
+    p = Player.load(name)
+    p.guest = False
+    p.save()
+    return {"ok": True, "name": name}
+
+
+@app.post("/auth/login/options")
+def auth_login_options() -> dict:
+    return auth.login_options()
+
+
+@app.post("/auth/login/verify")
+def auth_login_verify(body: WebAuthnIn) -> JSONResponse:
+    try:
+        name = auth.login_verify(body.key, body.credential)
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(400, f"Sign-in failed: {e}")
+    return _set_cookie(JSONResponse({"ok": True, "name": name}), auth.new_session(name, "passkey"))
+
+
+@app.post("/auth/logout")
+def auth_logout(request: Request) -> JSONResponse:
+    auth.end(_cookie(request))
+    r = JSONResponse({"ok": True})
+    r.delete_cookie(auth.COOKIE, path="/")
+    return r
 
 
 @app.get("/api/player/{name}")
@@ -111,28 +240,55 @@ def player(name: str) -> dict:
 
 
 class Onboard(BaseModel):
+    """Quick start: 2 screens. No education/income (the score doesn't use them), no depression form."""
     age: int = Field(ge=18, le=100)
     female: bool
-    educ: int = Field(ge=1, le=5)
-    income_pir: float = Field(ge=0, le=5)
-    sbp: float = Field(ge=70, le=250)
     diabetes: bool
     current_smoker: bool
-    active_min_week: float = Field(ge=0, le=3000)
-    sedentary_min_day: float = Field(ge=0, le=1140)
     sleep_hours: float = Field(ge=2, le=12)
-    phq: list[int] = Field(min_length=9, max_length=9)
+    sbp: float | None = Field(default=None, ge=70, le=250)   # only if they know it
+    hearing_trouble: bool = False
+    feel_down: bool = False
 
 
 @app.post("/api/player/{name}/onboard")
 def onboard(name: str, body: Onboard) -> dict:
     p = get(name)
     for k, v in body.model_dump().items():
-        if k != "phq":
-            setattr(p, k, v)
-    p.phq9 = int(sum(max(0, min(3, x)) for x in body.phq))
-    p.phq_item9 = int(body.phq[8])
+        setattr(p, k, v)
     p.onboarded = True
+    p.save()
+    return snapshot(p)
+
+
+class Mood(BaseModel):
+    answers: list[int] = Field(min_length=8, max_length=8)   # PHQ-8 (no self-harm item)
+
+
+@app.post("/api/player/{name}/mood")
+def mood(name: str, body: Mood) -> dict:
+    """PHQ-8 (Kroenke 2009). Score >= 10 shows support resources before anything else."""
+    p = get(name)
+    p.phq9 = int(sum(max(0, min(3, x)) for x in body.answers))
+    p.feel_down = p.phq9 >= 10
+    p.save()
+    return {"score": p.phq9, "support": p.phq9 >= 10, "player": snapshot(p)}
+
+
+class Profile(BaseModel):
+    sbp: float | None = Field(default=None, ge=70, le=250)
+    sleep_hours: float | None = Field(default=None, ge=2, le=12)
+    diabetes: bool | None = None
+    current_smoker: bool | None = None
+    hearing_trouble: bool | None = None
+
+
+@app.post("/api/player/{name}/profile")
+def update_profile(name: str, body: Profile) -> dict:
+    p = get(name)
+    for k, v in body.model_dump().items():
+        if v is not None:
+            setattr(p, k, v)
     p.save()
     return snapshot(p)
 
@@ -167,8 +323,7 @@ def complete(name: str, body: Complete) -> dict:
     q = QUEST_BY_ID.get(body.quest)
     if q is None:
         raise HTTPException(400, "unknown quest")
-    if not all(p.steps_today(q.id)):
-        raise HTTPException(409, "finish every step first (Speed Sprint: play a round and the booster)")
+    # Steps are guidance, not gates (UX review): one clear "Done".
     before = p.level()["index"]
     gained = p.complete(q.id, body.value, body.extra)
     snap = snapshot(p)
@@ -189,10 +344,8 @@ def speed_round(name: str, body: SpeedRound) -> dict:
     p = get(name)
     db.add_round(p.name, today(), body.correct, body.wrong, body.best_combo)
     n = sum(r["date"] == today() for r in db.rounds(p.name))
-    p.set_step("speed", 0, True)
-    p.set_step("speed", 1, True)
-    if n >= 2:
-        p.set_step("speed", 2, True)
+    if n == 1:   # first round today earns the daily check points
+        db.add_game(p.name, "speed", today(), body.correct, {}, gym.GAME_SPARKS)
     snap = snapshot(p)
     snap["history"] = [r["correct"] for r in db.rounds(p.name)][-30:]
     return snap
@@ -221,7 +374,7 @@ def progress(name: str, days: int = 30) -> dict:
                     and dd - timedelta(days=6) <= date.fromisoformat(l["date"]) <= dd]
             if vals:
                 prof[key] = sum(vals) / len(vals)
-        lever_hist.append({"date": d, "years": scoring.lever_age(prof)["years"]})
+        lever_hist.append({"date": d, "points": scoring.lever_age(prof)["points"]})
     return {
         "days": span, "quests_per_day": [by_day.get(d, 0) for d in span],
         "sparks_per_day": [sparks_day.get(d, 0) for d in span],
@@ -255,13 +408,13 @@ def coach_history(name: str) -> dict:
 
 
 class LeverIn(BaseModel):
-    sbp: float
+    sbp: float | None = None
     diabetes: bool
     current_smoker: bool
-    active_min_week: float
-    sedentary_min_day: float
+    active_min_week: float = 0
+    sedentary_min_day: float = 360
     sleep_hours: float
-    phq9: float
+    phq9: float | None = None
 
 
 @app.post("/api/lever")
@@ -359,15 +512,19 @@ def play_game(name: str, body: GameIn) -> dict:
 
 
 # ====================================================================== MRI brain age (real 3D CNN)
-def _mri_payload(p: Player | None, v, age, source: str, only: int | None = None) -> dict:
+def _mri_payload(p: Player | None, v, age, source: str, only: int | None = None, female: bool | None = None) -> dict:
     from neurotrail import mri
     res = mri.analyze(v, age, only)
     cam = res.pop("_cam", None)
     imgs = mri.slices_png(v, cam) if tuple(v.shape) == mri.SHAPE else {}
     res["images"] = {k: "data:image/png;base64," + base64.b64encode(b).decode() for k, b in imgs.items()}
     res["model"] = mri.metrics()
+    regions = None
+    if tuple(v.shape) == mri.SHAPE and age is not None:
+        regions = {k: round(z, 3) for k, z in RG.zscores(RG.measure(v), age, p.female if female is None else female).items()}
+        res["regions"] = regions
     if p is not None:
-        db.add_mri(p.name, source, age, res.get("brain_age"), res.get("gap"), res["format"]["ok"])
+        db.add_mri(p.name, source, age, res.get("brain_age"), res.get("gap"), res["format"]["ok"], regions)
     return res
 
 
@@ -378,36 +535,53 @@ def mri_samples() -> list[dict]:
     d = pd.read_csv(ART / "mri_cnn_predictions.csv").replace({np.nan: None})
     pick = pd.concat([d[d["status"] != "cognitively normal"].sample(8, random_state=1),
                       d[(d["status"] == "cognitively normal") & (d["session"] == "MR1")].sample(8, random_state=1)])
-    return pick[["ID", "file", "Age", "female", "CDR", "status", "brain_age"]].to_dict("records")
+    return pick[["ID", "file", "Age", "female", "CDR", "status"]].to_dict("records")
+
+
+def _nwbv_view(age: float, female: bool, nwbv: float) -> dict:
+    """Teaching view on a real OASIS scan: OASIS's validated brain volume vs healthy people the same age/sex."""
+    from scipy.stats import norm as _n
+    tn = json.loads((ART / "tissue_norms.json").read_text())
+    m = tn["measures"]["nWBV"]
+    b, sc = m["coef"], m["sd_coef"]
+    pred = b[0] + b[1] * age + b[2] * age ** 2 + b[3] * float(female)
+    sd = max(1e-6, sc[0] + sc[1] * age)
+    toward = -(nwbv - pred) / sd                       # positive = less brain tissue than expected
+    t = tn["nwbv_teaching"]
+    return {"nwbv": nwbv, "expected": pred, "toward": float(toward),
+            "per100_lower": int(round(100 * (1 - _n.cdf(toward)))),
+            "flag": bool(toward > t["threshold"]), "threshold": t["threshold"],
+            "healthy_flag_per100": round(t["healthy60_flag_pct"]), "dementia_flag_per100": round(t["dementia_flag_pct"])}
 
 
 @app.post("/api/player/{name}/mri/sample")
 def mri_sample(name: str, file: str = Form(...)) -> dict:
     import nibabel as nib
+    from neurotrail import mri
     p = get(name)
+    meta = pd.read_csv(ROOT / "data" / "raw" / "oasis_mri" / "oasis_cross-sectional.csv")
     d = pd.read_csv(ART / "mri_cnn_predictions.csv")
     row = d[d["file"] == file]
     if row.empty:
         raise HTTPException(404, "unknown sample")
+    r = row.iloc[0]
+    mrow = meta[meta["ID"] == r["ID"]].iloc[0]
     f = next((ROOT / "data" / "raw" / "oasis_mri").glob(f"**/{file}"))
     v = np.asanyarray(nib.load(f).dataobj, dtype=np.float32)
-    from neurotrail import mri
-    fold = mri.heldout_fold(file) if row["status"].iloc[0] == "cognitively normal" else None
-    out = _mri_payload(p, v, float(row["Age"].iloc[0]), f"OASIS sample {row['ID'].iloc[0]}", fold)
-    r = row.iloc[0]
-    out["truth"] = {"id": r["ID"], "age": float(r["Age"]), "status": r["status"],
-                    "cdr": None if pd.isna(r["CDR"]) else float(r["CDR"]),
-                    "oof_brain_age": float(r["brain_age"]),
-                    "note": ("Dementia participants were never seen by any model, so all 5 were used."
-                             if r["status"] != "cognitively normal"
-                             else f"Scored only by fold {fold}'s model, the one that never saw this person's scan.")}
-    return out
+    view = _nwbv_view(float(r["Age"]), bool(r["female"]), float(mrow["nWBV"]))
+    imgs = mri.slices_png(v, None)
+    db.add_mri(p.name, f"OASIS sample {r['ID']}", float(r["Age"]), None, None, True, {"nwbv_toward": view["toward"]})
+    return {"kind": "sample", "id": r["ID"], "age": float(r["Age"]), "female": bool(r["female"]), "status": r["status"],
+            "cdr": None if pd.isna(r["CDR"]) else float(r["CDR"]), "view": view,
+            "images": {k: "data:image/png;base64," + base64.b64encode(b).decode() for k, b in imgs.items()}}
 
 
 @app.post("/api/player/{name}/mri/upload")
-async def mri_upload(name: str, file: UploadFile = File(...), age: float | None = Form(None)) -> dict:
+async def mri_upload(name: str, file: UploadFile = File(...)) -> dict:
+    """Uploads get a format check and slice preview only: our own MRI measures did not pass validation,
+    so we don't put numbers on a personal scan (see How we know)."""
     from neurotrail import mri
-    p = get(name)
+    get(name)
     if not file.filename.lower().endswith((".nii", ".nii.gz")):
         raise HTTPException(400, "Upload a NIfTI file (.nii or .nii.gz)")
     data = await file.read()
@@ -417,7 +591,15 @@ async def mri_upload(name: str, file: UploadFile = File(...), age: float | None 
         v = mri.load_upload(data, file.filename)
     except Exception as e:  # noqa: BLE001
         raise HTTPException(400, f"Couldn't read that NIfTI file: {e}")
-    return _mri_payload(p, v, age if age is not None else float(p.age), f"upload {file.filename}")
+    fmt = mri.check_format(v)
+    imgs = mri.slices_png(v, None) if tuple(v.shape) == mri.SHAPE else {}
+    return {"kind": "upload", "format": fmt,
+            "images": {k: "data:image/png;base64," + base64.b64encode(b).decode() for k, b in imgs.items()}}
+
+
+@app.get("/api/facts")
+def facts() -> dict:
+    return json.loads((ART / "facts.json").read_text())
 
 
 @app.get("/api/mri/metrics")
@@ -493,6 +675,73 @@ def wearables_get(name: str) -> dict:
     all_days = db.days(p.name)
     recent = dict(list(all_days.items())[-60:])
     return {"days": recent, "summary": wearables.summary(all_days), "player": snapshot(p)}
+
+
+# ====================================================================== Brain disease atlas
+SKILLS = [  # skill -> games that track it -> brain regions most linked to that skill (approximate)
+    {"id": "memory", "name": "Memory", "icon": "📝", "games": ["recall"], "better": "higher",
+     "regions": ["hippocampus", "Parahippocampal Gyrus", "Temporal Pole", "Middle Temporal Gyrus"]},
+    {"id": "speed", "name": "Speed & attention", "icon": "⚡", "games": ["speed", "stroop", "trails"], "better": "mixed",
+     "regions": ["Middle Frontal Gyrus", "Superior Frontal Gyrus", "Cingulate Gyrus, anterior", "Superior Parietal Lobule"]},
+    {"id": "movement", "name": "Movement", "icon": "🏃", "games": ["reaction"], "better": "lower",
+     "regions": ["Precentral Gyrus", "Juxtapositional Lobule Cortex", "putamen", "caudate"]},
+    {"id": "language", "name": "Language & speech", "icon": "🗣️", "games": ["fluency", "voice"], "better": "higher",
+     "regions": ["Inferior Frontal Gyrus", "Superior Temporal Gyrus", "Planum Temporale", "Angular Gyrus"]},
+    {"id": "spatial", "name": "Spatial memory", "icon": "🟦", "games": ["corsi"], "better": "higher",
+     "regions": ["Superior Parietal Lobule", "Precuneous Cortex", "Lateral Occipital Cortex, superior"]},
+]
+
+
+@app.get("/api/atlas")
+def atlas() -> dict:
+    n = RG.norms()
+    return {"regions": RG.public_regions(), "diseases": diseases.catalog(),
+            "alzheimers_measured": n["alzheimers_map"], "region_test_retest": n.get("test_retest"), "norm_n": n["n_normal"],
+            "skills": [{**sk, "regions": diseases._ids(*sk["regions"])} for sk in SKILLS]}
+
+
+def _skill_status(p: Player) -> list[dict]:
+    out = []
+    for sk in SKILLS:
+        series = []
+        for gid in sk["games"]:
+            if gid == "speed":
+                rows = [r["correct"] for r in db.rounds(p.name)]
+                better = "higher"
+            elif gid == "voice":
+                rows = [v["metrics"]["speech_tempo"] for v in db.voices(p.name) if v["task"] == "reading"]
+                better = "higher"
+            else:
+                rows = [g["score"] for g in db.games(p.name, gid)]
+                better = gym.GAME_BY_ID[gid]["better"]
+            if rows:
+                series.append({"game": gid, "first": rows[0], "last": rows[-1], "plays": len(rows), "better": better,
+                               "trend": None if len(rows) < 2 else ("up" if rows[-1] > rows[0] else "down" if rows[-1] < rows[0] else "same")})
+        plays = sum(s["plays"] for s in series)
+        good = [s for s in series if s["trend"] and ((s["trend"] == "up") == (s["better"] == "higher")) and s["trend"] != "same"]
+        bad = [s for s in series if s["trend"] and ((s["trend"] == "up") != (s["better"] == "higher")) and s["trend"] != "same"]
+        status = "untested" if not plays else "learning" if plays < 3 or all(s["trend"] is None for s in series) else \
+            "improving" if len(good) > len(bad) else "dipping" if len(bad) > len(good) else "steady"
+        out.append({"id": sk["id"], "name": sk["name"], "icon": sk["icon"], "status": status, "plays": plays, "series": series})
+    return out
+
+
+@app.get("/api/player/{name}/brain")
+def my_brain(name: str) -> dict:
+    """Your brain on the atlas: per-region MRI scores (if any scans) + skills from games/voice."""
+    p = get(name)
+    scans = [m for m in db.mris(p.name) if m["regions"]][::-1]   # oldest -> newest
+    rt = RG.norms().get("test_retest", {})
+    change = None
+    if len(scans) >= 2:
+        a, b = scans[-2]["regions"], scans[-1]["regions"]
+        thr = rt.get("z_change_95pct", 0.6)
+        change = {"threshold": thr, "from": scans[-2]["ts"], "to": scans[-1]["ts"],
+                  "regions": {k: round(b[k] - a[k], 3) for k in b if k in a},
+                  "beyond_noise": [k for k in b if k in a and abs(b[k] - a[k]) > thr]}
+    return {"scans": [{"ts": m["ts"], "source": m["source"], "brain_age": m["brain_age"], "gap": m["gap"],
+                       "age": m["age"], "regions": m["regions"]} for m in scans],
+            "change": change, "test_retest": rt, "skills": _skill_status(p)}
 
 
 if __name__ == "__main__":

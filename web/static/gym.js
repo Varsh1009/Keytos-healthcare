@@ -13,14 +13,14 @@ async function catalog() { CAT ||= (await X().api('/api/games')).games; return C
 export async function pageGym() {
   RUN++;
   const games = await catalog();
-  STATS = await X().api(`/api/player/${encodeURIComponent(me().name)}/games`);
+  STATS = await X().api(`/api/me/games`);
   const played = Object.values(STATS).filter(s => s.played_today).length;
   $('#p-gym').innerHTML = `<div class="scrollpage"><div class="wrap">
     <div class="h1">🧩 Brain Gym</div>
     <div class="sub">Seven games, each a digital version of a real neuropsychological test. ${played}/7 played today · +15 ⚡ for each game's first play of the day.
       <br><b>Honest note:</b> only Speed Sprint has trial evidence linked to dementia. The others track your abilities over time; brain-training reviews find little transfer to everyday life (Simons 2016).</div>
     <div class="gymgrid">${games.map(g => { const s = STATS[g.id] || {}; return `
-      <a class="gcard glass" href="${g.id === 'speed' ? '#/sprint' : '#/game/' + g.id}" style="--c:${g.color}">
+      <a class="gcard glass" href="${g.id === 'speed' ? '#/sprint' : '#/check/' + g.id}" style="--c:${g.color}">
         <div class="gtop"><div class="gicon">${g.icon}</div>${s.played_today ? '<span class="badge b-rct">✓ today</span>' : '<span class="badge b-weak">+15 ⚡</span>'}</div>
         <div class="gtitle">${g.title}</div><div class="gdom">${g.domain}</div>
         <div class="gtest">${g.test}</div>
@@ -40,9 +40,9 @@ function spark(h, better) {
 export async function pageGame(id) {
   RUN++;
   const games = await catalog(), g = games.find(x => x.id === id);
-  if (!g || id === 'speed') { location.hash = id === 'speed' ? '#/sprint' : '#/gym'; return; }
+  if (!g || id === 'speed') { location.hash = id === 'speed' ? '#/sprint' : '#/checks'; return; }
   $('#p-game').innerHTML = `<div class="sprint-wrap"><div class="arcade gamebox" style="--c:${g.color}">
-    <a class="close" href="#/gym" style="text-decoration:none;display:grid;place-items:center">✕</a>
+    <a class="close" href="#/checks" style="text-decoration:none;display:grid;place-items:center">✕</a>
     <div id="gb"></div></div></div>`;
   intro(g);
 }
@@ -52,28 +52,24 @@ function intro(g) {
     <h2 style="font:700 40px 'Space Grotesk';margin:10px 0">${g.icon} ${g.title}</h2>
     <p class="muted" style="max-width:600px;margin:0 auto">${g.how}</p>
     <div class="a-big">${s.best ?? '–'}</div><div class="muted">your best · ${g.unit}</div>
-    <p class="muted" style="max-width:600px;margin:12px auto">${g.evidence} <a href="${g.url}" target="_blank" style="color:var(--cyan)">source ↗</a></p>
+    <p class="muted" style="max-width:600px;margin:12px auto">${g.evidence} <a href="${g.url}" target="_blank">source ↗</a></p>
     <div class="row" style="justify-content:center" id="startRow"><button class="cta" id="go">▶ Start</button></div>`;
   $('#go').onclick = () => ({ recall: recall, fluency: fluency, trails: trails, stroop: stroop, corsi: corsi, reaction: reaction })[g.id](g);
   if (g.id === 'recall') recallDelayedButton(g);
 }
 async function finish(g, score, detail, lines = []) {
-  const r = await X().api(`/api/player/${encodeURIComponent(me().name)}/game`, { game: g.id, score, detail });
+  const r = await X().api(`/api/me/game`, { game: g.id, score, detail });
   X().setME(r.player); STATS[g.id] = r.stats;
   const prevBest = r.stats.history.length > 1 ? (g.better === 'higher' ? Math.max(...r.stats.history.slice(0, -1)) : Math.min(...r.stats.history.slice(0, -1))) : null;
   const pb = prevBest == null || (g.better === 'higher' ? score > prevBest : score < prevBest);
-  const nh = r.nhanes;
+  
   $('#gb').innerHTML = `<div class="eyebrow">${g.title.toUpperCase()} · RESULT</div><div class="a-big">${score}</div><div class="muted">${g.unit}</div>
     ${pb ? '<div style="margin-top:10px"><span class="pb">NEW PERSONAL BEST</span></div>' : ''}
     ${r.sparks_gained ? `<div class="reward" style="text-align:center;margin-top:8px">+${r.sparks_gained} ⚡</div>` : '<div class="muted" style="margin-top:8px">Already earned today\'s sparks for this game. Practice still counts in your history.</div>'}
     ${lines.map(l => `<p class="muted">${l}</p>`).join('')}
-    ${nh ? `<div class="card" style="max-width:560px;margin:14px auto;text-align:left"><div class="eyebrow">VS REAL NHANES ADULTS (${me().profile.female ? 'women' : 'men'} ${nh.age_band[0]}–${nh.age_band[1]}, n=${nh.n})</div>
-      <div style="font:700 30px 'Space Grotesk';margin:6px 0">${Math.round(nh.percentile)}th percentile</div>
-      <div class="pctbar"><i style="left:${nh.percentile}%"></i><span style="left:25%"></span><span style="left:50%"></span><span style="left:75%"></span></div>
-      <div class="muted">NHANES median ${nh.median} (middle half ${nh.p25}–${nh.p75}). Approximate: the digital format and word list differ from the NHANES interview.</div></div>`
-      : (g.norm ? `<p class="muted">No NHANES percentile for this mode: it isn't comparable to the interview format.</p>` : '')}
+    <p class="muted">Compared only with you: your first try was ${r.stats.history[0]}. ${r.stats.plays < 3 ? 'Learning your baseline: play on 3 different days to see a trend.' : ''}</p>
     ${r.stats.history.length > 1 ? `<div style="max-width:560px;height:160px;margin:16px auto"><canvas id="gh"></canvas></div>` : ''}
-    <div class="row" style="justify-content:center"><button class="cta" id="again">↻ Play again</button><a class="ghost" href="#/gym" style="text-decoration:none">Back to the gym</a></div>`;
+    <div class="row" style="justify-content:center"><button class="cta" id="again">↻ Play again</button><a class="ghost" href="#/checks">Back to Checks</a></div>`;
   if (r.stats.history.length > 1) X().chart('gh', { type: 'line', data: { labels: r.stats.history.map((_, i) => i + 1), datasets: [{ data: r.stats.history, borderColor: g.color, backgroundColor: 'rgba(255,255,255,.05)', fill: true, tension: .3 }] }, options: X().chartOpts({ plugins: { legend: { display: false } } }) });
   $('#again').onclick = () => intro(g);
   X().renderHUD();
@@ -82,7 +78,7 @@ async function finish(g, score, detail, lines = []) {
 // ============================================================ WORD RECALL (CERAD-style)
 async function recall(g) {
   const run = RUN, { words, distractors } = await X().api('/api/games/recall-words');
-  const mode = await chooseMode([['type', '⌨️ Free recall (type words)', 'Same as NHANES: recall without hints. Gets a NHANES percentile.'], ['tap', '👆 Tap mode (no keyboard)', 'Pick the words from a grid. Easier, so no NHANES comparison.']]);
+  const mode = await chooseMode([['tap', '👆 Tap the words', 'Pick the words from a grid. Works anywhere.'], ['type', '⌨️ Type the words', 'Harder: recall without hints.']]);
   if (run !== RUN) return;
   const trials = [];
   for (let t = 0; t < 3; t++) {
@@ -97,7 +93,7 @@ async function recall(g) {
   }
   const learning = trials.reduce((a, b) => a + b.hits, 0);
   localStorage.setItem('nt_recall', JSON.stringify({ words, distractors, mode, at: Date.now(), player: me().name }));
-  finish(g, learning, { trials: trials.map(t => t.hits), false_alarms: trials.map(t => t.fa), mode, comparable: mode === 'type', norm_col: 'cerad_learning' },
+  finish(g, learning, { trials: trials.map(t => t.hits), false_alarms: trials.map(t => t.fa), mode },
     [`Trials: ${trials.map(t => t.hits).join(' → ')} words. Come back in 5+ minutes for delayed recall (it opens on this game's page).`]);
 }
 function collectRecall(words, distractors, mode, title) {
@@ -129,8 +125,8 @@ function recallDelayedButton(g) {
   $('#delayed').onclick = async () => {
     const r = await collectRecall(st.words, st.distractors, st.mode, `DELAYED RECALL · ${Math.round(mins)} MIN LATER`);
     localStorage.removeItem('nt_recall');
-    finish(g, r.hits, { delayed: true, minutes: Math.round(mins), false_alarms: r.fa, mode: st.mode, comparable: st.mode === 'type', norm_col: 'cerad_delayed' },
-      ['Delayed recall (0–10). NHANES compares this against its own delayed-recall trial.']);
+    finish(g, r.hits, { delayed: true, minutes: Math.round(mins), false_alarms: r.fa, mode: st.mode },
+      ['Delayed recall (0–10), compared with your own earlier tries.']);
   };
 }
 function chooseMode(opts) {
@@ -143,7 +139,9 @@ function chooseMode(opts) {
 // ============================================================ ANIMAL NAMING (fluency)
 async function fluency(g) {
   const run = RUN, SR = window.SpeechRecognition || window.webkitSpeechRecognition;
-  const mode = await chooseMode([...(SR ? [['voice', '🎤 Say them out loud', 'Closest to the NHANES interview. Gets a NHANES percentile.']] : []), ['type', '⌨️ Type them', 'Works anywhere. Typing is slower, so no NHANES comparison.']]);
+  let onDevice = false;
+  try { onDevice = !!(SR && 'processLocally' in SR.prototype); } catch { }
+  const mode = await chooseMode([...(SR ? [['voice', '🎤 Say them out loud', onDevice ? 'Speech is turned into words on this device.' : 'Heads up: your browser sends the audio to Google to turn it into words. Sound measurements stay here.']] : []), ['type', '⌨️ Type them', 'Nothing leaves this computer.']]);
   if (run !== RUN) return;
   const entries = [];
   $('#gb').innerHTML = `<div class="eyebrow">ANIMAL NAMING · 60 SECONDS</div><div class="timer" style="margin:10px auto"><svg width="120" height="120"><circle cx="60" cy="60" r="52" stroke="rgba(255,255,255,.1)" stroke-width="8" fill="none"/><circle id="ft" cx="60" cy="60" r="52" stroke="#3DDC97" stroke-width="8" fill="none" stroke-linecap="round" stroke-dasharray="326.7"/></svg><div class="t" id="fl">60</div></div>
@@ -152,14 +150,14 @@ async function fluency(g) {
   const show = () => $('#fgot').innerHTML = entries.map(e => `<span class="chip on">${e}</span>`).join('');
   let rec = null;
   if (mode === 'type') { $('#fin').focus(); $('#fin').onkeydown = e => { if (e.key === 'Enter' && e.target.value.trim()) { entries.push(e.target.value.trim()); e.target.value = ''; show(); } }; }
-  else { rec = new SR(); rec.continuous = true; rec.interimResults = false; rec.lang = 'en-US';
+  else { rec = new SR(); rec.continuous = true; rec.interimResults = false; rec.lang = 'en-US'; if (onDevice) { try { rec.processLocally = true; } catch { } }
     rec.onresult = ev => { for (let i = ev.resultIndex; i < ev.results.length; i++) if (ev.results[i].isFinal) ev.results[i][0].transcript.split(/[\s,]+/).filter(Boolean).forEach(w => entries.push(w)); show(); };
     rec.onerror = e => X().toast('Microphone: ' + e.error); try { rec.start(); } catch { } }
   const t0 = performance.now();
   while (performance.now() - t0 < 60000) { if (run !== RUN) { rec?.stop(); return; } const left = 60 - (performance.now() - t0) / 1000; $('#fl').textContent = Math.ceil(left); $('#ft').style.strokeDashoffset = 326.7 * (1 - left / 60); await sleep(200); }
   rec?.stop(); await sleep(400);
   const sc = await X().api('/api/games/fluency-score', { entries });
-  finish(g, sc.score, { mode, valid: sc.valid, unrecognized: sc.unrecognized, comparable: mode === 'voice' },
+  finish(g, sc.score, { mode, valid: sc.valid, unrecognized: sc.unrecognized },
     [sc.valid.length ? `Counted: ${sc.valid.join(', ')}` : 'No animals recognized.', sc.unrecognized.length ? `Not counted (not in our 350-animal list or repeats): ${sc.unrecognized.join(', ')}` : '']);
 }
 
@@ -284,8 +282,8 @@ export async function pageMRI() {
     </div></div></div>`;
   const show = async (promise) => { $('#mout').innerHTML = '<div class="empty"><div class="typing"><span></span><span></span><span></span></div> Running the 5-model 3D CNN ensemble + Grad-CAM…</div>';
     try { renderMRI(await promise); } catch (e) { $('#mout').innerHTML = `<div class="empty">⚠ ${e.message}</div>`; } };
-  $('#mrun').onclick = () => { const fd = new FormData(); fd.append('file', $('#msel').value); show(fetchForm(`/api/player/${encodeURIComponent(me().name)}/mri/sample`, fd)); };
-  const up = f => { const fd = new FormData(); fd.append('file', f); fd.append('age', me().profile.age); show(fetchForm(`/api/player/${encodeURIComponent(me().name)}/mri/upload`, fd)); };
+  $('#mrun').onclick = () => { const fd = new FormData(); fd.append('file', $('#msel').value); show(fetchForm(`/api/me/mri/sample`, fd)); };
+  const up = f => { const fd = new FormData(); fd.append('file', f); fd.append('age', me().profile.age); show(fetchForm(`/api/me/mri/upload`, fd)); };
   $('#mfile').onchange = e => e.target.files[0] && up(e.target.files[0]);
   const d = $('#drop'); d.ondragover = e => { e.preventDefault(); d.classList.add('over'); }; d.ondragleave = () => d.classList.remove('over');
   d.ondrop = e => { e.preventDefault(); d.classList.remove('over'); e.dataTransfer.files[0] && up(e.dataTransfer.files[0]); };

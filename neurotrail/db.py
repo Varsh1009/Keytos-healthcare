@@ -75,6 +75,9 @@ def conn():
         c.row_factory = sqlite3.Row
         try:
             c.executescript(SCHEMA)
+            cols = {r[1] for r in c.execute("PRAGMA table_info(mri_results)")}
+            if "regions" not in cols:   # migration: per-region z-scores per scan
+                c.execute("ALTER TABLE mri_results ADD COLUMN regions TEXT")
             yield c
             c.commit()
         finally:
@@ -201,16 +204,18 @@ def games(player: str, game: str | None = None) -> list[dict]:
              "detail": json.loads(r["detail"] or "{}")} for r in rows]
 
 
-def add_mri(player: str, source: str, age, brain_age, gap, ok: bool) -> None:
+def add_mri(player: str, source: str, age, brain_age, gap, ok: bool, regions: dict | None = None) -> None:
     with conn() as c:
-        c.execute("INSERT INTO mri_results(player,source,age,brain_age,gap,format_ok,ts) VALUES (?,?,?,?,?,?,?)",
-                  (player, source, age, brain_age, gap, int(ok), now()))
+        c.execute("INSERT INTO mri_results(player,source,age,brain_age,gap,format_ok,ts,regions) VALUES (?,?,?,?,?,?,?,?)",
+                  (player, source, age, brain_age, gap, int(ok), now(), json.dumps(regions) if regions else None))
 
 
 def mris(player: str) -> list[dict]:
     with conn() as c:
-        return [dict(r) for r in c.execute("SELECT source,age,brain_age,gap,format_ok,ts FROM mri_results "
-                                           "WHERE player=? ORDER BY id DESC LIMIT 20", (player,))]
+        rows = c.execute("SELECT source,age,brain_age,gap,format_ok,ts,regions FROM mri_results "
+                         "WHERE player=? ORDER BY id DESC LIMIT 20", (player,)).fetchall()
+    return [{**{k: r[k] for k in ("source", "age", "brain_age", "gap", "format_ok", "ts")},
+             "regions": json.loads(r["regions"]) if r["regions"] else None} for r in rows]
 
 
 # ------------------------------------------------------------------ voice

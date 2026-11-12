@@ -25,24 +25,27 @@ from .state import Player
 log = logging.getLogger(__name__)
 MODEL = "claude-opus-5-5"
 
-SYSTEM = """You are NeuroCoach inside NeuroTrail, a brain-health habit game for adults.
+SYSTEM = """You are the NeuroTrail assistant, a friendly brain-health habit coach for adults.
 Ground every number you mention in a tool result from this conversation; never invent statistics,
 risks or diagnoses. Call tools before answering questions about the player's data, progress or plan.
 
 What the data can and cannot say:
-- The "lever" score comes from a cross-sectional NHANES association model (processing speed, adults 60-80).
-  Present it as an association, never as the player's brain age or a prediction.
+- "What matters most for you" comes from a cross-sectional NHANES association model (DSST processing-speed
+  test points, adults 60-80). Present it as an association in test points. Never say "brain age" or "years older".
 - Quest evidence comes from get_quest_evidence; cite the trial or study it names.
 - You are not a clinician. For medication, diagnoses or very high readings (e.g. BP >= 180), tell the player
-  to contact a clinician. If the player mentions self-harm or hopelessness, give the US 988 line first.
+  to contact a clinician. If the player mentions self-harm, hopelessness or feeling down, or their profile shows support=true,
+  give the US 988 Suicide & Crisis Lifeline (call or text 988) first, before anything else.
 
 Style: warm, direct, concise (under 160 words unless asked for a plan). Give concrete next actions that map
-to NeuroTrail quests by name. When you build a weekly plan, save it with save_weekly_plan."""
+to NeuroTrail habits by name (Check your blood pressure, Take a walk, Talk with someone,
+Look after your hearing, Do something you enjoy, Smoke-free day, Sleep on a schedule, Know your numbers, Mood check). When you build a weekly plan, save it with save_weekly_plan."""
 
 TOOLS = [
     {"name": "get_profile_and_levers",
-     "description": "Get the player's current profile values and the NHANES lever result: years of processing-speed "
-                    "aging associated with each modifiable factor vs healthy targets, with 95% CIs and significance.",
+     "description": "Get the player's current profile values and 'what matters most': for each modifiable factor, "
+                    "how many DSST test points lower people scored in NHANES at the player's value vs the healthy target, "
+                    "with 95% ranges, size label and significance. Unknown values are marked known=false.",
      "input_schema": {"type": "object", "properties": {}, "additionalProperties": False}},
     {"name": "get_recent_activity",
      "description": "Get the player's completed quests, logged values (blood pressure, steps, sleep, mood change) "
@@ -76,11 +79,12 @@ TOOLS = [
 # ------------------------------------------------------------------ tool implementations
 def _levers(p: Player) -> dict:
     r = scoring.lever_age(p.profile())
-    return {"profile": p.profile(), "total_years": round(r["years"], 2), "ci": [round(x, 2) for x in r["ci"]],
+    return {"profile": p.profile(), "total_points": round(r["points"], 2), "ci": [round(x, 2) for x in r["ci"]],
             "rule": r["rule"], "model_n": r["n"],
-            "factors": [{"factor": f["label"], "you": round(f["value"], 1), "target": f["target"],
-                         "years": round(f["years"], 2), "ci": [round(x, 2) for x in f["ci"]],
-                         "significant": f["significant"]} for f in r["per_factor"].values()]}
+            "factors": [{"factor": f["label"], "you": None if f["value"] is None else round(f["value"], 1), "target": f["target"],
+                         "points": None if f["points"] is None else round(f["points"], 2),
+                         "range": None if f["ci"] is None else [round(x, 2) for x in f["ci"]],
+                         "size": f["size"], "significant": f["significant"], "known": f["known"]} for f in r["per_factor"].values()]}
 
 
 def _activity(p: Player, days: int) -> dict:
@@ -104,15 +108,15 @@ def _evidence(qid: str) -> dict:
             "evidence": q.evidence, "caveat": q.caveat,
             "nhanes_association": None if nh is None else {
                 "change": nh["label"], "dsst_points": round(nh["dsst_points"], 2),
-                "ci": [round(x, 2) for x in nh["dsst_ci"]], "years": round(nh["years"], 1),
+                "ci": [round(x, 2) for x in nh["dsst_ci"]],
                 "p_value": nh["p_value"]}}
 
 
 def _simulate(p: Player, changes: dict) -> dict:
     prof = {**p.profile(), **{k: v for k, v in changes.items() if v is not None}}
     now, new = scoring.lever_age(p.profile()), scoring.lever_age(prof)
-    return {"current_years": round(now["years"], 2), "simulated_years": round(new["years"], 2),
-            "difference": round(new["years"] - now["years"], 2), "simulated_ci": [round(x, 2) for x in new["ci"]],
+    return {"current_points": round(now["points"], 2), "simulated_points": round(new["points"], 2),
+            "difference": round(new["points"] - now["points"], 2), "simulated_range": [round(x, 2) for x in new["ci"]],
             "note": "Cross-sectional association from NHANES, not a guaranteed effect."}
 
 
@@ -182,10 +186,9 @@ def _offline(p: Player, user_text: str) -> dict:
     lev, act = _levers(p), _activity(p, 7)
     trace = [{"tool": "get_profile_and_levers", "label": TOOL_LABELS["get_profile_and_levers"], "input": {}},
              {"tool": "get_recent_activity", "label": TOOL_LABELS["get_recent_activity"], "input": {"days": 7}}]
-    sig = [f for f in lev["factors"] if f["significant"] and f["years"] > 0.05]
-    lines = [f"Your significant levers add up to {lev['total_years']:+.1f} years of processing-speed aging "
-             f"(95% CI {lev['ci'][0]:+.1f} to {lev['ci'][1]:+.1f}) in the NHANES association model."]
-    qmap = {"Blood pressure": "bp", "Mood (PHQ-9)": "joy", "Sleep (distance from 7 h)": "sleep",
+    sig = [f for f in lev["factors"] if f["significant"] and f["known"] and (f["points"] or 0) > 0.1]
+    lines = ["Here's what matters most for you, from a CDC study of 2,597 adults aged 60+ (an association, not a diagnosis)."]
+    qmap = {"Blood pressure": "bp", "Mood (PHQ-8)": "joy", "Sleep (outside 6-8 h)": "sleep",
             "Smoking": "smoke", "Diabetes": "labs"}
     plan = []
     if sig:
@@ -193,7 +196,7 @@ def _offline(p: Player, user_text: str) -> dict:
         qid = qmap.get(top["factor"], "steps")
         ev = _evidence(qid)
         trace.append({"tool": "get_quest_evidence", "label": TOOL_LABELS["get_quest_evidence"], "input": {"quest_id": qid}})
-        lines.append(f"Biggest lever: {top['factor']} ({top['years']:+.1f} yrs). Quest for it: {ev['quest']}. "
+        lines.append(f"Biggest one: {top['factor']} (people at your value scored about {top['points']:.1f} points lower on a speed test). Habit for it: {ev['quest']}. "
                      f"Evidence: {ev['evidence'][0]['claim']}")
     if act["today_open_quests"]:
         lines.append("Still open today: " + ", ".join(act["today_open_quests"][:4]) + ".")
