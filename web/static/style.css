@@ -362,6 +362,33 @@ a.next:hover { transform: translateY(-2px); box-shadow: var(--glow); color: inhe
 .cardhead .eyebrow { margin-bottom: 0; }
 .tipcard h3 { font-size: 1.3rem; }
 
+/* ------------------------------------------------------------------ personal insights */
+.insightcard { overflow: hidden; }
+.insightcard::before { content: ""; position: absolute; left: -60px; bottom: -90px; width: 260px; height: 260px; border-radius: 50%; background: radial-gradient(circle, rgba(45, 212, 191, .22), transparent 70%); pointer-events: none; }
+.insightcard > * { position: relative; }
+.unlock { height: 10px; border-radius: 10px; background: var(--panel3); overflow: hidden; margin: 14px 0 8px; }
+.unlock i { display: block; height: 100%; border-radius: inherit; background: var(--grad); box-shadow: 0 0 16px rgba(94, 234, 212, .6); transition: width 1s var(--ease); }
+.insight { display: grid; grid-template-columns: auto 1fr auto; gap: 14px; align-items: start; padding: 16px 0; border-bottom: 1px solid var(--line); }
+.insight:last-of-type { border-bottom: 0; }
+.insight > div > b { display: block; font: 700 1.08rem/1.35 var(--display); letter-spacing: -.01em; }
+.insight .ico-tile { width: 48px; height: 48px; font-size: 1.4rem; border-radius: 15px; }
+.insight.dim > div > b { color: var(--mute); font-weight: 600; }
+.insight.dim .ico-tile { opacity: .6; }
+.lv { white-space: nowrap; font-size: .78rem; font-weight: 750; letter-spacing: .03em; padding: 5px 11px; border-radius: 999px; }
+.lv-clear { background: rgba(74, 222, 128, .15); color: #86EFAC; box-shadow: inset 0 0 0 1px rgba(74, 222, 128, .4); }
+.lv-hint { background: rgba(251, 191, 36, .13); color: #FCD34D; box-shadow: inset 0 0 0 1px rgba(251, 191, 36, .35); }
+.lv-none { background: var(--panel3); color: var(--mute); }
+.ibars { display: grid; gap: 8px; margin: 12px 0 4px; max-width: 520px; }
+.ibar { display: grid; grid-template-columns: 96px 1fr auto; gap: 10px; align-items: center; font-size: .88rem; color: var(--mute); }
+.ibar i { display: block; height: 12px; border-radius: 12px; background: rgba(255, 255, 255, .06); position: relative; overflow: hidden; }
+.ibar i::after { content: ""; position: absolute; inset: 0 auto 0 0; width: var(--w); border-radius: inherit; background: rgba(255, 255, 255, .3); }
+.ibar.yes i::after { background: var(--grad); }
+.ibar b { color: var(--ink); font-variant-numeric: tabular-nums; min-width: 92px; text-align: right; }
+@media (max-width: 560px) { .insight { grid-template-columns: auto 1fr; } .insight .lv { grid-column: 2; justify-self: start; } .ibar { grid-template-columns: 80px 1fr; } .ibar b { grid-column: 2; text-align: left; } }
+.demobanner { position: sticky; top: 68px; z-index: 35; text-align: center; padding: 8px 14px; font-size: .88rem; color: #1a1200; background: linear-gradient(90deg, #FCD34D, #FBBF24); }
+@media (max-width: 899px) { .demobanner { top: 60px; } }
+body:has(#demoBanner) nav.chips.sticky { top: 116px; }
+
 /* ------------------------------------------------------------------ icon array (100 people) */
 .icons { display: grid; grid-template-columns: repeat(10, 1fr); gap: 6px; max-width: 400px; margin: 14px 0; }
 .icons i { aspect-ratio: 1; border-radius: 50% 50% 40% 40%; background: rgba(255, 255, 255, .09); transition: background .5s; }

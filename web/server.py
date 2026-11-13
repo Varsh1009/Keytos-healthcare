@@ -25,7 +25,7 @@ from pydantic import BaseModel, Field
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from neurotrail import auth, coach, db, diseases, games as gym, regions as RG, scoring, tissue, voice as vox, wearables  # noqa: E402
+from neurotrail import auth, coach, db, demo, diseases, games as gym, insights, regions as RG, scoring, tissue, voice as vox, wearables  # noqa: E402
 from neurotrail.quests import LANCET_CITE, QUEST_BY_ID, QUESTS, TIER_BONUS  # noqa: E402
 from neurotrail.state import Player, today  # noqa: E402
 
@@ -181,7 +181,22 @@ def auth_me(request: Request) -> dict:
     if p is None:
         return {"signed_in": False}
     return {"signed_in": True, "name": name, "guest": bool(p and p.guest), "passkey": auth.has_passkey(name),
-            "onboarded": bool(p and p.onboarded)}
+            "onboarded": bool(p and p.onboarded), "demo": name.startswith("Demo-")}
+
+
+@app.get("/api/config")
+def config() -> dict:
+    """Front-end switches. The demo profile only exists when the server runs with NT_DEMO=1."""
+    return {"demo": demo.ENABLED}
+
+
+@app.post("/auth/demo")
+def auth_demo() -> JSONResponse:
+    """A labeled demo person with four weeks of MADE-UP data, to show Personal insights in a live demo."""
+    if not demo.ENABLED:
+        raise HTTPException(404, "Demo profile is off. Start the server with NT_DEMO=1 to enable it.")
+    name = demo.create_demo_player()
+    return _set_cookie(JSONResponse({"name": name}), auth.new_session(name, "guest"))
 
 
 @app.post("/auth/guest")
@@ -748,6 +763,13 @@ def _skill_status(p: Player) -> list[dict]:
             "improving" if len(good) > len(bad) else "dipping" if len(bad) > len(good) else "steady"
         out.append({"id": sk["id"], "name": sk["name"], "icon": sk["icon"], "status": status, "plays": plays, "series": series})
     return out
+
+
+@app.get("/api/player/{name}/insights")
+def player_insights(name: str) -> dict:
+    """Which of your own habits go with better results on your own checks (practice-adjusted, Holm-corrected)."""
+    p = get(name)
+    return insights.personal_insights(p.name)
 
 
 @app.get("/api/player/{name}/brain")

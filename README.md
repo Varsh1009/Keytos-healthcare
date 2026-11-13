@@ -24,7 +24,7 @@ python models/build_facts.py        # writes models/artifacts/facts.json: every 
 python -m neurotrail.brain_export   # fsaverage6 brain mesh for the 3D view
 python -m neurotrail.atlas_export   # deep-structure meshes + Harvard-Oxford labels
 python web/server.py                # open http://localhost:8600
-pytest -q                           # 27 tests
+pytest -q                           # 48 tests (one needs the NHANES download)
 ```
 
 Python does all the work (pandas, scikit-learn, statsmodels, nilearn, nibabel, PyTorch, FastAPI).
@@ -55,6 +55,21 @@ Then four tabs:
 | **Checks** | Speed Sprint (race your ghost), Word Recall, Animal Naming, Voice check; more: Trail Connect, Color Clash, Memory Grid, Reflex. Compared only with your own first tries; "learning your baseline" until 3 plays |
 | **My Brain** | **Learn**: 7 diseases grouped by what you can do (lower your risk / live better / early help matters): where each one strikes on a 3D brain, a stage slider, how it varies, what to do at home, when to call a doctor, BE-FAST, myth-or-fact cards. **Mine**: a skills map colored from your checks, plus an MRI research preview |
 | **Me** | Progress charts, connect a device (Apple Health / CSV), edit answers, passkey security, **How we know**, support lines |
+
+### Personal insights (`neurotrail/insights.py`)
+
+The survey model says what matters for *people like you*. Personal insights ask what works for *you*:
+on days you slept 7+ hours, walked more, talked with someone or did something enjoyable, did your
+checks go better than on your other days?
+
+- Each check is put on your own scale, and **practice gains are removed first** (score ~ log(play number)),
+  so getting used to a game isn't credited to a habit.
+- Days are compared with a Welch t-test; a **"Clear pattern"** must survive a **Holm correction** for testing
+  several habits at once and have 5+ days on each side. Weaker results are "Early hint" or "No clear difference yet".
+- Unlocks after 6 days with both a logged habit and a check. Shown on Today and in Me → My patterns.
+
+**Demo mode:** `NT_DEMO=1 python web/server.py` adds "Explore a demo person" to the welcome page: four weeks of
+clearly labeled, made-up data (a yellow "Demo person" banner stays on screen). It's off by default.
 
 Each habit page has numbered "how to do it" steps (guidance, not gates), one input that counts, and one
 big **Done**. The blood pressure habit has an "I don't have a cuff" path. The mood habit is the PHQ-8;

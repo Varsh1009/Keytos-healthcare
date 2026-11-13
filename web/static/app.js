@@ -75,6 +75,10 @@ $('#calmBtn').onclick = () => { store.set('nt-calm', store.get('nt-calm') === '1
 const bodyClass = r => { document.body.className = 'r-' + r + (store.get('nt-calm') === '1' ? ' calm' : ''); };
 
 function renderWho() {
+  let banner = $('#demoBanner');
+  if (AUTH?.signed_in && AUTH.demo && !banner) {
+    $('.top').insertAdjacentHTML('afterend', '<div id="demoBanner" class="demobanner" role="note">👀 <b>Demo person.</b> Everything here is made-up data to show how NeuroTrail works.</div>');
+  } else if (!(AUTH?.signed_in && AUTH.demo)) banner?.remove();
   if (!AUTH?.signed_in) { $('#who').textContent = ''; return; }
   const av = `<span class="av" aria-hidden="true">${esc((AUTH.name || '?').trim()[0]?.toUpperCase() || '?')}</span>`;
   $('#who').innerHTML = AUTH.passkey ? `${av}${esc(AUTH.name)} · 🔑 saved` : `${av}${esc(AUTH.name)} · <a href="#/me/security">not saved yet</a>`;
@@ -153,7 +157,8 @@ function pageWelcome() {
     <h1>What actually helps<br><em>your</em> brain?</h1>
     <p class="lead">Two minutes, a few taps, and you'll see which of your habits matter most, backed by real health data from thousands of people. Then build those habits with small daily steps.</p>
     <div class="ctas"><button class="btn big" id="start">Start now · no sign-up needed →</button>
-      <button class="btn alt big" id="login">🔑 I already have a passkey</button></div>
+      <button class="btn alt big" id="login">🔑 I already have a passkey</button>
+      <div id="demoSlot"></div></div>
     <div class="statstrip"><div><b class="grad-text">2,597</b><span>adults 60+ in the CDC survey</span></div><div><b class="grad-text">436</b><span>real MRI scans tested</span></div><div><b class="grad-text">2 min</b><span>to your first result</span></div></div>
     <div class="promise">
       <div><span class="ico-tile" aria-hidden="true">📊</span><b>Real data</b>Models trained on public CDC and OASIS research data, not guesses.</div>
@@ -162,6 +167,11 @@ function pageWelcome() {
     <p class="muted">A wellness and education tool, not a diagnosis. If you're worried about your memory, talk to a doctor.</p></div>`;
   $('#start').onclick = async () => { try { await api('/auth/guest', {}); AUTH = await api('/auth/me'); route(); } catch (e) { toast(`Couldn't start: ${e.message}`, 5000); } };
   $('#login').onclick = passkeyLogin;
+  api('/api/config').then(c => {
+    if (!c.demo || !$('#demoSlot')) return;
+    $('#demoSlot').innerHTML = '<button class="linkbtn" id="demoBtn">👀 Explore a demo person (4 weeks of made-up data)</button>';
+    $('#demoBtn').onclick = async () => { try { await api('/auth/demo', {}); AUTH = await api('/auth/me'); location.hash = '#/today'; route(); } catch (e) { toast(e.message, 5000); } };
+  }).catch(() => {});
 }
 // Passkeys only work in a secure context (https, or http://localhost). Explain instead of failing silently.
 function passkeyBlocker() {
@@ -290,7 +300,7 @@ async function pageToday() {
     ${ME.support ? SUPPORT : ''}
     <section class="card today-hero">
       <div class="hello">${buddy(nDone === 3 ? 'wow' : 'happy', 88)}<div>
-        <h1>${hi}${AUTH?.name && !/^guest/i.test(AUTH.name) ? `, <span class="grad-text">${esc(AUTH.name.split(' ')[0])}</span>` : ''}</h1>
+        <h1>${hi}${AUTH?.name && !/^(guest|demo)/i.test(AUTH.name) ? `, <span class="grad-text">${esc(AUTH.name.split(' ')[0])}</span>` : ''}</h1>
         <p class="lede">${nDone === 3 ? 'All 3 habits done today. That is how it adds up.' : nDone ? `${nDone} of 3 habits done. Nice momentum.` : 'One small step today is enough.'}</p>
         <div class="chips">${ME.streak ? `<span class="tag">🔥 ${ME.streak}-day streak</span>` : '<span class="tag">✨ Day one starts now</span>'}<span class="tag">🛌 Rest days never break a streak</span></div></div></div>
       <div class="dayring" role="img" aria-label="${nDone} of ${plan.length} habits done today"><svg viewBox="0 0 132 132" aria-hidden="true"><defs><linearGradient id="dg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5EEAD4"/><stop offset=".55" stop-color="#818CF8"/><stop offset="1" stop-color="#C084FC"/></linearGradient></defs>
@@ -299,6 +309,7 @@ async function pageToday() {
     </section>
     ${next ? `<a class="card next feature" href="#/habit/${next}"><span class="ico-tile lg" aria-hidden="true">${HABIT[next].ico}</span><div><div class="eyebrow">Your next step</div><h2>${HABIT[next].name}</h2><p>${esc(nextWhy(next))}</p></div><span class="btn">Start →</span></a>`
       : `<a class="card next feature" href="#/checks"><span class="ico-tile lg" aria-hidden="true">🎯</span><div><div class="eyebrow">All habits done</div><h2>Want a quick check?</h2><p>Play a 90-second Speed Sprint and race your first try. Or rest: rest counts too.</p></div><span class="btn">Go to Checks →</span></a>`}
+    <div id="insightBox"></div>
     <div class="bento">
       <div class="card c7"><div class="cardhead"><div class="eyebrow">${next ? 'Also on today\'s list' : 'Today\'s 3 habits'}</div><span class="muted">${nDone}/${plan.length} done</span></div><div class="plan">${plan.filter(id => id !== next).map(id => `<a href="#/habit/${id}" class="${habitDone(id) ? 'done' : ''}"><span class="ico">${habitDone(id) ? '✓' : HABIT[id].ico}</span>${HABIT[id].name}<span class="go">${habitDone(id) ? 'Done' : 'Start →'}</span></a>`).join('')}</div></div>
       <div class="card c5"><div class="eyebrow">Care rings · last 7 days</div><div class="rings">${ring('Move', R.move.points, R.move.goal, '#4ADE80')}${ring('Mind', R.mind.points, R.mind.goal, '#A78BFA')}${ring('Body', R.body.points, R.body.goal, '#5EEAD4')}</div>
@@ -313,6 +324,7 @@ async function pageToday() {
     <div id="askBox"></div>
   </div>`;
   wireTry();
+  insightCard();
   coachStatus().then(ok => { if (ok && $('#askBox')) askCard(); });
 }
 function nextWhy(id) {
@@ -352,6 +364,57 @@ function wireTry() {
   choice(box, '.yesno button', v => { S.smoke = v === '1'; go(); });
   go();
 }
+// ------------------------------------------------------------------ PERSONAL INSIGHTS (your habits vs your checks)
+const LEVEL = { clear: ['Clear pattern', 'lv-clear'], hint: ['Early hint', 'lv-hint'], none: ['No clear difference yet', 'lv-none'], more_data: ['Needs more days', 'lv-none'] };
+const INSIGHT_HOW = { sleep: 'Log the Sleep habit', steps: 'Log the walking habit (or import your watch)', connect: 'Log "Talk with someone"', joy: 'Log "Do something you enjoy"' };
+function insightExample(e) {
+  if (!e) return '';
+  const fmtv = v => e.unit === 'ms' || e.unit === 'correct' || e.unit === 'animals' ? Math.round(v) : v;
+  const word = e.better_pct >= 0 ? (e.lower_is_better ? 'faster' : 'better') : (e.lower_is_better ? 'slower' : 'lower');
+  const mx = Math.max(e.with, e.without) || 1;
+  return `<div class="ibars" role="img" aria-label="${esc(e.check)}: ${fmtv(e.with)} ${esc(e.unit)} on those days versus ${fmtv(e.without)} on other days">
+      <div class="ibar yes"><span>Those days</span><i style="--w:${e.with / mx * 100}%"></i><b>${fmtv(e.with)} ${esc(e.unit)}</b></div>
+      <div class="ibar"><span>Other days</span><i style="--w:${e.without / mx * 100}%"></i><b>${fmtv(e.without)} ${esc(e.unit)}</b></div></div>
+    <p class="muted">${esc(e.check)}, average raw score: ${Math.abs(e.better_pct)}% ${word}.</p>`;
+}
+function insightRow(i, full = true) {
+  const [lab, cls] = LEVEL[i.level];
+  if (i.level === 'more_data') {
+    return `<div class="insight dim"><span class="ico-tile" aria-hidden="true">${i.icon}</span><div><b>Days you ${esc(i.phrase)}</b>
+      <p class="muted">Needs 3+ days each way (now ${i.n_yes} with, ${i.n_no} without). ${INSIGHT_HOW[i.key] || ''} and play a check the same day.</p></div><span class="lv ${cls}">${lab}</span></div>`;
+  }
+  return `<div class="insight ${i.level === 'none' ? 'dim' : ''}"><span class="ico-tile" aria-hidden="true">${i.icon}</span><div><b>${esc(i.headline)}</b>
+    ${i.level !== 'none' && full ? insightExample(i.example) : ''}
+    <p class="muted">${i.n_yes} days vs ${i.n_no} days${full && i.level !== 'none' ? ` · p = ${i.p_adjusted ?? i.p} (adjusted for testing several habits at once)` : ''}</p></div><span class="lv ${cls}">${lab}</span></div>`;
+}
+async function insightCard() {
+  const r = await api('/api/me/insights').catch(() => null), box = $('#insightBox');
+  if (!r || !box) return;
+  const S = r.status;
+  if (!r.ready) {
+    const pct = Math.min(100, S.days_with_both / S.days_needed * 100);
+    box.innerHTML = `<div class="card insightcard"><div class="cardhead"><div class="eyebrow">Personal insights · coming soon</div><span class="muted">${S.days_with_both}/${S.days_needed} days</span></div>
+      <h2>What works for <span class="grad-text">your</span> brain?</h2>
+      <p>The survey numbers are about people like you. After ${S.days_needed} days, NeuroTrail starts comparing <b>your own</b> habits with <b>your own</b> check scores, for example: do your checks go better after 7+ hours of sleep?</p>
+      <div class="unlock"><i style="width:${pct}%"></i></div>
+      <p class="muted">Each day: log a habit (sleep counts most) and play any check. ${S.days_needed - S.days_with_both} more day${S.days_needed - S.days_with_both === 1 ? '' : 's'} to go.</p>
+      <div class="row"><a class="btn" href="#/habit/sleep">Log sleep</a><a class="ghost" href="#/checks">Play a check</a></div></div>`;
+    return;
+  }
+  const best = r.insights.filter(i => i.level === 'clear' || i.level === 'hint').slice(0, 2);
+  box.innerHTML = `<div class="card insightcard"><div class="cardhead"><div class="eyebrow">Personal insights · from your own data</div><a class="muted" href="#/me/patterns">See all →</a></div>
+    ${best.length ? best.map(i => insightRow(i, i === best[0])).join('') : '<h3>No clear patterns yet</h3><p class="muted">Your checks look about the same whatever you did that day. Keep logging: patterns get clearer with more days.</p>'}
+    <p class="muted">${esc(r.note)}</p></div>`;
+}
+async function patternsBox() {
+  const r = await api('/api/me/insights').catch(() => null), box = $('#ibox');
+  if (!r || !box) return;
+  if (!r.ready) { box.innerHTML = `<p>Unlocks after ${r.status.days_needed} days with both a logged habit and a check (you have ${r.status.days_with_both}). Then you'll see which of <b>your</b> habits go with better results on <b>your</b> checks.</p>`; return; }
+  box.innerHTML = `<p>Each row compares your check scores on days you did something with your other days. Scores are on your own scale, with practice gains removed first, so getting used to a game isn't mistaken for a habit effect.</p>
+    ${r.insights.map(i => insightRow(i)).join('')}
+    <details><summary>How confident is this?</summary><p><b>Clear pattern</b>: unlikely to be chance (p &lt; 0.05 after adjusting for testing ${r.insights.length} habits at once) with 5+ days on each side. <b>Early hint</b>: worth watching (p &lt; 0.20). <b>No clear difference</b>: your data can't tell yet.</p><p>${esc(r.note)}</p></details>`;
+}
+
 async function coachStatus() { if (COACH == null) COACH = await api('/api/coach/status').then(s => !!s.claude).catch(() => false); return COACH; }
 function askCard() {
   $('#askBox').innerHTML = `<div class="card"><div class="eyebrow">Ask a question</div><p class="muted">An AI assistant (Claude) that can read your logs and run the same models. It can be wrong; it is not a doctor.</p>
@@ -681,8 +744,9 @@ function bindPick() {
 async function pageMe(section) {
   FACTS ||= await api('/api/facts');
   main.innerHTML = `<div class="stack"><div class="mehead"><span class="av" aria-hidden="true">${esc((AUTH.name || '?').trim()[0]?.toUpperCase() || '?')}</span><div><div class="eyebrow">Me</div><h1>${esc(AUTH.name || 'You')}</h1><span class="tag">${AUTH.passkey ? '🔑 Saved with a passkey' : '⚠ Not saved yet'}</span></div></div>
-    <nav class="chips sticky" aria-label="Sections">${[['progress', '📈 Progress'], ['connect', '⌚ Connect a device'], ['answers', '📝 My answers'], ['security', '🔑 Security'], ['how', '🔬 How we know'], ['help', '💛 Support']].map(([k, t]) => `<a class="chip" href="#/me/${k}">${t}</a>`).join('')}</nav>
+    <nav class="chips sticky" aria-label="Sections">${[['progress', '📈 Progress'], ['patterns', '🧩 My patterns'], ['connect', '⌚ Connect a device'], ['answers', '📝 My answers'], ['security', '🔑 Security'], ['how', '🔬 How we know'], ['help', '💛 Support']].map(([k, t]) => `<a class="chip" href="#/me/${k}">${t}</a>`).join('')}</nav>
     <section class="card" id="s-progress"><h2>📈 Progress</h2><div class="grid" id="charts"></div></section>
+    <section class="card" id="s-patterns"><h2>🧩 My patterns</h2><div id="ibox"></div></section>
     <section class="card" id="s-connect"><h2>⌚ Connect a device</h2><div id="wbox"></div></section>
     <section class="card" id="s-answers"><h2>📝 My answers</h2><div id="abox"></div></section>
     <section class="card" id="s-security"><h2>🔑 Security</h2>
@@ -694,7 +758,7 @@ async function pageMe(section) {
       <li><b>1-800-QUIT-NOW</b><span>Free help to stop smoking (CDC).</span></li><li><b>1-800-272-3900</b><span>Alzheimer's Association 24/7 helpline, for memory worries and caregivers.</span></li></ul></section></div>`;
   $('#addPk').onclick = () => savePasskey(() => pageMe('security'));
   $('#signout').onclick = async () => { if (!AUTH.passkey && !confirm('You have not saved a passkey. If you sign out, you cannot get back to this progress. Sign out anyway?')) return; await api('/auth/logout', {}); AUTH = { signed_in: false }; renderWho(); history.replaceState(null, '', '/'); route(); };
-  answersBox(); progressCharts(); wearBox();
+  answersBox(); progressCharts(); wearBox(); patternsBox();
   if (section) setTimeout(() => $('#s-' + section)?.scrollIntoView({ block: 'start' }), 60);
 }
 function howWeKnow() {
