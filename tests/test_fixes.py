@@ -94,8 +94,11 @@ def test_delayed_recall_has_its_own_history():
 
 
 # ---------------------------------------------------------------- MRI
-def test_mri_upload_works_without_pytorch_and_samples_explain_missing_data():
+def test_mri_upload_previews_and_samples_work_without_the_download(monkeypatch):
     import nibabel as nib
+    from neurotrail import brainage_ensemble as be
+    monkeypatch.setattr(be, "estimate", lambda v, age, fold=None: {"format": {"ok": True}, "brain_age": 60.0, "interval_low": 50.0,
+        "interval_high": 70.0, "confidence": "medium", "confidence_reasons": [], "per_model": [], "model_disagreement": 0.0, "_cam": None})
     c = _client()
     c.post("/auth/guest", json={})
     v = np.zeros((91, 109, 91), np.float32)
@@ -105,5 +108,5 @@ def test_mri_upload_works_without_pytorch_and_samples_explain_missing_data():
     assert r.status_code == 200 and set(r.json()["images"]) == {"axial", "coronal", "sagittal"}
     if not c.get("/api/mri/status").json()["samples"]:
         f = c.get("/api/mri/samples").json()[0]["file"]
-        r = c.post("/api/me/mri/sample", data={"file": f})
-        assert r.status_code == 503 and "download_data" in r.json()["detail"]
+        r = c.post("/api/me/mri/sample", data={"file": f}).json()
+        assert r["images"] == {} and r["view"] is None and r["brain_age"]["ok"]   # out-of-fold estimate, no download needed

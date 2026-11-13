@@ -667,44 +667,71 @@ function mineView() {
   WHY.skills = ['How the map works', '<p>Each skill is linked to brain areas by decades of research. We color those areas from your games, compared only with your own first tries.</p><p>A game score tracks a skill, not brain tissue. A steady dip over weeks is worth mentioning to a doctor; one bad day isn\'t.</p>'];
   $('#bp').innerHTML = `<div class="list">${S.map(s => `<a class="lrow" href="${link[s.id] || '#/checks'}"><span class="ico" style="background:${C[st(s)]}1f;color:${C[st(s)]}">${ic('brain')}</span><div class="txt"><b>${esc(s.name)}</b><span>${s.plays ? `${W[st(s)]} · ${s.plays} play${s.plays === 1 ? '' : 's'}` : 'Not tested yet'}</span></div>${ic('chevron-right')}</a>`).join('')}</div>
     <div style="text-align:center">${whyBtn('skills', 'How the map works')}</div>
-    <details class="card" style="margin-top:10px"><summary>Brain scans (research preview)</summary>
-      <p class="muted">Our own MRI measures weren't reliable enough to score a person, so this is for learning only.</p>
-      <div class="seg"><button class="on" data-mr="sample">A real research scan</button><button data-mr="upload">Check my file</button></div><div id="mriBox"></div></details>`;
+    <div class="section-h"><h2>Brain age from an MRI</h2><span class="pill">Research preview</span></div>
+    <div class="card"><p class="muted" style="margin-top:0">Three AI models estimate how old a brain looks on a research MRI scan. It's a learning tool: it can't diagnose anything.</p>
+      <div class="seg"><button class="on" data-mr="sample">Try a research scan</button><button data-mr="upload">Check my scan</button></div><div id="mriBox"></div>
+      <div style="text-align:center">${whyBtn('brainage', 'How accurate is it?')}</div></div>`;
+  brainAgeWhy();
   const show = m => { $$('[data-mr]').forEach(b => b.classList.toggle('on', b.dataset.mr === m)); m === 'sample' ? mriSamples() : mriUpload(); };
   $$('[data-mr]').forEach(b => b.onclick = () => show(b.dataset.mr));
-  api('/api/mri/status').then(s => {
-    if (s.samples) return show('sample');
-    const sb = $('[data-mr="sample"]'); if (sb) { sb.disabled = true; sb.title = 'Research scans not downloaded'; }
-    show('upload');
-    $('#mriBox')?.insertAdjacentHTML('afterbegin', '<p class="tiny">Research scans aren\'t downloaded on this computer (needs <code>python data/download_data.py</code>).</p>');
-  }).catch(() => show('upload'));
+  show('sample');
+}
+// ------------------------------------------------------------------ Brain age from an MRI (research preview)
+let BA_CARD = null;
+async function brainAgeWhy() {
+  BA_CARD ||= await api('/api/mri/brainage-card').catch(() => ({ available: false }));
+  const c = BA_CARD;
+  WHY.brainage = ['How accurate is it?', !c.available ? '<p>The brain-age models aren\'t installed on this computer.</p>' : `
+    <p>Three AI models (two 3D CNNs and SFCN, pretrained on 12,949 UK Biobank brains) were trained on <b>${c.n_train} healthy adults</b> from one research study (OASIS-1). Every number below comes from people the models never saw.</p>
+    <ul class="plain"><li>Usual miss: <b>${c.mae} years</b> across ages 18–96.</li>
+      <li>People over 60 (${c.n_60}): <b>${c.mae_60} years</b>, versus ${c.guess_60} for simply guessing the average age. Better than guessing, but not by much.</li>
+      <li>The 95% range contained the real age for <b>${Math.round(c.coverage * 100)}%</b> of healthy people.</li>
+      <li>It tells dementia scans from healthy ones with AUC <b>${c.auc.toFixed(2)}</b> (95% CI ${c.auc_ci[0].toFixed(2)}–${c.auc_ci[1].toFixed(2)}): about as good as one brain-volume number, which is <b>not good enough to screen a person</b>.</li></ul>
+    <p class="muted">Limits: one dataset and scanner type, research-prepared scans only (skull-stripped, MNI 2 mm), repeat-scan reliability measured in ${c.n_retest} young adults only. A learning tool, not a diagnosis. Model: Peng et al. 2021 (SFCN) and the NeuroTrail team's ensemble.</p>`];
+}
+function brainAgeCard(b, who = 'Real age') {
+  if (!b) return '';
+  if (!b.ok) return `<div class="bubble" style="margin-top:12px">${esc(b.reason)}</div>`;
+  const lo = Math.min(b.low, b.real_age ?? b.low) - 4, hi = Math.max(b.high, b.real_age ?? b.high) + 4, x = v => ((v - lo) / (hi - lo) * 100).toFixed(1) + '%';
+  const tone = { high: 'green', medium: 'amber', low: '' }[b.confidence];
+  return `<div class="card" style="margin-top:12px">
+    <div class="row" style="justify-content:space-between;align-items:flex-start"><div><div class="eyebrow">Brain age estimate</div><div class="a-big" style="font-size:3.2rem;margin:0">${Math.round(b.brain_age)}</div><div class="tiny">likely between ${Math.round(b.low)} and ${Math.round(b.high)}</div></div>
+      <span class="pill ${tone}">${b.confidence[0].toUpperCase() + b.confidence.slice(1)} confidence</span></div>
+    <div style="position:relative;height:34px;margin:16px 0 6px;background:var(--surface-2);border-radius:10px" role="img" aria-label="Range ${Math.round(b.low)} to ${Math.round(b.high)}, estimate ${Math.round(b.brain_age)}${b.real_age != null ? `, real age ${Math.round(b.real_age)}` : ''}">
+      <div style="position:absolute;top:9px;height:16px;left:${x(b.low)};width:calc(${x(b.high)} - ${x(b.low)});background:var(--accent-soft);border:1.5px solid var(--accent);border-radius:8px"></div>
+      <div style="position:absolute;top:3px;height:28px;width:4px;border-radius:2px;left:${x(b.brain_age)};background:var(--accent)"></div>
+      ${b.real_age != null ? `<div style="position:absolute;top:3px;height:28px;width:4px;border-radius:2px;left:${x(b.real_age)};background:var(--ink)"></div>` : ''}</div>
+    <p class="tiny" style="margin-top:0"><span style="color:var(--accent)">■</span> estimate &nbsp; ${b.real_age != null ? '<span style="color:var(--ink)">■</span> ' + esc(who.toLowerCase()) : ''}</p>
+    ${b.real_age != null ? `<p>${esc(who)} ${Math.round(b.real_age)}. ${b.within_range ? `That's inside the likely range, so the ${Math.abs(b.difference).toFixed(0)}-year difference is within the models' normal error.` : `That's outside the likely range (${b.difference > 0 ? '+' : ''}${b.difference.toFixed(0)} years). Even so, this is not a diagnosis: talk to a doctor about any memory worries.`}</p>` : ''}
+    <details><summary>Why ${b.confidence} confidence?</summary><ul class="plain">${(b.reasons.length ? b.reasons : ['The models agree and the range is narrow.']).map(r => `<li>${esc(r)}</li>`).join('')}</ul>
+      <p class="tiny">Each model: ${b.per_model.map(m => `${esc(m.label)} ${Math.round(m.brain_age)}`).join(' · ')}</p></details></div>`;
 }
 async function mriSamples() {
   const list = await api('/api/mri/samples'), box = $('#mriBox');
-  box.innerHTML = `<p class="tiny">From the OASIS-1 study. Pick one person:</p><div class="chips">${list.map(s => `<button class="chip" data-f="${esc(s.file)}">${s.female ? 'F' : 'M'} ${Math.round(s.Age)} · ${s.status === 'cognitively normal' ? 'healthy' : 'dementia'}</button>`).join('')}</div><div id="mriOut" aria-live="polite"></div>`;
+  box.innerHTML = `<p class="tiny">Real scans from the OASIS-1 study. Each estimate comes from models that never saw that person. Pick one:</p><div class="chips">${list.map(s => `<button class="chip" data-f="${esc(s.file)}">${s.female ? 'F' : 'M'} ${Math.round(s.Age)} · ${s.status === 'cognitively normal' ? 'healthy' : 'dementia'}</button>`).join('')}</div><div id="mriOut" aria-live="polite"></div>`;
   $$('[data-f]', box).forEach(b => b.onclick = async () => {
     $$('[data-f]', box).forEach(x => x.classList.toggle('on', x === b));
     $('#mriOut').innerHTML = '<p class="muted">Loading the scan…</p>';
     const fd = new FormData(); fd.append('file', b.dataset.f);
     try {
       const r = await postForm('/api/me/mri/sample', fd), v = r.view;
-      $('#mriOut').innerHTML = `<div class="mslices" style="margin-top:12px">${Object.entries(r.images).map(([k, src]) => `<img src="${src}" alt="${k} slice of the scan">`).join('')}</div>
-        <h3>${r.female ? 'Woman' : 'Man'}, ${Math.round(r.age)} · ${r.status === 'cognitively normal' ? 'healthy volunteer' : `dementia diagnosis${r.cdr ? ` (CDR ${r.cdr})` : ''}`}</h3>
-        <p>About <b>${v.per100_lower} of 100</b> healthy people the same age and sex have less brain tissue than this person.</p>
-        <div class="bubble"><b>The lesson:</b> even this validated measure flags ${v.healthy_flag_per100} of 100 healthy people over 60 but only ${v.dementia_flag_per100} of 100 with dementia. One MRI number can't screen a person.</div>`;
+      $('#mriOut').innerHTML = `<h3 style="margin-top:14px">${r.female ? 'Woman' : 'Man'}, ${Math.round(r.age)} · ${r.status === 'cognitively normal' ? 'healthy volunteer' : `dementia diagnosis${r.cdr ? ` (CDR ${r.cdr})` : ''}`}</h3>
+        ${Object.keys(r.images).length ? `<div class="mslices" style="margin-top:8px">${Object.entries(r.images).map(([k, src]) => `<img src="${src}" alt="${k} slice of the scan">`).join('')}</div>` : ''}
+        ${brainAgeCard(r.brain_age, 'Real age')}
+        ${v ? `<div class="bubble" style="margin-top:12px"><b>The lesson:</b> OASIS's validated brain-volume measure flags ${v.healthy_flag_per100} of 100 healthy people over 60 but only ${v.dementia_flag_per100} of 100 with dementia. One MRI number can't screen a person.</div>` : ''}`;
     } catch (e) { $('#mriOut').innerHTML = `<p class="caveat">${esc(e.message)}</p>`; }
   });
 }
 function mriUpload() {
-  $('#mriBox').innerHTML = `<label class="drop" id="mdrop"><input type="file" id="mfile" accept=".nii,.gz" hidden>${ic('upload')}<b>Choose a NIfTI file (.nii or .nii.gz)</b><span class="muted">It stays on this computer.</span></label><div id="mriOut" aria-live="polite"></div>`;
+  $('#mriBox').innerHTML = `<label class="drop" id="mdrop"><input type="file" id="mfile" accept=".nii,.gz" hidden>${ic('upload')}<b>Choose a NIfTI file (.nii or .nii.gz)</b><span class="muted">Research-prepared scans only (skull-stripped, MNI 2 mm). Analysed in memory, never stored.</span></label><div id="mriOut" aria-live="polite"></div>`;
   const up = async f => {
-    $('#mriOut').innerHTML = '<p class="muted">Reading your file…</p>';
+    $('#mriOut').innerHTML = '<div class="bubble"><span class="typing"><span></span><span></span><span></span></span> Checking the file and running 25 models. This can take up to a minute.</div>';
     const fd = new FormData(); fd.append('file', f);
     try {
       const r = await postForm('/api/me/mri/upload', fd), F = r.format;
-      $('#mriOut').innerHTML = `${Object.keys(r.images).length ? `<div class="mslices">${Object.entries(r.images).map(([k, src]) => `<img src="${src}" alt="${k} slice of your scan">`).join('')}</div>` : ''}
+      $('#mriOut').innerHTML = `${Object.keys(r.images).length ? `<div class="mslices" style="margin-top:12px">${Object.entries(r.images).map(([k, src]) => `<img src="${src}" alt="${k} slice of your scan${r.brain_age?.ok ? ', with the areas that drove the estimate highlighted' : ''}">`).join('')}</div>` : ''}
         <p>${F.ok ? 'Your file opened and matches the research format.' : esc((F.issues || []).join(' ') || 'This file is not in the research format our tools expect.')}</p>
-        <p class="muted">We won't put a number on your scan: our measures failed accuracy tests. A radiologist's report is the trustworthy source.</p>`;
+        ${r.brain_age ? brainAgeCard(r.brain_age, 'Your age') : ''}`;
     } catch (e) { $('#mriOut').innerHTML = `<p class="caveat">${esc(e.message)}</p>`; }
   };
   $('#mfile').onchange = e => e.target.files[0] && up(e.target.files[0]);
@@ -952,7 +979,8 @@ function howWeKnow() {
     <h3 style="margin-top:18px">Real MRI scans (OASIS-1, ${O.volumes} volumes)</h3>
     <p>OASIS's validated brain-volume measure separates dementia from healthy scans with AUC ${F.nwbv_model.auc.toFixed(2)}: useful for research, not for screening one person.</p>
     <h3 style="margin-top:18px">What we built, tested and removed</h3>
-    ${F.removed.map(r => `<div class="lever"><b>${esc(r.what)}</b><span class="size Bigger">Removed</span><span class="muted" style="grid-column:1/-1">${esc(r.why)}</span></div>`).join('')}`;
+    ${F.removed.map(r => `<div class="lever"><b>${esc(r.what)}</b><span class="size Bigger">Removed</span><span class="muted" style="grid-column:1/-1">${esc(r.why)}</span></div>`).join('')}
+    <p class="tiny" style="margin-top:12px"><b>Update:</b> a newer brain-age ensemble beats guessing for people over 60 (about 6.5 vs 7.6 years) and is back as a research preview under Learn → Your brain map, with its accuracy and limits.</p>`;
 }
 function answersBox() {
   const p = { ...ME.profile }, box = $('#abox');

@@ -157,8 +157,11 @@ skip link, single-column phone layout with a bottom tab bar. The 3D brain spins 
   (95% CI 0.63–0.77); 95% ranges contained the true age for 94% of people.
 - **Adults 60+** (98 cognitively normal people): ensemble error **6.45 years** vs 7.62 for guessing the
   average age (r = 0.68), so it now beats the baseline the original model failed, but by a modest margin.
-- **In the app:** the API serves it (`/api/mri/metrics`, `/api/mri/comparison`, brain age with a 95% range and
-  a confidence label); the redesigned app currently shows only the upload format check and the nWBV teaching view.
+- **In the app** (Learn → Your brain map → Brain age from an MRI, a research preview): brain age with its 95% range,
+  a high / medium / low confidence label with reasons, each model's estimate, Grad-CAM heatmaps on uploads, and a
+  "How accurate is it?" sheet computed from the out-of-fold results. **Research scans** use each scan's out-of-fold
+  estimate, so they work without the Kaggle download. **Guard:** if any model returns an impossible age (outside
+  −5 to 125) or the range is wider than 60 years, the app shows no number and says why.
   Switch back to the original single model with `NEUROTRAIL_MRI_MODEL=baseline_4mm`.
 - **Limits:** one dataset and scanner type, 316 training people, repeat scans only from 20 young adults,
   research-format scans only. An estimate for learning, not a diagnosis.
@@ -203,7 +206,7 @@ with AUC 0.72 (95% CI 0.64–0.79). At the best cut-off it flags 4 of 100 health
 
 | Built | Why it's gone |
 |---|---|
-| Original 4 mm 3D CNN "brain age" | In people 60+ it was no better than guessing the average age (error 7.63 vs 7.62 years). The newer ensemble (above) does better (6.45 vs 7.62) and is available through the API, not yet shown in the app |
+| Original 4 mm 3D CNN "brain age" | In people 60+ it was no better than guessing the average age (error 7.63 vs 7.62 years). The newer ensemble (above) does better (6.45 vs 7.62) and is back as a research preview |
 | Region intensity index (57 regions) | Flagged 81% of healthy adults 60+ as having an "abnormal" region, and missed ventricle enlargement |
 | Our hippocampus / ventricle / brain-fraction measures | None reached our bar (dementia AUC ≥ 0.70 and repeat-scan ICC ≥ 0.90), so uploads get a format check and slice preview only, no numbers |
 | "Years older" / "brain age" wording | A single survey snapshot can't tell you how old your brain is |

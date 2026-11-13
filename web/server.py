@@ -590,38 +590,109 @@ def _nwbv_view(age: float, female: bool, nwbv: float) -> dict:
             "healthy_flag_per100": round(t["healthy60_flag_pct"]), "dementia_flag_per100": round(t["dementia_flag_pct"])}
 
 
+
+# ====================================================================== Brain age (research preview, guarded)
+SANE_AGE = (-5.0, 125.0)        # any model outside this means the input is off-distribution: show no number
+MAX_RANGE = 60.0                # a 95% range wider than this says nothing useful
+
+
+def brain_age_view(res: dict, real_age: float | None) -> dict:
+    """What the app may show from an ensemble estimate, or a plain reason why it shows nothing."""
+    import math
+    if not res.get("format", {}).get("ok", False) and res.get("source") != "oof":
+        return {"ok": False, "reason": "This file isn't in the research format the models were trained on, so no estimate is shown."}
+    vals = [res.get("brain_age"), res.get("interval_low"), res.get("interval_high")] + [m["brain_age"] for m in res.get("per_model", [])]
+    if any(v is None or not math.isfinite(v) or not SANE_AGE[0] <= v <= SANE_AGE[1] for v in vals) \
+            or res["interval_high"] - res["interval_low"] > MAX_RANGE:
+        return {"ok": False, "reason": "The models gave an implausible result for this scan, so we won't show a number. "
+                                       "This usually means the scan wasn't prepared like the training scans."}
+    out = {"ok": True, "brain_age": round(res["brain_age"], 1), "low": round(res["interval_low"], 1), "high": round(res["interval_high"], 1),
+           "confidence": res["confidence"], "reasons": res.get("confidence_reasons", []),
+           "per_model": [{"label": m["label"], "brain_age": round(m["brain_age"], 1)} for m in res.get("per_model", [])],
+           "disagreement": round(res.get("model_disagreement", 0.0), 1), "real_age": real_age}
+    if real_age is not None:
+        out["within_range"] = bool(res["interval_low"] <= real_age <= res["interval_high"])
+        out["difference"] = round(res["brain_age"] - real_age, 1)
+    return out
+
+
+def brain_age_card() -> dict:
+    """Headline accuracy for the 'How accurate is it?' sheet, computed from the out-of-fold results."""
+    from neurotrail import brainage_ensemble as be
+    if not be.available():
+        return {"available": False}
+    m = be.config(be.MRI_MODEL)["metrics"]
+    o = pd.read_csv(ROOT / "results" / f"oof_{be.config_name(be.MRI_MODEL)}.csv")
+    n = o[(o["cdr"].fillna(0) == 0) & o["scan_id"].str.endswith("MR1")]
+    old = n[n["age"] >= 60]
+    cv = m["clinical_validity"]
+    return {"available": True, "mae": round(m["mae"], 2), "r": round(m["r"], 2), "n_train": int(m["n_normal"]),
+            "mae_60": round(float((old["pred_age"] - old["age"]).abs().mean()), 2),
+            "guess_60": round(float((old["age"] - old["age"].mean()).abs().mean()), 2), "n_60": int(len(old)),
+            "auc": round(cv["auc"], 2), "auc_ci": [round(x, 2) for x in cv["auc_ci"]],
+            "coverage": round(m.get("interval_coverage_95") or 0, 3), "n_retest": int(m["test_retest"]["n_pairs"])}
+
+
+@app.get("/api/mri/brainage-card")
+def mri_brainage_card() -> dict:
+    return brain_age_card()
+
+
+def _oof_estimate(scan_id: str) -> dict | None:
+    """The ensemble's own out-of-fold estimate: made only by models that never saw this person."""
+    from neurotrail import brainage_ensemble as be
+    if not be.available():
+        return None
+    o = pd.read_csv(ROOT / "results" / f"oof_{be.config_name(be.MRI_MODEL)}.csv")
+    r = o[o["scan_id"] == scan_id]
+    if r.empty:
+        return None
+    r = r.iloc[0]
+    labels = be.LABELS
+    per = [{"label": labels[k], "brain_age": float(r[f"pred_{k}"])} for k in labels if f"pred_{k}" in r]
+    return {"source": "oof", "format": {"ok": True}, "brain_age": float(r["pred_age"]), "interval_low": float(r["interval_low"]),
+            "interval_high": float(r["interval_high"]), "confidence": r["confidence"],
+            "confidence_reasons": [x for x in str(r["confidence_reasons"]).split("; ") if x and x != "nan"],
+            "per_model": per, "model_disagreement": float(r["model_disagreement"])}
+
+
 @app.post("/api/player/{name}/mri/sample")
 def mri_sample(name: str, file: str = Form(...)) -> dict:
+    """A real OASIS research scan: the ensemble's out-of-fold brain age (works without the download);
+    slice images and the nWBV teaching view are added when the scans are downloaded."""
     import nibabel as nib
     from neurotrail import mri
     p = get(name)
-    if not mri_status()["samples"]:
-        raise HTTPException(503, "The research scans aren't downloaded on this computer. Run python data/download_data.py (needs a Kaggle account).")
-    meta = pd.read_csv(OASIS_RAW / "oasis_cross-sectional.csv")
     d = pd.read_csv(ART / "mri_cnn_predictions.csv")
     row = d[d["file"] == file]
     if row.empty:
         raise HTTPException(404, "unknown sample")
     r = row.iloc[0]
-    mrow = meta[meta["ID"] == r["ID"]].iloc[0]
-    f = next(OASIS_RAW.glob(f"**/{file}"), None)
-    if f is None:
-        raise HTTPException(503, "That scan file isn't downloaded on this computer.")
-    v = np.asanyarray(nib.load(f).dataobj, dtype=np.float32)
-    view = _nwbv_view(float(r["Age"]), bool(r["female"]), float(mrow["nWBV"]))
-    imgs = mri.slices_png(v, None)
-    db.add_mri(p.name, f"OASIS sample {r['ID']}", float(r["Age"]), None, None, True, {"nwbv_toward": view["toward"]})
+    est = _oof_estimate(r["ID"])
+    view, imgs = None, {}
+    if mri_status()["samples"]:
+        meta = pd.read_csv(OASIS_RAW / "oasis_cross-sectional.csv")
+        mrow = meta[meta["ID"] == r["ID"]]
+        f = next(OASIS_RAW.glob(f"**/{file}"), None)
+        if f is not None and not mrow.empty:
+            v = np.asanyarray(nib.load(f).dataobj, dtype=np.float32)
+            view = _nwbv_view(float(r["Age"]), bool(r["female"]), float(mrow.iloc[0]["nWBV"]))
+            imgs = mri.slices_png(v, None)
+    ba = brain_age_view(est, float(r["Age"])) if est else {"ok": False, "reason": "The brain-age models aren't installed."}
+    db.add_mri(p.name, f"OASIS sample {r['ID']}", float(r["Age"]), ba.get("brain_age"), ba.get("difference"), True,
+               {"nwbv_toward": view["toward"]} if view else None)
     return {"kind": "sample", "id": r["ID"], "age": float(r["Age"]), "female": bool(r["female"]), "status": r["status"],
-            "cdr": None if pd.isna(r["CDR"]) else float(r["CDR"]), "view": view,
+            "cdr": None if pd.isna(r["CDR"]) else float(r["CDR"]), "view": view, "brain_age": ba,
             "images": {k: "data:image/png;base64," + base64.b64encode(b).decode() for k, b in imgs.items()}}
 
 
 @app.post("/api/player/{name}/mri/upload")
 async def mri_upload(name: str, file: UploadFile = File(...)) -> dict:
-    """Uploads get a format check and slice preview only: our own MRI measures did not pass validation,
-    so we don't put numbers on a personal scan (see How we know)."""
-    from neurotrail import mri
-    get(name)
+    """Format check, slice preview and, for research-format scans, the brain-age ensemble (research preview).
+    Scans are analysed in memory and never stored."""
+    from fastapi.concurrency import run_in_threadpool
+    from neurotrail import brainage_ensemble as be, mri
+    p = get(name)
     if not file.filename.lower().endswith((".nii", ".nii.gz")):
         raise HTTPException(400, "Upload a NIfTI file (.nii or .nii.gz)")
     data = await file.read()
@@ -632,8 +703,16 @@ async def mri_upload(name: str, file: UploadFile = File(...)) -> dict:
     except Exception as e:  # noqa: BLE001
         raise HTTPException(400, f"Couldn't read that NIfTI file: {e}")
     fmt = mri.check_format(v)
-    imgs = mri.slices_png(v, None) if tuple(v.shape) == mri.SHAPE else {}
-    return {"kind": "upload", "format": fmt,
+    ba, cam = None, None
+    if fmt.get("ok") and tuple(v.shape) == mri.SHAPE and be.available():
+        res = await run_in_threadpool(be.estimate, v, float(p.age), None)   # ~30 s on a CPU: keep the server responsive
+        cam = res.pop("_cam", None)
+        ba = brain_age_view(res, float(p.age))
+        db.add_mri(p.name, "upload", float(p.age), ba.get("brain_age"), ba.get("difference"), True, None)
+    elif fmt.get("ok") is False:
+        ba = brain_age_view({"format": fmt}, None)
+    imgs = mri.slices_png(v, cam if ba and ba.get("ok") else None) if tuple(v.shape) == mri.SHAPE else {}
+    return {"kind": "upload", "format": fmt, "brain_age": ba,
             "images": {k: "data:image/png;base64," + base64.b64encode(b).decode() for k, b in imgs.items()}}
 
 
