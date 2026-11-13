@@ -67,7 +67,7 @@ def snapshot(p: Player) -> dict:
 def index() -> str:
     # cache-bust the front-end on every server start
     v = str(int((WEB / "static" / "app.js").stat().st_mtime))
-    return (WEB / "index.html").read_text().replace("__V__", v)
+    return (WEB / "index.html").read_text(encoding="utf-8").replace("__V__", v)   # UTF-8 on every OS (Windows default is cp1252)
 
 
 @app.get("/api/quests")
