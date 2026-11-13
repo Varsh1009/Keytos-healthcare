@@ -32,17 +32,20 @@ import torch
 import torch.nn as nn
 from scipy import stats
 from sklearn.metrics import mean_absolute_error, roc_auc_score
-from sklearn.model_selection import KFold
 
 ROOT = Path(__file__).resolve().parents[1]
 MRI = ROOT / "data" / "raw" / "oasis_mri"
 ART = ROOT / "models" / "artifacts"
+RESULTS = ROOT / "results"
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / "models"))
 from neurotrail.mri import BrainAgeCNN, downsample, normalize  # noqa: E402
+from splits import fold_column, train_test_indices  # noqa: E402  shared folds (results/splits.json)
 
 log = logging.getLogger("mri_cnn")
 torch.set_num_threads(8)
-DEV = torch.device("cpu")  # small 3D CNN at 4 mm runs faster on the M3 CPU than on MPS
+# CUDA GPU if present; otherwise CPU (on Apple M3 the small 4 mm CNN runs faster on CPU than on MPS).
+DEV = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 EPOCHS, BATCH, LR, SEED = 70, 8, 2e-3, 0
 
 
@@ -123,9 +126,10 @@ def main() -> None:
     log.info("normal=%d dementia=%d rescans=%d", len(normal), len(dement), len(rescans))
 
     oof = np.full(len(df), np.nan)
-    fold_of_subject, models = {}, []
-    for k, (tr, te) in enumerate(KFold(5, shuffle=True, random_state=SEED).split(normal)):
-        tri, tei = normal[tr], normal[te]
+    fold_of_subject, models, fold_tests = {}, [], []
+    for k in range(5):
+        tri, tei = train_test_indices(df, k)
+        fold_tests.append(tei)
         log.info("fold %d: train %d / test %d", k, len(tri), len(tei))
         m = train_fold(X[tri], ages[tri], SEED + k)
         oof[tei] = predict(m, X[tei])
@@ -182,8 +186,8 @@ def main() -> None:
         "cv": "5-fold, split by subject; out-of-fold predictions for every normal participant",
         "mae": float(mae), "r": float(r), "baseline_mae_predict_mean": float(baseline),
         "nwbv_model_mae": float(nwbv[nwbv["chosen_model"]]["mae_mean"]),
-        "fold_mae": [float(mean_absolute_error(ages[normal[te]], oof[normal[te]]))
-                     for _, te in KFold(5, shuffle=True, random_state=SEED).split(normal)],
+        "fold_mae": [float(mean_absolute_error(ages[te], oof[te])) for te in fold_tests],
+        "splits": "results/splits.json (age-stratified, subject-level)",
         "bias_correction": {"slope": float(slope), "intercept": float(intercept)},
         "clinical_validity": {"auc": float(auc), "auc_ci": [float(np.percentile(boots, 2.5)), float(np.percentile(boots, 97.5))],
                               "mean_gap_dementia": float(gap[dement].mean()), "mean_gap_normal_age_matched": float(gap[old].mean()),
@@ -193,9 +197,17 @@ def main() -> None:
                         "smallest_detectable_change": float(1.96 * d.std(ddof=1))},
         "train_minutes": round((time.time() - t0) / 60, 1), "device": str(DEV),
     }
+    old = ART / "mri_cnn_metrics.json"
+    if old.exists() and "format_check" in json.loads(old.read_text()):   # upload-check threshold (same template)
+        metrics["format_check"] = json.loads(old.read_text())["format_check"]
     (ART / "mri_cnn_metrics.json").write_text(json.dumps(metrics, indent=2))
     df.assign(brain_age=oof, gap=gap)[["ID", "file", "Age", "female", "CDR", "MMSE", "status", "session", "brain_age", "gap"]] \
         .to_csv(ART / "mri_cnn_predictions.csv", index=False)
+    # Shared out-of-fold format for models/eval_brainage.py
+    RESULTS.mkdir(exist_ok=True)
+    pd.DataFrame({"subject_id": df["subject"], "scan_id": df["ID"], "fold": fold_column(df), "age": ages,
+                  "sex": df["M/F"], "cdr": df["CDR"], "pred_age": oof, "pred_std": np.nan}) \
+        .to_csv(RESULTS / "oof_baseline_4mm.csv", index=False)
     full = np.stack([normalize(np.asanyarray(nib.load(next(MRI.glob(f"**/{df.loc[i, 'file']}"))).dataobj, dtype=np.float32))
                      for i in nm])
     np.save(ART / "mri_template.npy", full.mean(axis=0))

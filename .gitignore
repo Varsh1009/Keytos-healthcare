@@ -11,3 +11,5 @@ __pycache__/
 
 # Report-signing keys (local root CA + signing key), created on first run
 data/keys/
+# Pretrained SFCN weights: downloaded + hash-checked by models/finetune_sfcn.py
+models/pretrained/

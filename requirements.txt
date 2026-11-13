@@ -15,10 +15,12 @@ pillow               # MRI slice previews
 webauthn             # passkey sign-in
 cryptography         # report signing (also pulled in by webauthn)
 segno                # QR codes on verifiable doctor reports
+# PyTorch for the MRI brain-age models (CPU build by default).
+# NVIDIA GPU (faster): pip install torch --index-url https://download.pytorch.org/whl/cu126
+torch
 kaggle
 pytest
 httpx
 # optional
 anthropic            # the "Ask a question" coach (needs ANTHROPIC_API_KEY)
 scikit-image         # only for python -m neurotrail.atlas_export
-# torch              # only for models/train_mri_cnn.py (the retired research CNN)
