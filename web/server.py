@@ -25,7 +25,7 @@ from pydantic import BaseModel, Field
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from neurotrail import auth, coach, db, demo, diseases, games as gym, insights, regions as RG, reports, scoring, tissue, voice as vox, wearables  # noqa: E402
+from neurotrail import auth, coach, db, demo, diseases, games as gym, insights, regions as RG, reports, scoring, sharing, tissue, voice as vox, wearables  # noqa: E402
 from neurotrail.quests import LANCET_CITE, QUEST_BY_ID, QUESTS, TIER_BONUS  # noqa: E402
 from neurotrail.state import Player, today  # noqa: E402
 
@@ -851,6 +851,113 @@ def report_qr(rid: str, request: Request):
 def verify_page(rid: str) -> str:
     v = str(int((WEB / "static" / "app.js").stat().st_mtime))
     return (WEB / "verify.html").read_text().replace("__V__", v)
+
+
+# ====================================================================== Family sharing (consent-first)
+class ShareIn(BaseModel):
+    label: str = Field(max_length=40)
+    owner_label: str = Field(max_length=40)
+    scopes: list[str] = Field(default_factory=list, max_length=10)
+    days: int = 30
+
+
+def _invite_url(request: Request, token: str) -> str:
+    return f"{_public_base(request)}/#/join/{token}"
+
+
+@app.post("/api/player/{name}/shares")
+def share_create(name: str, body: ShareIn, request: Request) -> dict:
+    p = get(name)
+    share, token = sharing.create(p.name, body.label, body.owner_label, body.scopes, body.days)
+    return {"share": share, "token": token, "invite_url": _invite_url(request, token)}
+
+
+@app.get("/api/player/{name}/shares")
+def share_list(name: str) -> dict:
+    p = get(name)
+    return {"owned": sharing.owned(p.name), "viewing": sharing.viewing(p.name),
+            "scopes": {k: {"label": v[0], "default": v[1]} for k, v in sharing.SCOPES.items()}, "max_days": sharing.MAX_DAYS}
+
+
+class DaysIn(BaseModel):
+    days: int = 30
+
+
+@app.post("/api/player/{name}/shares/{sid}/renew")
+def share_renew(name: str, sid: str, body: DaysIn) -> dict:
+    p = get(name)
+    try:
+        return sharing.renew(p.name, sid, body.days)
+    except KeyError:
+        raise HTTPException(404, "No such share")
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.post("/api/player/{name}/shares/{sid}/revoke")
+def share_revoke(name: str, sid: str) -> dict:
+    p = get(name)
+    try:
+        sharing.revoke(p.name, sid)
+    except KeyError:
+        raise HTTPException(404, "No such share")
+    return {"ok": True}
+
+
+@app.get("/api/player/{name}/shares/{sid}/log")
+def share_log(name: str, sid: str) -> list[dict]:
+    p = get(name)
+    try:
+        return sharing.log(p.name, sid)
+    except KeyError:
+        raise HTTPException(404, "No such share")
+
+
+class JoinIn(BaseModel):
+    token: str = Field(max_length=64)
+
+
+@app.post("/api/player/{name}/join")
+def share_join(name: str, body: JoinIn) -> dict:
+    p = get(name)
+    try:
+        return sharing.accept(body.token, p.name, auth.has_passkey(p.name), allow_without_passkey=demo.ENABLED)
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+
+@app.get("/api/player/{name}/shared/{sid}")
+def share_view(name: str, sid: str) -> dict:
+    p = get(name)
+    try:
+        return sharing.view(p.name, sid)
+    except KeyError:
+        raise HTTPException(404, "Nothing is shared with you here")
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+
+
+@app.get("/api/invite/{token}")
+def invite_preview(token: str) -> dict:
+    """Public: shows who is inviting and what they'd share, before the caregiver signs in."""
+    info = sharing.invite_info(token)
+    if info is None:
+        raise HTTPException(404, "This invite link isn't valid or was already used.")
+    return info | {"needs_passkey": not demo.ENABLED}
+
+
+@app.get("/api/invite/{token}/qr.svg")
+def invite_qr(token: str, request: Request):
+    import io
+    import segno
+    from fastapi.responses import Response
+    if sharing.invite_info(token) is None:
+        raise HTTPException(404, "No such invite")
+    buf = io.BytesIO()
+    segno.make(_invite_url(request, token), error="m").save(buf, kind="svg", scale=4, border=2, dark="#1F1E1B")
+    return Response(buf.getvalue(), media_type="image/svg+xml")
 
 
 @app.get("/api/player/{name}/insights")

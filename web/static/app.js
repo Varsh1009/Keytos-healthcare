@@ -161,9 +161,11 @@ const TAB = { session: 'today', habit: 'today', check: 'checks', sprint: 'checks
 let brainView = null;
 async function route() {
   STOP_SPRINT(); stopGames(); stopVoice(); AFTER_GAME = null; closeSheet();
-  if (!AUTH?.signed_in) return pageWelcome();
-  if (!AUTH.onboarded) return pageOnboard();
   const [, r = 'today', ...args] = (location.hash || '#/today').split('/');
+  if (r === 'join') return pageJoin(args[0] || '');                 // invite links work before sign-in
+  if (!AUTH?.signed_in) return pageWelcome();
+  // Caregivers who joined only to see a family member's progress don't need to onboard first.
+  if (!AUTH.onboarded && !(r === 'me' && args[0] === 'family')) return pageOnboard();
   ROUTE = routes[r] ? r : 'today';
   bodyClass(ROUTE === 'me' && args[0] === 'report' ? 'report' : ROUTE);
   $$('#tabs a').forEach(a => { const on = a.dataset.r === (TAB[ROUTE] || ROUTE); a.classList.toggle('on', on); on ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current'); });
@@ -208,13 +210,14 @@ const passkeyError = (e, what) => {
   if (e.name === 'SecurityError') return `Passkeys can't be used at this address. Open http://localhost:${location.port || 8600} instead.`;
   return `${what} failed: ${e.message}`;
 };
-async function passkeyLogin() {
+async function passkeyLogin(after) {
   const block = passkeyBlocker(); if (block) { toast(block, 8000); return; }
   try {
     const { key, options } = await api('/auth/login/options', {});
     const credential = await SimpleWebAuthnBrowser.startAuthentication({ optionsJSON: options });
     await api('/auth/login/verify', { key, credential });
     AUTH = await api('/auth/me'); toast(`Welcome back`);
+    if (typeof after === 'function') return after();
     if (location.hash === '#/today') route(); else location.hash = '#/today';
   } catch (e) { toast(passkeyError(e, 'Passkey sign-in'), 8000); }
 }
@@ -319,7 +322,7 @@ const sessRing = (n, size = 132) => { const C = 2 * Math.PI * 54;
     <circle cx="66" cy="66" r="54" stroke="#0F766E" stroke-width="12" fill="none" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - n / 3)}"/></svg>
     <div class="lbl">${n === 3 ? ic('check') : `<b>${n}/3</b>`}</div></div>`; };
 async function pageToday() {
-  const [S, I, P] = await Promise.all([sessionState(), api('/api/me/insights').catch(() => null), api('/api/me/progress?days=7').catch(() => null)]);
+  const [S, I, P, SH] = await Promise.all([sessionState(), api('/api/me/insights').catch(() => null), api('/api/me/progress?days=7').catch(() => null), api('/api/me/shares').catch(() => null)]);
   const h = new Date().getHours(), hi = h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening', nm = firstName();
   const all = S.n === 3;
   main.innerHTML = `<div class="stack stagger">
@@ -332,9 +335,11 @@ async function pageToday() {
       ${all ? `<div class="row" style="justify-content:center"><a class="btn secondary" href="#/checks">Play another game</a><a class="btn secondary" href="#/me/week">Your week</a></div>`
         : `<a class="btn accent big" href="#/session">${S.n ? 'Continue' : 'Start'}</a>`}
     </section>
+    ${shareTodayCards(SH)}
     <div id="todayInsight">${insightMini(I)}</div>
     ${weekDots(P)}
   </div>`;
+  wireShareButtons(main, pageToday);
 }
 function insightMini(I) {
   if (!I) return '';
@@ -721,6 +726,7 @@ const ME_SECTIONS = {
   week: ['calendar-week', 'teal', 'Your week', 'Your weekly story'],
   patterns: ['bulb', 'amber', 'My patterns', 'What works for you'],
   report: ['file-text', 'blue', 'Doctor report', 'One page to print or share'],
+  family: ['users', 'green', 'Family sharing', 'Choose who sees what, and for how long'],
   progress: ['chart-line', 'violet', 'Charts', 'Speed, blood pressure, steps, sleep'],
   focus: ['target-arrow', 'rose', 'What matters for you', 'From the CDC survey, plus what-ifs'],
   answers: ['clipboard-text', '', 'My answers', 'Update your health details'],
@@ -731,13 +737,15 @@ const ME_SECTIONS = {
   how: ['microscope', '', 'How we know', 'The data, models and what we removed'],
   help: ['lifebuoy', '', 'Help and support', 'Crisis and helplines'],
 };
-async function pageMe(section) {
+async function pageMe(section, sub, id) {
+  if (section === 'family' && sub === 'view' && id) return caregiverView(id);
+  if (section === 'family' && sub === 'new') return inviteForm();
   if (section && ME_SECTIONS[section]) return meSection(section);
   const coach = await coachStatus();
   const row = k => { const [icon, tint, t, s] = ME_SECTIONS[k]; const sub = k === 'security' ? (AUTH.passkey ? 'Saved with a passkey' : 'Not saved yet') : s;
     return `<a class="lrow" href="#/me/${k}"><span class="ico ${tint}">${ic(icon)}</span><div class="txt"><b>${t}</b>${sub ? `<span>${sub}</span>` : ''}</div>${ic('chevron-right')}</a>`; };
   main.innerHTML = `<div class="stack stagger"><div class="habit-h"><span class="ico lg teal">${ic('user')}</span><div><h1>${esc(firstName() || 'You')}</h1><span class="pill ${AUTH.passkey ? 'green' : 'amber'}">${ic(AUTH.passkey ? 'key' : 'alert-triangle')} ${AUTH.passkey ? 'Saved with a passkey' : 'Not saved yet'}</span></div></div>
-    <div class="list">${['week', 'patterns', 'report', 'progress', 'focus'].map(row).join('')}</div>
+    <div class="list">${['week', 'patterns', 'report', 'family', 'progress', 'focus'].map(row).join('')}</div>
     <div class="list">${['answers', 'connect', ...(coach ? ['ask'] : [])].map(row).join('')}</div>
     <div class="list">${['settings', 'security', 'how', 'help'].map(row).join('')}</div></div>`;
 }
@@ -747,6 +755,7 @@ async function meSection(k) {
   const box = $('#sec');
   if (k === 'week') return weekStory(box);
   if (k === 'report') return doctorReport(box);
+  if (k === 'family') return familyBox(box);
   if (k === 'patterns') { box.innerHTML = '<div id="ibox"></div>'; return patternsBox(); }
   if (k === 'progress') { box.innerHTML = '<div class="stack" id="charts"></div>'; return progressCharts(); }
   if (k === 'focus') return focusBox(box);
@@ -982,6 +991,123 @@ async function wearBox() {
     try { const j = await postForm('/api/me/wearables', fd); ME = j.player; toast(`Imported ${j.imported_days} days`); wearBox(); } catch (e) { $('#wmsg').innerHTML = `<p class="caveat">${esc(e.message)}</p>`; } };
   $('#wfile').onchange = e => e.target.files[0] && up(e.target.files[0]);
   const d = $('#wdrop'); d.ondragover = e => { e.preventDefault(); d.classList.add('over'); }; d.ondragleave = () => d.classList.remove('over'); d.ondrop = e => { e.preventDefault(); d.classList.remove('over'); e.dataTransfer.files[0] && up(e.dataTransfer.files[0]); };
+}
+
+// ================================================================== FAMILY SHARING (consent-first)
+const fmtDay = s => new Date(s.length === 10 ? s + 'T12:00' : s).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+const ago = s => { const m = Math.round((Date.now() - new Date(s)) / 6e4); return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`; };
+const daysLeft = s => Math.ceil((new Date(s) - Date.now()) / 864e5);
+WHY.consent = ['How sharing protects you', `<p><b>You choose what they see.</b> Mood is off unless you turn it on.</p>
+  <p><b>It ends on its own.</b> Every share lasts 7, 30 or 90 days. We'll ask before it ends whether you still want it.</p>
+  <p><b>They use their own passkey.</b> No shared passwords, and the invite link works only once.</p>
+  <p><b>You see every visit.</b> "Seen by Daughter, 2 hours ago." Stop sharing any time.</p>`];
+function shareTodayCards(SH) {
+  if (!SH) return '';
+  const soon = SH.owned.filter(s => s.status === 'active' && daysLeft(s.expires) <= 7);
+  const mine = SH.viewing.filter(s => s.status === 'active');
+  return soon.map(s => `<div class="card"><div class="minicard"><span class="ico green">${ic('users')}</span><div class="txt"><b>Still want ${esc(s.label)} to see your progress?</b>
+      <span>Sharing ends ${fmtDay(s.expires)}. Nothing happens unless you renew.</span></div></div>
+      <div class="row" style="margin-top:12px"><button class="btn accent" data-renew="${esc(s.id)}">Keep sharing 30 days</button><button class="btn secondary" data-stop="${esc(s.id)}">Let it end now</button></div></div>`).join('')
+    + mine.map(s => `<a class="card minicard" href="#/me/family/view/${esc(s.id)}"><span class="ico green">${ic('users')}</span><div class="txt"><b>${esc(s.owner_label)}'s progress</b><span>Shared with you until ${fmtDay(s.expires)}</span></div>${ic('chevron-right')}</a>`).join('');
+}
+function wireShareButtons(root, again) {
+  $$('[data-renew]', root).forEach(b => b.onclick = async () => { await api(`/api/me/shares/${encodeURIComponent(b.dataset.renew)}/renew`, { days: 30 }); toast('Renewed for 30 days'); again(); });
+  $$('[data-stop]', root).forEach(b => b.onclick = async () => {
+    if (!confirm('Stop sharing? They will lose access right away.')) return;
+    await api(`/api/me/shares/${encodeURIComponent(b.dataset.stop)}/revoke`, {}); toast('Sharing stopped'); again(); });
+  $$('[data-log]', root).forEach(b => b.onclick = async () => {
+    const L = await api(`/api/me/shares/${encodeURIComponent(b.dataset.log)}/log`);
+    sheet('Visits', L.length ? `<div class="list">${L.map(v => `<div class="lrow"><span class="ico">${ic('eye')}</span><div class="txt"><b>${esc(v.who)} looked</b><span>${new Date(v.at).toLocaleString()}</span></div></div>`).join('')}</div>` : '<p class="muted">Nobody has opened it yet.</p>');
+  });
+}
+async function familyBox(box) {
+  const S = await api('/api/me/shares');
+  const live = S.owned.filter(s => s.status === 'active' || s.status === 'pending'), past = S.owned.filter(s => s.status === 'stopped' || s.status === 'expired');
+  const viewing = S.viewing.filter(s => s.status === 'active');
+  const card = s => `<div class="card" style="margin-top:12px"><div class="minicard"><span class="ico green">${ic('users')}</span><div class="txt"><b>${esc(s.label)}</b>
+      <span>${s.status === 'pending' ? 'Waiting for them to accept' : `Until ${fmtDay(s.expires)} · ${s.views ? `seen ${s.views} time${s.views > 1 ? 's' : ''}, last ${ago(s.last_view)}` : 'not opened yet'}`}</span></div>
+      <span class="pill ${s.status === 'active' ? 'green' : 'amber'}">${s.status === 'active' ? 'Active' : 'Invited'}</span></div>
+    <div class="chips" style="margin:12px 0">${s.scopes.map(k => `<span class="pill">${esc(S.scopes[k]?.label || k)}</span>`).join('')}</div>
+    <div class="row">${s.status === 'active' ? `<button class="btn secondary" data-log="${esc(s.id)}">${ic('eye')} Visits</button><button class="btn secondary" data-renew="${esc(s.id)}">Renew 30 days</button>` : ''}
+      <button class="btn secondary" data-stop="${esc(s.id)}" style="color:var(--rose)">${s.status === 'pending' ? 'Cancel invite' : 'Stop sharing'}</button></div></div>`;
+  box.innerHTML = `<p class="muted" style="margin-top:-6px">Let family see your progress, on your terms.</p>
+    <a class="btn accent big" href="#/me/family/new">${ic('user-plus')} Invite someone</a>
+    <div style="text-align:center">${whyBtn('consent', 'How sharing protects you')}</div>
+    ${live.length ? `<div class="section-h"><h2>Sharing with</h2></div>${live.map(card).join('')}` : ''}
+    ${viewing.length ? `<div class="section-h"><h2>Shared with you</h2></div><div class="list">${viewing.map(s => `<a class="lrow" href="#/me/family/view/${esc(s.id)}"><span class="ico green">${ic('users')}</span><div class="txt"><b>${esc(s.owner_label)}</b><span>Until ${fmtDay(s.expires)}</span></div>${ic('chevron-right')}</a>`).join('')}</div>` : ''}
+    ${past.length ? `<details class="card" style="margin-top:14px"><summary>Past shares (${past.length})</summary>${past.map(s => `<p class="muted">${esc(s.label)}: ${s.status} · ${s.views} visit${s.views === 1 ? '' : 's'}</p>`).join('')}</details>` : ''}`;
+  wireShareButtons(box, () => familyBox(box));
+}
+async function inviteForm() {
+  const S = await api('/api/me/shares');
+  const on = new Set(Object.entries(S.scopes).filter(([, v]) => v.default).map(([k]) => k)); let days = 30;
+  main.innerHTML = `<a class="back" href="#/me/family">${ic('arrow-left')}Family sharing</a><h1>Invite someone</h1><div id="sec" class="pop stack">
+    <div class="card"><label class="eyebrow" for="fLabel">Who are you inviting?</label><input id="fLabel" maxlength="40" placeholder="Daughter" autocomplete="off">
+      <label class="eyebrow" for="fMe" style="display:block;margin-top:14px">What do they call you?</label><input id="fMe" maxlength="40" placeholder="Mom" autocomplete="off"></div>
+    <div><div class="eyebrow">What can they see?</div><div class="opts">${Object.entries(S.scopes).map(([k, v]) => `<button class="opt ${on.has(k) ? 'on' : ''}" data-scope="${k}" ${k === 'activity' ? 'disabled aria-disabled="true"' : ''} aria-pressed="${on.has(k)}">${esc(v.label)}${k === 'activity' ? ' (always)' : ''}${ic('check')}</button>`).join('')}</div></div>
+    <div><div class="eyebrow">For how long?</div><div class="seg" style="grid-template-columns:repeat(3,1fr);margin-top:6px">${[7, 30, 90].map(d => `<button data-days="${d}" class="${d === days ? 'on' : ''}">${d} days</button>`).join('')}</div></div>
+    <button class="btn accent big" id="fGo">Create invite link</button><p class="tiny" id="fErr" aria-live="polite"></p></div>`;
+  $$('[data-scope]').forEach(b => b.onclick = () => { if (b.dataset.scope === 'activity') return; const k = b.dataset.scope; on.has(k) ? on.delete(k) : on.add(k); b.classList.toggle('on', on.has(k)); b.setAttribute('aria-pressed', on.has(k)); });
+  $$('[data-days]').forEach(b => b.onclick = () => { days = +b.dataset.days; $$('[data-days]').forEach(x => x.classList.toggle('on', x === b)); });
+  $('#fGo').onclick = async () => {
+    const label = $('#fLabel').value.trim(), me = $('#fMe').value.trim();
+    if (!label) { $('#fErr').textContent = 'Enter who you are inviting.'; $('#fLabel').focus(); return; }
+    const r = await api('/api/me/shares', { label, owner_label: me || 'Your family member', scopes: [...on], days });
+    $('#sec').innerHTML = `<div class="card" style="text-align:center"><span class="ico lg green" style="margin:0 auto">${ic('send')}</span><h2 style="margin-top:12px">Send this to ${esc(label)}</h2>
+      <img src="/api/invite/${encodeURIComponent(r.token)}/qr.svg" alt="QR code for the invite link" width="190" height="190" style="margin:10px auto;display:block;border-radius:14px;border:1px solid var(--line)">
+      <p class="tiny" style="word-break:break-all">${esc(r.invite_url)}</p>
+      <div class="stack"><button class="btn accent big" id="fCopy">${ic('copy')} Copy link</button><a class="btn secondary big" href="#/me/family">Done</a></div>
+      <p class="tiny" style="margin-top:12px">The link works once. ${esc(label)} opens it with their own passkey. You'll see each time they look.</p></div>`;
+    $('#fCopy').onclick = async () => { try { await navigator.clipboard.writeText(r.invite_url); toast('Link copied'); } catch { toast('Select the link above to copy it'); } };
+  };
+}
+async function caregiverView(id) {
+  main.innerHTML = `<a class="back" href="#/me/family">${ic('arrow-left')}Family</a><div id="sec" class="pop"><p class="muted">Loading…</p></div>`;
+  const box = $('#sec');
+  let v; try { v = await api(`/api/me/shared/${encodeURIComponent(id)}`); }
+  catch (e) { box.innerHTML = `<div class="card"><h2>Not available</h2><p class="muted">${esc(e.message)}</p></div>`; return; }
+  const A = v.activity, nm = esc(v.owner_label);
+  const better = (g) => g.latest === g.first ? 'same as first try' : ((g.better === 'higher') === (g.latest > g.first)) ? 'better than first try' : 'below first try';
+  box.innerHTML = `<div class="habit-h"><span class="ico lg green">${ic('users')}</span><div><h1>${nm}</h1><span class="pill">Shared with you until ${fmtDay(v.expires)}</span></div></div>
+    ${A.days_since == null ? `<div class="bubble">${nm} hasn't done a session yet.</div>`
+      : A.days_since >= 3 ? `<div class="support-card warn"><b>No session for ${A.days_since} days.</b> Maybe give ${nm} a call?</div>`
+      : `<p><span class="pill green">${ic('circle-check')} ${A.days_since === 0 ? 'Active today' : 'Active yesterday'}</span></p>`}
+    <div class="statrow"><div class="stat"><span>Streak</span><b>${A.streak} day${A.streak === 1 ? '' : 's'}</b></div><div class="stat"><span>Active days</span><b>${A.active_14}/14</b></div><div class="stat"><span>Last active</span><b>${A.last_active ? fmtDay(A.last_active) : '–'}</b></div></div>
+    <div class="card"><div class="eyebrow">Last 2 weeks</div><div class="weekdots">${A.days.map(d => `<div class="${d.active ? 'on' : ''}"><i></i>${new Date(d.date + 'T12:00').toLocaleDateString(undefined, { weekday: 'narrow' })}</div>`).join('')}</div></div>
+    ${v.bp ? `<div class="card" style="margin-top:14px"><div class="eyebrow">Blood pressure</div>${v.bp.readings.length ? `<p><b style="font:800 1.6rem var(--display)">${v.bp.avg}</b> <span class="muted">average top number, last 2 weeks</span></p>
+      ${v.bp.avg >= 130 ? `<p class="caveat">Above 130: worth ${nm} mentioning to their doctor.</p>` : ''}<p class="tiny">${v.bp.readings.slice().reverse().map(b => `${fmtDay(b.date)}: ${b.sys}${b.dia ? '/' + b.dia : ''}`).join(' · ')}</p>` : '<p class="muted">No readings in the last 2 weeks.</p>'}</div>` : ''}
+    ${v.games ? `<div class="card" style="margin-top:14px"><div class="eyebrow">Thinking games</div>${v.games.length ? `<div class="list" style="box-shadow:none">${v.games.map(g => `<div class="lrow"><div class="txt"><b>${esc(g.game)}</b><span>${g.plays} play${g.plays === 1 ? '' : 's'} · latest ${g.latest} ${esc(g.unit)} · ${better(g)}</span></div></div>`).join('')}</div>
+      <p class="tiny">Compared only with ${nm}'s own first tries. One bad day means little; a steady drop over weeks is worth a conversation.</p>` : '<p class="muted">No games yet.</p>'}</div>` : ''}
+    ${v.mood ? `<div class="card" style="margin-top:14px"><div class="eyebrow">Mood check</div><p>${v.mood.phq8 == null ? 'Not taken yet.' : `<b>${v.mood.phq8}</b> of 24 (PHQ-8)${v.mood.phq8 >= 10 ? ' · a score worth talking about together' : ''}`}</p></div>` : ''}
+    ${v.insights ? `<div class="card" style="margin-top:14px"><div class="eyebrow">Personal patterns</div>${v.insights.length ? v.insights.map(i => `<p>${esc(i.finding)} <span class="lv ${i.level === 'clear' ? 'lv-clear' : 'lv-hint'}">${i.level === 'clear' ? 'Clear pattern' : 'Early hint'}</span></p>`).join('') : '<p class="muted">Not enough days yet.</p>'}</div>` : ''}
+    <p class="tiny" style="margin-top:16px">${nm} chose what you can see and can stop sharing any time. ${nm} can see each time you open this page.</p>`;
+}
+async function pageJoin(token) {
+  bodyClass('onboard');
+  const r = await fetch(`/api/invite/${encodeURIComponent(token)}`), info = await r.json().catch(() => ({}));
+  if (!r.ok || info.status !== 'pending') {
+    main.innerHTML = `<div class="qscreen pop"><div class="card"><h1 style="font-size:1.6rem">This invite can't be used</h1><p class="muted">${esc(info.detail || `It's ${info.status}.`)} Ask for a new link.</p><a class="btn secondary" href="#/today">Open NeuroTrail</a></div></div>`;
+    return;
+  }
+  const signed = AUTH?.signed_in, needPk = info.needs_passkey && !(signed && AUTH.passkey);
+  main.innerHTML = `<div class="qscreen pop"><span class="ico lg green">${ic('users')}</span>
+    <h1>${esc(info.owner_label)} wants to share their brain-health progress with you</h1>
+    <div class="list">${info.scopes.map(s => `<div class="lrow"><span class="ico teal">${ic('check')}</span><div class="txt"><b>${esc(s)}</b></div></div>`).join('')}</div>
+    <p class="muted" style="margin-top:12px">Until ${fmtDay(info.expires)}. ${esc(info.owner_label)} can stop sharing any time and will see each time you look.</p>
+    <div class="foot stack">
+      ${signed ? `<button class="btn accent big" id="jGo">${ic(needPk ? 'fingerprint' : 'check')} ${needPk ? 'Save a passkey and accept' : 'Accept'}</button>`
+        : `<button class="btn accent big" id="jNew">${ic('fingerprint')} Create my account${info.needs_passkey ? ' with a passkey' : ''}</button><button class="btn secondary big" id="jLogin">${ic('key')} I have a passkey</button>`}
+      <p class="tiny" style="text-align:center">${info.needs_passkey ? 'Health data opens only with your own passkey: no shared passwords.' : 'Demo mode: passkeys are optional here.'}</p></div></div>`;
+  const accept = async () => {
+    try { const s = await api('/api/me/join', { token }); toast(`You can now see ${info.owner_label}'s progress`); location.hash = `#/me/family/view/${s.id}`; }
+    catch (e) { toast(e.message, 6000); }
+  };
+  $('#jGo') && ($('#jGo').onclick = () => needPk ? savePasskey(accept) : accept());
+  $('#jNew') && ($('#jNew').onclick = async () => {
+    try { await api('/auth/guest', {}); AUTH = await api('/auth/me'); } catch (e) { toast(e.message); return; }
+    info.needs_passkey ? savePasskey(accept) : accept();
+  });
+  $('#jLogin') && ($('#jLogin').onclick = () => passkeyLogin(accept));
 }
 
 // ================================================================== BOOT

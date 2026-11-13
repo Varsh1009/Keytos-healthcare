@@ -24,7 +24,7 @@ python models/build_facts.py        # writes models/artifacts/facts.json: every 
 python -m neurotrail.brain_export   # fsaverage6 brain mesh for the 3D view
 python -m neurotrail.atlas_export   # deep-structure meshes + Harvard-Oxford labels
 python web/server.py                # open http://localhost:8600
-pytest -q                           # 53 tests (one needs the NHANES download)
+pytest -q                           # 59 tests (one needs the NHANES download)
 ```
 
 Python does all the work (pandas, scikit-learn, statsmodels, nilearn, nibabel, PyTorch, FastAPI).
@@ -71,6 +71,20 @@ unverifiable screenshot. NeuroTrail's one-page report can be **signed twice and 
 5. Reports **expire after 90 days** and can be **revoked**; the verify page then says so.
 
 For phones scanning the QR, serve over https (e.g. a tunnel) and set `NT_PUBLIC_URL` and `NT_RP_ID`.
+
+### Family sharing, consent first (`neurotrail/sharing.py`)
+
+Most caregivers already hold their parent's passwords, and once monitoring starts it is almost never revisited
+("consent stasis", Future of Privacy Forum 2026). NeuroTrail's sharing is built the other way round:
+
+- **You choose what they see**: sessions and streak (always), blood pressure, game trends, personal patterns;
+  mood is off unless you turn it on.
+- **It ends on its own**: every share lasts 7, 30 or 90 days. A week before the end, Today asks
+  "Still want Daughter to see your progress?" Nothing renews silently.
+- **Their own passkey**: the caregiver opens the single-use invite link (or QR) and signs in with their own passkey.
+  No shared passwords. (Demo mode allows guests so the demo works on one laptop.)
+- **You see every visit**: "Seen by Daughter, 2 hours ago", with a full visit log. Stop sharing any time.
+- The caregiver's page nudges them gently when there's been no session for 3+ days.
 
 ### Personal insights (`neurotrail/insights.py`)
 
