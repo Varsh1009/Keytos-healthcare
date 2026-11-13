@@ -1,13 +1,22 @@
 numpy
 pandas
 scipy
-scikit-learn
+# the trained models in models/artifacts were pickled with this exact version
+scikit-learn==1.6.1
 statsmodels
 joblib
 nilearn
+nibabel
 fastapi
 uvicorn
 pydantic
+python-multipart     # file uploads (voice, MRI, wearables)
+pillow               # MRI slice previews
+webauthn             # passkey sign-in
 kaggle
 pytest
 httpx
+# optional
+anthropic            # the "Ask a question" coach (needs ANTHROPIC_API_KEY)
+scikit-image         # only for python -m neurotrail.atlas_export
+# torch              # only for models/train_mri_cnn.py (the retired research CNN)

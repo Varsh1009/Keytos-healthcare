@@ -48,7 +48,7 @@ export async function pageHome() {
   const g = games.games.filter(x => x.id !== 'speed').sort((a, b) => (GS[a.id]?.plays ?? 0) - (GS[b.id]?.plays ?? 0))[0];
   const plan = [
     { n: 1, icon: q.icon, color: q.color, title: q.title, why: P.top ? `Your biggest lever is ${P.top.label.toLowerCase()}.` : q.steps[0], time: '5 min', href: `#/play/${q.id}`, done: M.trail[q.id] === 'done' },
-    { n: 2, icon: '🎙️', color: '#59F0FF', title: 'Voice check', why: 'Read a short paragraph out loud. We measure your speaking pace and pauses.', time: '1 min', href: '#/voice', done: voiceDone },
+    { n: 2, icon: '🎙️', color: '#5EEAD4', title: 'Voice check', why: 'Read a short paragraph out loud. We measure your speaking pace and pauses.', time: '1 min', href: '#/voice', done: voiceDone },
     { n: 3, icon: g.icon, color: g.color, title: g.title, why: `${g.domain}: ${g.how}`, time: '2 min', href: `#/game/${g.id}`, done: GS[g.id]?.played_today },
   ];
   const done = plan.filter(p => p.done).length, next = plan.find(p => !p.done);
@@ -89,6 +89,11 @@ export async function pageHome() {
 
 // ------------------------------------------------------------ VOICE CHECK
 let REC = null;
+// Leaving the page mid-recording: turn the microphone off and discard the audio (nothing is uploaded).
+export function stopVoice() {
+  const R = REC; REC = null; if (!R) return;
+  try { R.proc.disconnect(); R.stream.getTracks().forEach(t => t.stop()); R.sr?.stop(); R.ctx.close(); } catch { }
+}
 export async function pageVoice() {
   const [T, VH] = await Promise.all([X().api('/api/voice/tasks'), X().api(`/api/me/voice`)]);
   $('#p-voice').innerHTML = `<div class="scrollpage"><div class="wrap">
@@ -117,7 +122,7 @@ async function startRec() {
   if (SR) { try { sr = new SR(); sr.continuous = true; sr.onresult = e => { words = 0; for (const r of e.results) words += r[0].transcript.trim().split(/\s+/).filter(Boolean).length; }; sr.start(); } catch { sr = null; } }
   const cv = $('#wave'), g = cv.getContext('2d'), t0 = performance.now();
   proc.onaudioprocess = e => { const d = new Float32Array(e.inputBuffer.getChannelData(0)); chunks.push(d);
-    g.fillStyle = 'rgba(10,14,40,.35)'; g.fillRect(0, 0, cv.width, cv.height); g.strokeStyle = '#59F0FF'; g.beginPath();
+    g.fillStyle = 'rgba(6,8,15,.35)'; g.fillRect(0, 0, cv.width, cv.height); g.strokeStyle = '#5EEAD4'; g.beginPath();
     for (let i = 0; i < d.length; i += 32) { const x = i / d.length * cv.width, y = cv.height / 2 + d[i] * cv.height * 1.6; i ? g.lineTo(x, y) : g.moveTo(x, y); } g.stroke();
     const s = (performance.now() - t0) / 1000; $('#rstat').textContent = `Recording… ${s.toFixed(0)} s (tap to stop${s < 10 ? ', at least 10 s' : ''})`; if (s > 90) $('#rec').click(); };
   src.connect(proc); proc.connect(ctx.destination);
@@ -162,7 +167,7 @@ function renderVoiceResult(j) {
     <ul class="plain">${j.plain.map(l => `<li>${l}</li>`).join('')}</ul>
     ${b ? `<div class="eyebrow" style="margin-top:12px">COMPARED WITH YOUR FIRST CHECK</div><ul class="plain">${cmp(m, b, 'speech_tempo', 'higher', '', 'Speaking pace')}${cmp({ r: m.silent_pause_ratio * 100 }, { r: b.silent_pause_ratio * 100 }, 'r', 'lower', '%', 'Time spent pausing')}</ul>` : '<p class="muted">This is your baseline. Do the same task again on another day to see your trend.</p>'}
     <div style="height:180px;margin-top:10px"><canvas id="vch"></canvas></div>`;
-  if (j.history.length > 1) X().chart('vch', { type: 'line', data: { labels: j.history.map(h => h.ts.slice(5, 10)), datasets: [{ label: 'syllables/sec', data: j.history.map(h => h.speech_tempo), borderColor: '#59F0FF', tension: .3, yAxisID: 'y' }, { label: '% pausing', data: j.history.map(h => Math.round(h.silent_pause_ratio * 100)), borderColor: '#FFC83D', tension: .3, yAxisID: 'y1' }] }, options: X().chartOpts({ scales: { y: { ticks: { color: '#9AA3C7' } }, y1: { position: 'right', ticks: { color: '#9AA3C7' }, grid: { display: false } }, x: { ticks: { color: '#9AA3C7' } } } }) });
+  if (j.history.length > 1) X().chart('vch', { type: 'line', data: { labels: j.history.map(h => h.ts.slice(5, 10)), datasets: [{ label: 'syllables/sec', data: j.history.map(h => h.speech_tempo), borderColor: '#5EEAD4', tension: .3, yAxisID: 'y' }, { label: '% pausing', data: j.history.map(h => Math.round(h.silent_pause_ratio * 100)), borderColor: '#FBBF24', tension: .3, yAxisID: 'y1' }] }, options: X().chartOpts({ scales: { y: { ticks: { color: '#A9B2CA' } }, y1: { position: 'right', ticks: { color: '#A9B2CA' }, grid: { display: false } }, x: { ticks: { color: '#A9B2CA' } } } }) });
 }
 function renderVoiceHistory(h) {
   const last = h[h.length - 1];
@@ -191,7 +196,7 @@ export async function pageData() {
       <a class="tile glass" href="#/levers"><span>🎛</span><b>What if…</b><small>Move sliders, see the effect</small></a>
       <a class="tile glass" href="#/progress"><span>📈</span><b>All my charts</b><small>Missions, games, trends</small></a></div>
   </div></div>`;
-  if (days.length) X().chart('wch', { type: 'bar', data: { labels: days.map(d => d[0].slice(5)), datasets: [{ label: 'steps', data: days.map(d => d[1].steps ?? null), backgroundColor: 'rgba(61,220,151,.7)', borderRadius: 4, yAxisID: 'y' }, { type: 'line', label: 'sleep (h)', data: days.map(d => d[1].sleep_hours ?? null), borderColor: '#7C8CFF', yAxisID: 'y1', tension: .3, spanGaps: true }] }, options: X().chartOpts({ scales: { y: { ticks: { color: '#9AA3C7' } }, y1: { position: 'right', ticks: { color: '#9AA3C7' }, grid: { display: false } }, x: { ticks: { color: '#9AA3C7' } } } }) });
+  if (days.length) X().chart('wch', { type: 'bar', data: { labels: days.map(d => d[0].slice(5)), datasets: [{ label: 'steps', data: days.map(d => d[1].steps ?? null), backgroundColor: 'rgba(61,220,151,.7)', borderRadius: 4, yAxisID: 'y' }, { type: 'line', label: 'sleep (h)', data: days.map(d => d[1].sleep_hours ?? null), borderColor: '#7C8CFF', yAxisID: 'y1', tension: .3, spanGaps: true }] }, options: X().chartOpts({ scales: { y: { ticks: { color: '#A9B2CA' } }, y1: { position: 'right', ticks: { color: '#A9B2CA' }, grid: { display: false } }, x: { ticks: { color: '#A9B2CA' } } } }) });
   const up = async f => { $('#wmsg').innerHTML = '<p class="muted">Reading your file… (big Apple exports can take a minute)</p>';
     const fd = new FormData(); fd.append('file', f); const r = await fetch(`/api/me/wearables`, { method: 'POST', body: fd }); const j = await r.json();
     if (!r.ok) { $('#wmsg').innerHTML = `<p class="caveat">⚠ ${esc(j.detail)}</p>`; return; } X().setME(j.player); X().toast(`Imported ${j.imported_days} days ✓`); pageData(); };

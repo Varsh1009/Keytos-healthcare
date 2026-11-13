@@ -7,11 +7,12 @@ const toWorld = (x, y, z) => new THREE.Vector3(x, z, -y);
 const reduced = () => matchMedia('(prefers-reduced-motion: reduce)').matches || document.body.classList.contains('calm');
 
 export async function createBrain(stage) {
-  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setClearColor(0x000000, 0);
   renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
   stage.appendChild(renderer.domElement);
-  const scene = new THREE.Scene(); scene.background = new THREE.Color('#0E1330');
+  const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(36, 1, 1, 5000);
   const HOME = new THREE.Vector3(-360, 70, 50); camera.position.copy(HOME);
   const controls = new OrbitControls(camera, renderer.domElement);

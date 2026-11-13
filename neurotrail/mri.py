@@ -14,8 +14,14 @@ from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
-import torch
-import torch.nn as nn
+
+try:   # PyTorch is only needed for the (retired) CNN; format checks and slice previews work without it
+    import torch
+    import torch.nn as nn
+    _Module = nn.Module
+except ImportError:  # pragma: no cover
+    torch = nn = None
+    _Module = object
 
 ROOT = Path(__file__).resolve().parents[1]
 ART = ROOT / "models" / "artifacts"
@@ -41,7 +47,7 @@ def downsample(v: np.ndarray) -> np.ndarray:
     return v.reshape(a, 2, b, 2, c, 2).mean(axis=(1, 3, 5)).astype(np.float32)
 
 
-class BrainAgeCNN(nn.Module):
+class BrainAgeCNN(_Module):
     """Compact 3D CNN for brain age: 5 conv blocks (stride-2 downsampling) + global average pool."""
 
     def __init__(self, ch=(16, 32, 64, 128, 128)):
@@ -61,6 +67,8 @@ class BrainAgeCNN(nn.Module):
 
 @lru_cache
 def ensemble() -> list[BrainAgeCNN]:
+    if torch is None:
+        raise RuntimeError("PyTorch is not installed (pip install torch) - needed only for the research CNN.")
     models = []
     for k in range(5):
         f = ART / f"mri_cnn_fold{k}.pt"

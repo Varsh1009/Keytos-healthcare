@@ -195,13 +195,20 @@ def add_game(player: str, game: str, date: str, score: float, detail: dict, spar
 
 def games(player: str, game: str | None = None) -> list[dict]:
     q, a = "SELECT game,date,score,detail,sparks,ts FROM game_results WHERE player=?", [player]
-    if game:
+    if game in ("recall", "recall_delayed"):
+        # Older versions saved delayed recall (0-10) under "recall" (0-30); keep the two histories apart.
+        q += " AND game IN ('recall','recall_delayed')"
+    elif game:
         q += " AND game=?"
         a.append(game)
     with conn() as c:
         rows = c.execute(q + " ORDER BY id", a).fetchall()
-    return [{"game": r["game"], "date": r["date"], "score": r["score"], "sparks": r["sparks"], "ts": r["ts"],
-             "detail": json.loads(r["detail"] or "{}")} for r in rows]
+    out = [{"game": r["game"], "date": r["date"], "score": r["score"], "sparks": r["sparks"], "ts": r["ts"],
+            "detail": json.loads(r["detail"] or "{}")} for r in rows]
+    if game in ("recall", "recall_delayed"):
+        delayed = game == "recall_delayed"
+        out = [r for r in out if (r["game"] == "recall_delayed" or bool(r["detail"].get("delayed"))) == delayed]
+    return out
 
 
 def add_mri(player: str, source: str, age, brain_age, gap, ok: bool, regions: dict | None = None) -> None:

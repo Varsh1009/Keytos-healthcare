@@ -61,6 +61,8 @@ GAMES = [
 GAME_BY_ID = {g["id"]: g for g in GAMES}
 # The voice check stores its daily sparks in game_results under id "voice" (not shown as a game card).
 GAME_BY_ID["voice"] = {"id": "voice", "title": "Voice check", "better": "higher", "norm": None}
+# Delayed word recall (0-10) has its own history so it doesn't mix with the 0-30 learning score.
+GAME_BY_ID["recall_delayed"] = {"id": "recall_delayed", "title": "Delayed recall", "better": "higher", "norm": None}
 
 WORD_LISTS = [
     ["candle", "river", "garden", "ticket", "mirror", "button", "saddle", "forest", "pencil", "island"],
@@ -94,19 +96,22 @@ def animals() -> frozenset[str]:
 
 
 def score_fluency(entries: list[str]) -> dict:
-    """Unique valid animals (plural/singular merged). Unknown words are listed, not counted."""
+    """Unique valid animals (plural/singular merged). Unknown words are listed, repeats counted, neither scored."""
     A = animals()
-    valid, invalid, seen = [], [], set()
+    valid, invalid, seen, repeats = [], [], set(), 0
     for raw in entries:
         w = raw.strip().lower().replace("-", " ")
-        for cand in (w, w.rstrip("s"), w[:-2] if w.endswith("es") else w, w[:-3] + "y" if w.endswith("ies") else w):
+        cands = (w, w[:-1] if w.endswith("s") else w, w[:-2] if w.endswith("es") else w, w[:-3] + "y" if w.endswith("ies") else w)
+        for cand in cands:
             if cand.replace(" ", "") in A or cand in A:
                 key = cand.replace(" ", "")
                 if key not in seen:
                     seen.add(key)
                     valid.append(raw.strip())
+                else:
+                    repeats += 1
                 break
         else:
             if w:
                 invalid.append(raw.strip())
-    return {"score": len(valid), "valid": valid, "unrecognized": invalid}
+    return {"score": len(valid), "valid": valid, "unrecognized": invalid, "repeats": repeats}

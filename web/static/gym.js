@@ -8,6 +8,10 @@ const me = () => X().getME();
 const shuffle = a => a.map(v => [Math.random(), v]).sort((x, y) => x[0] - y[0]).map(v => v[1]);
 
 async function catalog() { CAT ||= (await X().api('/api/games')).games; return CAT; }
+// Called on every route change: bumping RUN makes any running game loop exit instead of
+// carrying on in the background (it used to keep the mic on and could save a score after you left).
+let FLUENCY_REC = null;
+export function stopGames() { RUN++; try { FLUENCY_REC?.stop(); } catch { } FLUENCY_REC = null; }
 
 // ============================================================ GYM HUB
 export async function pageGym() {
@@ -39,8 +43,10 @@ function spark(h, better) {
 // ============================================================ GAME SHELL
 export async function pageGame(id) {
   RUN++;
-  const games = await catalog(), g = games.find(x => x.id === id);
+  const run = RUN, games = await catalog(), g = games.find(x => x.id === id);
   if (!g || id === 'speed') { location.hash = id === 'speed' ? '#/sprint' : '#/checks'; return; }
+  STATS = await X().api('/api/me/games').catch(() => ({}));   // so the intro shows your real best
+  if (run !== RUN) return;
   $('#p-game').innerHTML = `<div class="sprint-wrap"><div class="arcade gamebox" style="--c:${g.color}">
     <a class="close" href="#/checks" style="text-decoration:none;display:grid;place-items:center">✕</a>
     <div id="gb"></div></div></div>`;
@@ -49,7 +55,7 @@ export async function pageGame(id) {
 function intro(g) {
   const s = STATS[g.id] || {};
   $('#gb').innerHTML = `<div class="eyebrow">${g.domain.toUpperCase()} · ${g.test}</div>
-    <h2 style="font:700 40px 'Space Grotesk';margin:10px 0">${g.icon} ${g.title}</h2>
+    <h2 class="game-title">${g.icon} ${g.title}</h2>
     <p class="muted" style="max-width:600px;margin:0 auto">${g.how}</p>
     <div class="a-big">${s.best ?? '–'}</div><div class="muted">your best · ${g.unit}</div>
     <p class="muted" style="max-width:600px;margin:12px auto">${g.evidence} <a href="${g.url}" target="_blank">source ↗</a></p>
@@ -57,27 +63,31 @@ function intro(g) {
   $('#go').onclick = () => ({ recall: recall, fluency: fluency, trails: trails, stroop: stroop, corsi: corsi, reaction: reaction })[g.id](g);
   if (g.id === 'recall') recallDelayedButton(g);
 }
-async function finish(g, score, detail, lines = []) {
+async function finish(g, score, detail, lines = [], run = RUN) {
+  if (run !== RUN || !$('#gb')) return;            // the player left the game: don't save a score
   const r = await X().api(`/api/me/game`, { game: g.id, score, detail });
+  if (!$('#gb')) return;
   X().setME(r.player); STATS[g.id] = r.stats;
   const prevBest = r.stats.history.length > 1 ? (g.better === 'higher' ? Math.max(...r.stats.history.slice(0, -1)) : Math.min(...r.stats.history.slice(0, -1))) : null;
-  const pb = prevBest == null || (g.better === 'higher' ? score > prevBest : score < prevBest);
+  const pb = prevBest != null && (g.better === 'higher' ? score > prevBest : score < prevBest);
   
   $('#gb').innerHTML = `<div class="eyebrow">${g.title.toUpperCase()} · RESULT</div><div class="a-big">${score}</div><div class="muted">${g.unit}</div>
     ${pb ? '<div style="margin-top:10px"><span class="pb">NEW PERSONAL BEST</span></div>' : ''}
-    ${r.sparks_gained ? `<div class="reward" style="text-align:center;margin-top:8px">+${r.sparks_gained} ⚡</div>` : '<div class="muted" style="margin-top:8px">Already earned today\'s sparks for this game. Practice still counts in your history.</div>'}
+    ${r.sparks_gained ? `<div class="reward" style="text-align:center;margin-top:8px">+${r.sparks_gained} ⚡</div>` : g.base ? '' : '<div class="muted" style="margin-top:8px">Already earned today\'s sparks for this game. Practice still counts in your history.</div>'}
     ${lines.map(l => `<p class="muted">${l}</p>`).join('')}
     <p class="muted">Compared only with you: your first try was ${r.stats.history[0]}. ${r.stats.plays < 3 ? 'Learning your baseline: play on 3 different days to see a trend.' : ''}</p>
     ${r.stats.history.length > 1 ? `<div style="max-width:560px;height:160px;margin:16px auto"><canvas id="gh"></canvas></div>` : ''}
     <div class="row" style="justify-content:center"><button class="cta" id="again">↻ Play again</button><a class="ghost" href="#/checks">Back to Checks</a></div>`;
   if (r.stats.history.length > 1) X().chart('gh', { type: 'line', data: { labels: r.stats.history.map((_, i) => i + 1), datasets: [{ data: r.stats.history, borderColor: g.color, backgroundColor: 'rgba(255,255,255,.05)', fill: true, tension: .3 }] }, options: X().chartOpts({ plugins: { legend: { display: false } } }) });
-  $('#again').onclick = () => intro(g);
+  $('#again').onclick = () => intro(g.base || g);
   X().renderHUD();
 }
 
 // ============================================================ WORD RECALL (CERAD-style)
 async function recall(g) {
-  const run = RUN, { words, distractors } = await X().api('/api/games/recall-words');
+  let last = null; try { last = localStorage.getItem('nt_recall_last'); } catch { }
+  const run = RUN, { words, distractors } = await X().api('/api/games/recall-words' + (last ? `?avoid=${encodeURIComponent(last)}` : ''));
+  try { localStorage.setItem('nt_recall_last', words[0]); } catch { }
   const mode = await chooseMode([['tap', '👆 Tap the words', 'Pick the words from a grid. Works anywhere.'], ['type', '⌨️ Type the words', 'Harder: recall without hints.']]);
   if (run !== RUN) return;
   const trials = [];
@@ -94,7 +104,7 @@ async function recall(g) {
   const learning = trials.reduce((a, b) => a + b.hits, 0);
   localStorage.setItem('nt_recall', JSON.stringify({ words, distractors, mode, at: Date.now(), player: me().name }));
   finish(g, learning, { trials: trials.map(t => t.hits), false_alarms: trials.map(t => t.fa), mode },
-    [`Trials: ${trials.map(t => t.hits).join(' → ')} words. Come back in 5+ minutes for delayed recall (it opens on this game's page).`]);
+    [`Trials: ${trials.map(t => t.hits).join(' → ')} words. Come back in 5+ minutes for delayed recall (it opens on this game's page).`], run);
 }
 function collectRecall(words, distractors, mode, title) {
   return new Promise(res => {
@@ -121,12 +131,12 @@ function recallDelayedButton(g) {
   const mins = (Date.now() - st.at) / 60000;
   const row = $('#startRow');
   if (mins < 5) { row.insertAdjacentHTML('beforeend', `<button class="ghost" disabled>⏳ Delayed recall opens in ${Math.ceil(5 - mins)} min</button>`); return; }
-  row.insertAdjacentHTML('beforeend', `<button class="cta" id="delayed" style="background:linear-gradient(90deg,#9B7BFF,#59F0FF)">🧠 Delayed recall now</button>`);
+  row.insertAdjacentHTML('beforeend', `<button class="cta" id="delayed" style="background:linear-gradient(135deg,#A78BFA,#5EEAD4)">🧠 Delayed recall now</button>`);
   $('#delayed').onclick = async () => {
     const r = await collectRecall(st.words, st.distractors, st.mode, `DELAYED RECALL · ${Math.round(mins)} MIN LATER`);
     localStorage.removeItem('nt_recall');
-    finish(g, r.hits, { delayed: true, minutes: Math.round(mins), false_alarms: r.fa, mode: st.mode },
-      ['Delayed recall (0–10), compared with your own earlier tries.']);
+    finish({ ...g, base: g, id: 'recall_delayed', title: 'Delayed recall', unit: 'words (of 10)' }, r.hits, { delayed: true, minutes: Math.round(mins), false_alarms: r.fa, mode: st.mode },
+      [`Remembered after ${Math.round(mins)} minutes, compared only with your own earlier delayed recalls.`]);
   };
 }
 function chooseMode(opts) {
@@ -144,21 +154,23 @@ async function fluency(g) {
   const mode = await chooseMode([...(SR ? [['voice', '🎤 Say them out loud', onDevice ? 'Speech is turned into words on this device.' : 'Heads up: your browser sends the audio to Google to turn it into words. Sound measurements stay here.']] : []), ['type', '⌨️ Type them', 'Nothing leaves this computer.']]);
   if (run !== RUN) return;
   const entries = [];
-  $('#gb').innerHTML = `<div class="eyebrow">ANIMAL NAMING · 60 SECONDS</div><div class="timer" style="margin:10px auto"><svg width="120" height="120"><circle cx="60" cy="60" r="52" stroke="rgba(255,255,255,.1)" stroke-width="8" fill="none"/><circle id="ft" cx="60" cy="60" r="52" stroke="#3DDC97" stroke-width="8" fill="none" stroke-linecap="round" stroke-dasharray="326.7"/></svg><div class="t" id="fl">60</div></div>
+  $('#gb').innerHTML = `<div class="eyebrow">ANIMAL NAMING · 60 SECONDS</div><div class="timer" style="margin:10px auto"><svg width="120" height="120"><circle cx="60" cy="60" r="52" stroke="rgba(255,255,255,.1)" stroke-width="8" fill="none"/><circle id="ft" cx="60" cy="60" r="52" stroke="#4ADE80" stroke-width="8" fill="none" stroke-linecap="round" stroke-dasharray="326.7"/></svg><div class="t" id="fl">60</div></div>
     ${mode === 'type' ? '<input id="fin" placeholder="type an animal + Enter" autocomplete="off" style="max-width:360px">' : '<div class="muted" id="mic">🎤 Listening… say animals one after another</div>'}
     <div class="chips" id="fgot" style="justify-content:center;margin-top:14px"></div>`;
   const show = () => $('#fgot').innerHTML = entries.map(e => `<span class="chip on">${e}</span>`).join('');
   let rec = null;
   if (mode === 'type') { $('#fin').focus(); $('#fin').onkeydown = e => { if (e.key === 'Enter' && e.target.value.trim()) { entries.push(e.target.value.trim()); e.target.value = ''; show(); } }; }
-  else { rec = new SR(); rec.continuous = true; rec.interimResults = false; rec.lang = 'en-US'; if (onDevice) { try { rec.processLocally = true; } catch { } }
+  else { rec = FLUENCY_REC = new SR(); rec.continuous = true; rec.interimResults = false; rec.lang = 'en-US'; if (onDevice) { try { rec.processLocally = true; } catch { } }
     rec.onresult = ev => { for (let i = ev.resultIndex; i < ev.results.length; i++) if (ev.results[i].isFinal) ev.results[i][0].transcript.split(/[\s,]+/).filter(Boolean).forEach(w => entries.push(w)); show(); };
     rec.onerror = e => X().toast('Microphone: ' + e.error); try { rec.start(); } catch { } }
   const t0 = performance.now();
   while (performance.now() - t0 < 60000) { if (run !== RUN) { rec?.stop(); return; } const left = 60 - (performance.now() - t0) / 1000; $('#fl').textContent = Math.ceil(left); $('#ft').style.strokeDashoffset = 326.7 * (1 - left / 60); await sleep(200); }
-  rec?.stop(); await sleep(400);
+  rec?.stop(); FLUENCY_REC = null; await sleep(400);
+  if (run !== RUN) return;
   const sc = await X().api('/api/games/fluency-score', { entries });
   finish(g, sc.score, { mode, valid: sc.valid, unrecognized: sc.unrecognized },
-    [sc.valid.length ? `Counted: ${sc.valid.join(', ')}` : 'No animals recognized.', sc.unrecognized.length ? `Not counted (not in our 350-animal list or repeats): ${sc.unrecognized.join(', ')}` : '']);
+    [sc.valid.length ? `Counted: ${sc.valid.join(', ')}` : 'No animals recognized.', sc.unrecognized.length ? `Not counted (not in our 350-animal list): ${sc.unrecognized.join(', ')}` : '',
+     sc.repeats ? `${sc.repeats} repeat${sc.repeats > 1 ? 's' : ''} (same animal again) not counted.` : ''], run);
 }
 
 // ============================================================ TRAIL CONNECT (TMT A/B)
@@ -168,7 +180,7 @@ async function trails(g) {
   const labels = []; for (let i = 0; i < 8; i++) { labels.push(String(i + 1)); if (i < 7) labels.push('ABCDEFG'[i]); }
   const b = await trailPart('B', labels, run); if (b == null) return;
   const diff = +(b.t - a.t).toFixed(1);
-  finish(g, diff, { a: a.t, b: b.t, errors_a: a.err, errors_b: b.err }, [`Part A ${a.t.toFixed(1)} s (${a.err} errors) · Part B ${b.t.toFixed(1)} s (${b.err} errors). B − A isolates the cost of switching.`]);
+  finish(g, diff, { a: a.t, b: b.t, errors_a: a.err, errors_b: b.err }, [`Part A ${a.t.toFixed(1)} s (${a.err} errors) · Part B ${b.t.toFixed(1)} s (${b.err} errors). B − A isolates the cost of switching.`], run);
 }
 function trailPart(part, labels, run) {
   return new Promise(async res => {
@@ -190,23 +202,26 @@ function trailPart(part, labels, run) {
 
 // ============================================================ COLOR CLASH (Stroop)
 async function stroop(g) {
-  const run = RUN, C = [['RED', '#FF5A6E'], ['GREEN', '#3DDC97'], ['BLUE', '#4FC3F7'], ['YELLOW', '#FFC83D']];
+  const run = RUN, C = [['RED', '#FF5A6E'], ['GREEN', '#4ADE80'], ['BLUE', '#4FC3F7'], ['YELLOW', '#FFC83D']];
   let ok = 0, bad = 0; const rts = { con: [], inc: [] };
   $('#gb').innerHTML = `<div class="a-top"><div class="a-stat"><small>CORRECT</small><span id="sok">0</span></div><div class="a-stat"><small>TIME</small><span id="stl">45</span></div><div class="a-stat"><small>ERRORS</small><span id="sbad">0</span></div></div>
     <div class="muted">Tap the <b>ink color</b>, not the word.</div><div class="stroopword" id="sw"></div>
     <div class="pad" style="grid-template-columns:repeat(4,1fr)">${C.map(([n, c]) => `<button data-c="${n}" style="background:${c}22;border-color:${c};color:${c}">${n}</button>`).join('')}</div>`;
-  let cur, shown; const t0 = performance.now();
-  const nextTrial = () => { const word = C[Math.floor(Math.random() * 4)], con = Math.random() < .5; const ink = con ? word : C.filter(c => c !== word)[Math.floor(Math.random() * 3)];
-    cur = { ink: ink[0], con }; const w = $('#sw'); w.textContent = word[0]; w.style.color = ink[1]; shown = performance.now(); };
+  let cur = null, shown, over = false; const t0 = performance.now();
+  const nextTrial = () => { let word, ink, con;
+    do { word = C[Math.floor(Math.random() * 4)]; con = Math.random() < .5; ink = con ? word : C.filter(c => c !== word)[Math.floor(Math.random() * 3)]; }
+    while (cur && cur.word === word[0] && cur.ink === ink[0]);            // never the exact same card twice in a row
+    cur = { word: word[0], ink: ink[0], con }; const w = $('#sw'); w.textContent = word[0]; w.style.color = ink[1]; shown = performance.now(); };
   nextTrial();
-  $$('[data-c]').forEach(b => b.onclick = () => { if (run !== RUN) return; const rt = performance.now() - shown;
+  $$('[data-c]').forEach(b => b.onclick = () => { if (run !== RUN || over) return; const rt = performance.now() - shown;
     if (b.dataset.c === cur.ink) { ok++; rts[cur.con ? 'con' : 'inc'].push(rt); } else bad++;
     $('#sok').textContent = ok; $('#sbad').textContent = bad; nextTrial(); });
   while (performance.now() - t0 < 45000) { if (run !== RUN) return; $('#stl').textContent = Math.ceil(45 - (performance.now() - t0) / 1000); await sleep(200); }
+  over = true; $('#stl').textContent = 0;
   const med = a => a.length ? a.slice().sort((x, y) => x - y)[Math.floor(a.length / 2)] : null;
   const interf = med(rts.inc) != null && med(rts.con) != null ? Math.round(med(rts.inc) - med(rts.con)) : null;
   finish(g, ok, { errors: bad, median_rt_congruent: med(rts.con), median_rt_incongruent: med(rts.inc), interference_ms: interf },
-    [interf != null ? `Stroop effect: mismatched words took ${interf} ms longer than matched ones (median).` : '']);
+    [interf != null ? `Stroop effect: mismatched words took ${interf} ms longer than matched ones (median).` : ''], run);
 }
 
 // ============================================================ MEMORY GRID (Corsi)
@@ -219,15 +234,16 @@ async function corsi(g) {
   while (fails < 2 && len <= 9) {
     if (run !== RUN) return;
     const seq = shuffle([...Array(9).keys()]).slice(0, len);
-    $('#cinfo').textContent = `Watch: ${len} blocks`; $$('.cblk').forEach(b => b.disabled = true); await sleep(700);
+    $('#cinfo').textContent = `Watch: ${len} blocks`; $$('.cblk').forEach(b => b.disabled = true); await sleep(700); if (run !== RUN) return;
     for (const i of seq) { const b = $(`.cblk[data-i="${i}"]`); b.classList.add('lit'); await sleep(650); b.classList.remove('lit'); await sleep(250); if (run !== RUN) return; }
     $('#cinfo').textContent = 'Your turn: tap them in the same order'; $$('.cblk').forEach(b => b.disabled = false);
     const ok = await new Promise(res => { let k = 0; $$('.cblk').forEach(b => b.onclick = () => { const i = +b.dataset.i; b.classList.add('tap'); setTimeout(() => b.classList.remove('tap'), 200);
       if (i !== seq[k]) return res(false); k++; if (k === seq.length) res(true); }); });
+    if (run !== RUN) return;
     if (ok) { span = len; fails = 0; len++; $('#cinfo').textContent = '✓ Correct!'; } else { fails++; $('#cinfo').textContent = fails < 2 ? '✗ Missed. One more try at this length.' : '✗ Missed again.'; }
     await sleep(800);
   }
-  finish(g, span, { longest_correct: span }, [`Your Corsi span: ${span} blocks in a row.`]);
+  finish(g, span, { longest_correct: span }, [`Your Corsi span: ${span} blocks in a row.`], run);
 }
 
 // ============================================================ REFLEX (simple RT)
@@ -246,13 +262,15 @@ async function reaction(g) {
         else { const ms = performance.now() - go; c.onclick = null; c.className = 'rtc'; c.textContent = `${Math.round(ms)} ms`; resolve(ms); }
       };
     });
+    if (run !== RUN) return;
     if (res != null) rts.push(Math.round(res)); else t--;
     $('#rlist').textContent = rts.map(r => r + ' ms').join(' · ');
     await sleep(500);
     if (early > 6) break;
   }
   const med = rts.slice().sort((a, b) => a - b)[Math.floor(rts.length / 2)] ?? 0;
-  finish(g, med, { trials: rts, early_taps: early }, [`Median of ${rts.length} trials. ${early} early tap(s) were re-run.`]);
+  if (!rts.length) { $('#rinfo').textContent = 'Too many early taps. Wait for green, then tap. Try again!'; return; }
+  finish(g, med, { trials: rts, early_taps: early }, [`Median of ${rts.length} trials. ${early} early tap(s) were re-run.`], run);
 }
 
 // ============================================================ MRI PAGE (real 3D CNN)
@@ -297,7 +315,7 @@ function renderMRI(r) {
     ${f.ok ? '' : f.issues.map(i => `<p class="caveat">⚠ ${i}</p>`).join('')}
     <div style="display:flex;gap:24px;align-items:flex-end;flex-wrap:wrap"><div><div class="tiny">MRI BRAIN AGE</div><div style="font:700 64px/1 'Space Grotesk'">${r.brain_age.toFixed(0)}</div></div>
       ${r.age != null ? `<div><div class="tiny">ACTUAL AGE</div><div style="font:700 40px/1 'Space Grotesk';color:#9AA3C7">${Math.round(r.age)}</div></div>
-      <div><div class="tiny">BIAS-CORRECTED GAP</div><div style="font:700 40px/1 'Space Grotesk';color:${gap > 0 ? '#FF8A7A' : '#3DDC97'}">${gap > 0 ? '+' : ''}${gap.toFixed(1)}</div></div>` : ''}</div>
+      <div><div class="tiny">BIAS-CORRECTED GAP</div><div style="font:700 40px/1 'Space Grotesk';color:${gap > 0 ? '#FF8A7A' : '#4ADE80'}">${gap > 0 ? '+' : ''}${gap.toFixed(1)}</div></div>` : ''}</div>
     <p class="muted">5 models: ${r.fold_preds.map(p => p.toFixed(0)).join(' · ')} yrs. Model error ±${r.mae.toFixed(1)} yrs (MAE). ${gap != null ? (inside ? `The gap is inside the ±${r.sdc.toFixed(1)}-yr scan-to-scan noise band.` : `The gap is larger than the ±${r.sdc.toFixed(1)}-yr scan-to-scan noise band.`) : ''} Template similarity r = ${f.similarity?.toFixed(2)}.</p>
     ${t ? `<div class="ours"><b>Ground truth (OASIS):</b> ${t.id}, age ${t.age}, ${t.status}${t.cdr != null ? `, CDR ${t.cdr}` : ''}. Honest out-of-fold brain age: <b>${t.oof_brain_age.toFixed(1)}</b>. ${t.note}</div>` : ''}
     <div class="eyebrow" style="margin-top:16px">WHERE THE MODEL LOOKED (Grad-CAM, orange = pushed the age estimate up)</div>

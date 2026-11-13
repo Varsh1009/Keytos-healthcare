@@ -1,7 +1,10 @@
 // NeuroTrail v2 front end. Four tabs: Today, Checks, My Brain, Me.
 // Every number comes from the Python API (trained models, SQLite, real datasets). Nothing is made up here.
-import { pageGame } from './gym.js?v=4';
-import { pageVoice, buddy } from './ui2.js?v=3';
+import { pageGame, stopGames } from './gym.js?v=7';
+import { pageVoice, stopVoice, buddy } from './ui2.js?v=5';
+
+// Passkeys are bound to "localhost", and browsers refuse them on raw IPs, so send 127.0.0.1 visitors to localhost.
+if (['127.0.0.1', '[::1]'].includes(location.hostname)) location.replace(location.href.replace(location.hostname, 'localhost'));
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -18,8 +21,10 @@ async function postForm(url, fd) { const r = await fetch(url, { method: 'POST', 
 const toast = (m, ms = 3200) => { const t = $('#toast'); t.textContent = m; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), ms); };
 const charts = {};
 const calm = () => document.body.classList.contains('calm') || matchMedia('(prefers-reduced-motion: reduce)').matches;
-const chartOpts = (extra = {}) => ({ responsive: true, maintainAspectRatio: false, animation: calm() ? false : undefined, plugins: { legend: { labels: { color: '#C3CAEA', font: { size: 14 } } } },
-  scales: { x: { ticks: { color: '#C3CAEA', maxRotation: 0, autoSkip: true, font: { size: 13 } }, grid: { color: 'rgba(255,255,255,.05)' } }, y: { ticks: { color: '#C3CAEA', font: { size: 13 } }, grid: { color: 'rgba(255,255,255,.08)' } } }, ...extra });
+if (window.Chart) { Chart.defaults.font.family = 'Inter, system-ui, sans-serif'; Chart.defaults.color = '#A9B2CA'; Chart.defaults.elements.point.radius = 3; Chart.defaults.elements.point.hoverRadius = 6; Chart.defaults.elements.line.borderWidth = 2.5;
+  Chart.defaults.plugins.tooltip.backgroundColor = 'rgba(14,18,34,.95)'; Chart.defaults.plugins.tooltip.borderColor = 'rgba(255,255,255,.15)'; Chart.defaults.plugins.tooltip.borderWidth = 1; Chart.defaults.plugins.tooltip.padding = 12; Chart.defaults.plugins.tooltip.cornerRadius = 12; }
+const chartOpts = (extra = {}) => ({ responsive: true, maintainAspectRatio: false, animation: calm() ? false : undefined, plugins: { legend: { labels: { color: '#A9B2CA', font: { size: 14 }, usePointStyle: true } } },
+  scales: { x: { ticks: { color: '#A9B2CA', maxRotation: 0, autoSkip: true, font: { size: 13 } }, grid: { display: false }, border: { display: false } }, y: { ticks: { color: '#A9B2CA', font: { size: 13 } }, grid: { color: 'rgba(255,255,255,.06)' }, border: { display: false } } }, ...extra });
 const chart = (id, cfg) => { charts[id]?.destroy(); const el = document.getElementById(id); if (el) charts[id] = new Chart(el, cfg); };
 const main = $('#main');
 
@@ -39,14 +44,14 @@ const HABIT = {
 };
 const FACTOR_HABIT = { sbp: 'bp', diabetes: 'labs', current_smoker: 'smoke', sleep_dev: 'sleep', phq9: 'mood', active_min_week: 'steps' };
 const CHECKS = [
-  { id: 'speed', name: 'Speed Sprint', ico: '⚡', what: 'Match symbols to numbers for 90 seconds.', main: true },
-  { id: 'recall', name: 'Word Recall', ico: '📝', what: 'Learn 10 words, then pick them out.', main: true },
-  { id: 'fluency', name: 'Animal Naming', ico: '🦒', what: 'Name as many animals as you can in 60 seconds.', main: true },
-  { id: 'voice', name: 'Voice check', ico: '🎙️', what: 'Read a short passage aloud. We measure pace and pauses.', main: true },
-  { id: 'trails', name: 'Trail Connect', ico: '🔗', what: 'Tap numbers (and letters) in order.' },
-  { id: 'stroop', name: 'Color Clash', ico: '🎨', what: 'Tap the ink color, not the word.' },
-  { id: 'corsi', name: 'Memory Grid', ico: '🟦', what: 'Repeat a sequence of lit squares.' },
-  { id: 'reaction', name: 'Reflex', ico: '🏁', what: 'Tap the moment the circle turns green.' },
+  { id: 'speed', name: 'Speed Sprint', ico: '⚡', color: '#FBBF24', what: 'Match symbols to numbers for 90 seconds.', main: true },
+  { id: 'recall', name: 'Word Recall', ico: '📝', color: '#60A5FA', what: 'Learn 10 words, then pick them out.', main: true },
+  { id: 'fluency', name: 'Animal Naming', ico: '🦒', color: '#4ADE80', what: 'Name as many animals as you can in 60 seconds.', main: true },
+  { id: 'voice', name: 'Voice check', ico: '🎙️', color: '#F472B6', what: 'Read a short passage aloud. We measure pace and pauses.', main: true },
+  { id: 'trails', name: 'Trail Connect', ico: '🔗', color: '#5EEAD4', what: 'Tap numbers (and letters) in order.' },
+  { id: 'stroop', name: 'Color Clash', ico: '🎨', color: '#FB7185', what: 'Tap the ink color, not the word.' },
+  { id: 'corsi', name: 'Memory Grid', ico: '🟦', color: '#818CF8', what: 'Repeat a sequence of lit squares.' },
+  { id: 'reaction', name: 'Reflex', ico: '🏁', color: '#A78BFA', what: 'Tap the moment the circle turns green.' },
 ];
 // Lancet Commission 2024 (Livingston et al.): weighted population attributable fractions, % of dementia cases.
 const LANCET = [
@@ -71,7 +76,8 @@ const bodyClass = r => { document.body.className = 'r-' + r + (store.get('nt-cal
 
 function renderWho() {
   if (!AUTH?.signed_in) { $('#who').textContent = ''; return; }
-  $('#who').innerHTML = AUTH.passkey ? `🔑 ${esc(AUTH.name)} · saved` : `${esc(AUTH.name)} · <a href="#/me/security">not saved yet</a>`;
+  const av = `<span class="av" aria-hidden="true">${esc((AUTH.name || '?').trim()[0]?.toUpperCase() || '?')}</span>`;
+  $('#who').innerHTML = AUTH.passkey ? `${av}${esc(AUTH.name)} · 🔑 saved` : `${av}${esc(AUTH.name)} · <a href="#/me/security">not saved yet</a>`;
 }
 async function refresh() { ME = await api('/api/me'); return ME; }
 
@@ -86,7 +92,7 @@ function wireStepper(root, id, get, set, { min, max, step, unit = '', fmtv = v =
 }
 function choice(root, sel, cb) { $$(sel, root).forEach(b => b.onclick = () => { $$(sel, root).forEach(x => { x.classList.toggle('on', x === b); x.setAttribute('aria-pressed', x === b); }); cb(b.dataset.v, b); }); }
 const ring = (label, v, goal, color) => { const C = 2 * Math.PI * 42, f = Math.min(1, v / goal);
-  return `<div class="ring"><svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="42" stroke="#2E3768" stroke-width="12" fill="none"/>
+  return `<div class="ring"><svg viewBox="0 0 100 100" aria-hidden="true"><circle cx="50" cy="50" r="42" stroke="rgba(255,255,255,.08)" stroke-width="12" fill="none"/>
     <circle cx="50" cy="50" r="42" stroke="${color}" stroke-width="12" fill="none" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - f)}"/></svg>
     <b>${label}</b><span>${v} / ${goal} this week</span></div>`; };
 const sizeCls = s => ({ 'On target': 'ontarget', Unknown: 'unknown', 'Not shown in data': 'notshown' }[s] || s);
@@ -123,7 +129,7 @@ const routes = { today: pageToday, habit: pageHabit, checks: pageChecks, check: 
 const TAB = { habit: 'today', check: 'checks', sprint: 'checks' };
 let brainView = null;
 async function route() {
-  STOP_SPRINT();
+  STOP_SPRINT(); stopGames(); stopVoice();
   if (!AUTH?.signed_in) return pageWelcome();
   if (!AUTH.onboarded) return pageOnboard();
   const [, r = 'today', ...args] = (location.hash || '#/today').split('/');
@@ -141,34 +147,52 @@ addEventListener('hashchange', route);
 // ================================================================== WELCOME
 function pageWelcome() {
   bodyClass('welcome');
-  main.innerHTML = `<div class="hero pop">${buddy('happy', 120)}
-    <h1>What actually helps <em>your</em> brain?</h1>
+  main.innerHTML = `<div class="hero stagger">
+    <div><div class="buddy-wrap">${buddy('happy', 128)}</div></div>
+    <div><span class="badge-row"><b>FREE</b> Built on real CDC &amp; MRI research data</span></div>
+    <h1>What actually helps<br><em>your</em> brain?</h1>
     <p class="lead">Two minutes, a few taps, and you'll see which of your habits matter most, backed by real health data from thousands of people. Then build those habits with small daily steps.</p>
-    <button class="btn big" id="start">Start · no sign-up needed</button>
-    <div style="margin-top:12px"><button class="btn alt big" id="login">🔑 I already have a passkey</button></div>
+    <div class="ctas"><button class="btn big" id="start">Start now · no sign-up needed →</button>
+      <button class="btn alt big" id="login">🔑 I already have a passkey</button></div>
+    <div class="statstrip"><div><b class="grad-text">2,597</b><span>adults 60+ in the CDC survey</span></div><div><b class="grad-text">436</b><span>real MRI scans tested</span></div><div><b class="grad-text">2 min</b><span>to your first result</span></div></div>
     <div class="promise">
-      <div><b>📊 Real data</b>CDC survey of 2,597 adults 60+, and 436 real MRI scans.</div>
-      <div><b>🙅 No hype</b>We show what we tested and what failed. No "brain age".</div>
-      <div><b>🔒 Private</b>Saved on this computer. Sign in with a passkey, not a password.</div></div>
+      <div><span class="ico-tile" aria-hidden="true">📊</span><b>Real data</b>Models trained on public CDC and OASIS research data, not guesses.</div>
+      <div><span class="ico-tile" aria-hidden="true">🙅</span><b>No hype</b>We show what we tested and what failed. No "brain age".</div>
+      <div><span class="ico-tile" aria-hidden="true">🔒</span><b>Private</b>Saved on this computer. Sign in with a passkey, not a password.</div></div>
     <p class="muted">A wellness and education tool, not a diagnosis. If you're worried about your memory, talk to a doctor.</p></div>`;
   $('#start').onclick = async () => { try { await api('/auth/guest', {}); AUTH = await api('/auth/me'); route(); } catch (e) { toast(`Couldn't start: ${e.message}`, 5000); } };
   $('#login').onclick = passkeyLogin;
 }
+// Passkeys only work in a secure context (https, or http://localhost). Explain instead of failing silently.
+function passkeyBlocker() {
+  if (!window.isSecureContext) return `Passkeys need a secure address. On the computer running NeuroTrail, open http://localhost:${location.port || 8600}. From another device the app must be served over https.`;
+  if (!window.PublicKeyCredential || !window.SimpleWebAuthnBrowser) return 'This browser doesn\'t support passkeys. Try an up-to-date Chrome, Safari, Edge or Firefox.';
+  return null;
+}
+const passkeyError = (e, what) => {
+  if (e.name === 'NotAllowedError') return `${what} was cancelled or timed out. If no passkey was offered, you may not have saved one on this device yet.`;
+  if (e.name === 'InvalidStateError') return 'This device already has a passkey for this account. Use "I already have a passkey" to sign in.';
+  if (e.name === 'SecurityError') return `Passkeys can't be used at this address. Open http://localhost:${location.port || 8600} instead.`;
+  return `${what} failed: ${e.message}`;
+};
 async function passkeyLogin() {
+  const block = passkeyBlocker(); if (block) { toast(block, 8000); return; }
   try {
     const { key, options } = await api('/auth/login/options', {});
     const credential = await SimpleWebAuthnBrowser.startAuthentication({ optionsJSON: options });
     await api('/auth/login/verify', { key, credential });
-    AUTH = await api('/auth/me'); toast(`Welcome back, ${AUTH.name}`); location.hash = '#/today'; route();
-  } catch (e) { toast(e.name === 'NotAllowedError' ? 'Passkey sign-in was cancelled.' : `Couldn't sign in: ${e.message}`, 5000); }
+    AUTH = await api('/auth/me'); toast(`Welcome back, ${AUTH.name}`);
+    if (location.hash === '#/today') route(); else location.hash = '#/today';   // hashchange runs route() once
+  } catch (e) { toast(passkeyError(e, 'Passkey sign-in'), 8000); }
 }
 async function savePasskey(after) {
+  const block = passkeyBlocker(); if (block) { toast(block, 8000); return; }
   try {
     const { key, options } = await api('/auth/register/options', {});
     const credential = await SimpleWebAuthnBrowser.startRegistration({ optionsJSON: options });
     await api('/auth/register/verify', { key, credential });
     AUTH = await api('/auth/me'); renderWho(); toast('🔑 Saved. Next time, sign in with your fingerprint, face or device PIN.', 5000); after?.();
-  } catch (e) { toast(e.name === 'NotAllowedError' ? 'Passkey setup was cancelled. You can do it later in Me → Security.' : `Passkey not saved: ${e.message}`, 6000); }
+  } catch (e) { toast(e.name === 'NotAllowedError' ? 'Passkey setup was cancelled. You can do it later in Me → Security.' : passkeyError(e, 'Saving the passkey'), 8000); }
 }
 
 // ================================================================== ONBOARDING (about 2 minutes)
@@ -261,23 +285,31 @@ async function pageToday() {
   const unknown = Object.entries(L.per_factor).filter(([, f]) => !f.known);
   const h = new Date().getHours(), hi = h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
   const nDone = plan.filter(habitDone).length;
-  main.innerHTML = `<div class="stack">
+  const C = 2 * Math.PI * 54, frac = nDone / Math.max(1, plan.length);
+  main.innerHTML = `<div class="stack stagger">
     ${ME.support ? SUPPORT : ''}
-    <div class="hello">${buddy(nDone === 3 ? 'wow' : 'happy', 96)}<div class="bubble"><b>${hi}!</b> ${nDone === 3 ? 'All 3 habits done today. That is how it adds up.' : nDone ? `${nDone} of 3 habits done. Nice momentum.` : 'One small step today is enough.'}
-      ${ME.streak ? `<br>🔥 ${ME.streak}-day streak <span class="muted">(one rest day a week never breaks it)</span>` : ''}</div></div>
-    ${next ? `<a class="card next" href="#/habit/${next}" style="display:block;text-decoration:none;color:inherit"><div class="eyebrow">Your next step</div><h2>${HABIT[next].ico} ${HABIT[next].name}</h2><p>${esc(nextWhy(next))}</p><span class="btn">Start →</span></a>`
-      : `<a class="card next" href="#/checks" style="display:block;text-decoration:none;color:inherit"><div class="eyebrow">All habits done</div><h2>🎯 Want a quick check?</h2><p>Play a 90-second Speed Sprint and race your first try. Or rest: rest counts too.</p><span class="btn">Go to Checks →</span></a>`}
-    <div class="grid">
-      <div class="card"><div class="eyebrow">Today's 3 habits</div><div class="plan">${plan.map(id => `<a href="#/habit/${id}" class="${habitDone(id) ? 'done' : ''}"><span class="ico">${HABIT[id].ico}</span>${HABIT[id].name}<span class="go">${habitDone(id) ? '✓ Done' : 'Start →'}</span></a>`).join('')}</div></div>
-      <div class="card"><div class="eyebrow">Care rings · last 7 days</div><div class="rings">${ring('Move', R.move.points, R.move.goal, '#5BE3A4')}${ring('Mind', R.mind.points, R.mind.goal, '#A994FF')}${ring('Body', R.body.points, R.body.goal, '#6BE7F5')}</div>
-        <p class="muted">Each habit fills a ring by how strong its evidence is. Trial-backed habits count more.</p></div></div>
-    <div class="grid">
-      <div class="card"><div class="eyebrow">What matters most for you</div>
+    <section class="card today-hero">
+      <div class="hello">${buddy(nDone === 3 ? 'wow' : 'happy', 88)}<div>
+        <h1>${hi}${AUTH?.name && !/^guest/i.test(AUTH.name) ? `, <span class="grad-text">${esc(AUTH.name.split(' ')[0])}</span>` : ''}</h1>
+        <p class="lede">${nDone === 3 ? 'All 3 habits done today. That is how it adds up.' : nDone ? `${nDone} of 3 habits done. Nice momentum.` : 'One small step today is enough.'}</p>
+        <div class="chips">${ME.streak ? `<span class="tag">🔥 ${ME.streak}-day streak</span>` : '<span class="tag">✨ Day one starts now</span>'}<span class="tag">🛌 Rest days never break a streak</span></div></div></div>
+      <div class="dayring" role="img" aria-label="${nDone} of ${plan.length} habits done today"><svg viewBox="0 0 132 132" aria-hidden="true"><defs><linearGradient id="dg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5EEAD4"/><stop offset=".55" stop-color="#818CF8"/><stop offset="1" stop-color="#C084FC"/></linearGradient></defs>
+        <circle cx="66" cy="66" r="54" stroke="rgba(255,255,255,.08)" stroke-width="12" fill="none"/><circle cx="66" cy="66" r="54" stroke="url(#dg)" stroke-width="12" fill="none" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - frac)}"/></svg>
+        <div class="lbl"><b>${nDone}/${plan.length}</b><span>today</span></div></div>
+    </section>
+    ${next ? `<a class="card next feature" href="#/habit/${next}"><span class="ico-tile lg" aria-hidden="true">${HABIT[next].ico}</span><div><div class="eyebrow">Your next step</div><h2>${HABIT[next].name}</h2><p>${esc(nextWhy(next))}</p></div><span class="btn">Start →</span></a>`
+      : `<a class="card next feature" href="#/checks"><span class="ico-tile lg" aria-hidden="true">🎯</span><div><div class="eyebrow">All habits done</div><h2>Want a quick check?</h2><p>Play a 90-second Speed Sprint and race your first try. Or rest: rest counts too.</p></div><span class="btn">Go to Checks →</span></a>`}
+    <div class="bento">
+      <div class="card c7"><div class="cardhead"><div class="eyebrow">${next ? 'Also on today\'s list' : 'Today\'s 3 habits'}</div><span class="muted">${nDone}/${plan.length} done</span></div><div class="plan">${plan.filter(id => id !== next).map(id => `<a href="#/habit/${id}" class="${habitDone(id) ? 'done' : ''}"><span class="ico">${habitDone(id) ? '✓' : HABIT[id].ico}</span>${HABIT[id].name}<span class="go">${habitDone(id) ? 'Done' : 'Start →'}</span></a>`).join('')}</div></div>
+      <div class="card c5"><div class="eyebrow">Care rings · last 7 days</div><div class="rings">${ring('Move', R.move.points, R.move.goal, '#4ADE80')}${ring('Mind', R.mind.points, R.mind.goal, '#A78BFA')}${ring('Body', R.body.points, R.body.goal, '#5EEAD4')}</div>
+        <p class="muted">Each habit fills a ring by how strong its evidence is. Trial-backed habits count more.</p></div>
+      <div class="card c7"><div class="eyebrow">What matters most for you</div>
         ${top.length ? top.map(([k, f]) => `<div class="lever"><b>${esc(f.label)}</b><span class="size ${sizeCls(f.size)}">${f.size}</span>
           <span class="muted" style="grid-column:1/-1">about ${f.points.toFixed(1)} points lower on a thinking-speed test, on average (CDC survey, adults 60+)${FACTOR_HABIT[k] ? ` · <a href="#/habit/${FACTOR_HABIT[k]}">habit</a>` : ''}</span></div>`).join('') : '<p>No factor with a clear link is off target right now.</p>'}
         ${unknown.length ? `<p class="muted">Not known yet: ${unknown.map(([, f]) => esc(f.label)).join(', ')}. ${unknown.some(([k]) => k === 'sbp') ? '<a href="#/habit/bp">Measure it</a>.' : ''}${unknown.some(([k]) => k === 'phq9') ? ' <a href="#/habit/mood">Take the mood check</a>.' : ''}</p>` : ''}
-        <details class="drawer"><summary>Try a change</summary><div id="tryBox"></div></details></div>
-      <div class="card" id="tipCard"><div class="eyebrow">Tip of the day</div>${tip()}</div></div>
+        <details class="drawer"><summary>🎛 Try a change: what if…</summary><div id="tryBox"></div></details></div>
+      <div class="card c5 tipcard" id="tipCard"><div class="eyebrow">Tip of the day</div>${tip()}</div>
+    </div>
     <div id="askBox"></div>
   </div>`;
   wireTry();
@@ -355,10 +387,10 @@ async function pageHabit(id) {
     labs: () => { v.ldl = null; v.a1c = null; return `<p>Found your numbers? Add them (optional). Otherwise tap Done once you've checked or booked a test.</p>
       <div class="q"><b>LDL cholesterol</b> <button class="linkbtn" data-add="ldl">add</button><div id="ldlBox"></div></div><div class="q"><b>HbA1c</b> <button class="linkbtn" data-add="a1c">add</button><div id="a1cBox"></div></div>`; },
   }[q.log.kind];
-  main.innerHTML = `<div class="stack" style="max-width:760px">
-    <a href="#/today" class="ghost">← Today</a>
-    <div class="card"><div class="eyebrow">${H.ring} habit · ${esc(q.tier)}</div><h1>${H.ico} ${H.name}</h1>
-      ${done ? '<p class="card done-sheet">✓ Done today. You can log again if you like.</p>' : ''}
+  main.innerHTML = `<div class="stack stagger" style="max-width:780px">
+    <div><a href="#/today" class="ghost back">← Today</a></div>
+    <div class="card"><div class="habithead"><span class="ico-tile lg" aria-hidden="true">${H.ico}</span><div><div class="eyebrow">${H.ring} habit · ${esc(q.tier)}</div><h1>${H.name}</h1></div></div>
+      ${done ? '<p class="done-sheet">✓ Done today. You can log again if you like.</p>' : ''}
       <h3>How to do it</h3><ol class="steps-list">${q.steps.map(s => `<li>${esc(s)}</li>`).join('')}</ol>
       <div id="hIn">${input ? input() : ''}</div>
       <button class="btn big" id="done" style="margin-top:16px">✓ Done</button>
@@ -412,8 +444,8 @@ const PHQ8 = ['Little interest or pleasure in doing things', 'Feeling down, depr
 const PHQO = ['Not at all', 'Several days', 'More than half the days', 'Nearly every day'];
 function pageMood() {
   const a = Array(8).fill(null);
-  main.innerHTML = `<div class="stack" style="max-width:760px"><a href="#/today" class="ghost">← Today</a>
-    <div class="card"><div class="eyebrow">Mind habit · 2 minutes</div><h1>💛 Mood check</h1>
+  main.innerHTML = `<div class="stack stagger" style="max-width:780px"><div><a href="#/today" class="ghost back">← Today</a></div>
+    <div class="card"><div class="habithead"><span class="ico-tile lg" aria-hidden="true">💛</span><div><div class="eyebrow">Mind habit · 2 minutes</div><h1>Mood check</h1></div></div>
       <p>Over the <b>last 2 weeks</b>, how often have you been bothered by the following? (PHQ-8, a standard questionnaire.)</p>
       ${PHQ8.map((t, i) => `<div class="q"><b>${i + 1}. ${t}</b><div class="yesno" data-i="${i}">${PHQO.map((o, j) => `<button data-v="${j}">${o}</button>`).join('')}</div></div>`).join('')}
       <button class="btn big" id="moodGo">See my result</button><p class="muted" id="moodMiss" aria-live="polite"></p><div id="moodOut" aria-live="polite"></div></div></div>`;
@@ -440,19 +472,19 @@ async function pageChecks() {
     const s = S[c.id]; return s?.plays ? `${s.plays} play${s.plays > 1 ? 's' : ''} · first ${s.history[0]} · last ${s.last}` : 'Not played yet';
   };
   const plays = c => c.id === 'speed' ? rounds : c.id === 'voice' ? V.history.length : S[c.id]?.plays || 0;
-  const card = c => `<a class="card checkcard" href="#/check/${c.id}"><span class="ico" aria-hidden="true">${c.ico}</span><h3>${c.name}</h3><span>${c.what}</span>
+  const card = c => `<a class="card checkcard ${c.main ? 'feat' : ''}" href="#/check/${c.id}" style="--c:${c.color}"><span class="ico" aria-hidden="true">${c.ico}</span><h3>${c.name}</h3><span>${c.what}</span>
     <span class="stat">${stat(c)}</span>${plays(c) && plays(c) < 3 ? '<span class="muted">Learning your baseline: play on 3 days to see a trend</span>' : ''}</a>`;
-  main.innerHTML = `<div class="stack"><div><h1>🎯 Checks</h1><p class="sub">Short tasks modeled on real thinking tests. You're compared <b>only with yourself</b>, so changes over weeks mean more than any single score. Not a diagnosis.</p></div>
-    <div class="grid3">${CHECKS.filter(c => c.main).map(card).join('')}</div>
-    <h2>More checks</h2><div class="grid3">${CHECKS.filter(c => !c.main).map(card).join('')}</div>
-    <p class="muted">Honest note: only speed training has trial evidence linked to fewer dementia diagnoses (ACTIVE). Practicing other brain games mostly improves the game itself (Simons 2016).</p></div>`;
+  main.innerHTML = `<div class="stack"><div class="pagehead"><div><div class="eyebrow">Checks</div><h1>How's your thinking today?</h1><p class="sub">Short tasks modeled on real thinking tests. You're compared <b>only with yourself</b>, so changes over weeks mean more than any single score. Not a diagnosis.</p></div></div>
+    <div class="grid3 stagger">${CHECKS.filter(c => c.main).map(card).join('')}</div>
+    <div class="sectionhead"><h2>More checks</h2></div><div class="grid3 stagger">${CHECKS.filter(c => !c.main).map(card).join('')}</div>
+    <p class="note">Honest note: only speed training has trial evidence linked to fewer dementia diagnoses (ACTIVE). Practicing other brain games mostly improves the game itself (Simons 2016).</p></div>`;
 }
 async function pageCheck(id) {
   if (id === 'speed') {
-    main.innerHTML = `<div class="sprint-wrap"><a href="#/checks" class="ghost" style="margin-bottom:12px">← Checks</a><div id="sprintBox"></div></div>`;
+    main.innerHTML = `<div class="sprint-wrap"><div style="margin-bottom:14px"><a href="#/checks" class="ghost back">← Checks</a></div><div id="sprintBox"></div></div>`;
     return runSprint($('#sprintBox'), {});
   }
-  if (id === 'voice') { main.innerHTML = '<a href="#/checks" class="ghost">← Checks</a><div id="p-voice"></div>'; return pageVoice(); }
+  if (id === 'voice') { main.innerHTML = '<div style="margin-bottom:14px"><a href="#/checks" class="ghost back">← Checks</a></div><div id="p-voice"></div>'; return pageVoice(); }
   main.innerHTML = '<div id="p-game"></div>'; return pageGame(id);
 }
 
@@ -462,7 +494,7 @@ let G = null;
 function STOP_SPRINT() { if (G) G.over = true; G = null; }
 function runSprint(box, { onDone, doneLabel }) {
   const ghost = ME?.first_speed;
-  box.innerHTML = `<div class="arcade"><div class="eyebrow">Speed Sprint · 90 seconds</div><h2>Match the symbol to its number</h2>
+  box.innerHTML = `<div class="arcade pop" style="--c:#FBBF24"><div class="eyebrow">Speed Sprint · 90 seconds</div><div class="symbol" aria-hidden="true" style="font-size:4.5rem">⚡</div><h2 class="game-title">Match the symbol to its number</h2>
     <p class="muted" style="max-width:560px;margin:0 auto">Look at the big symbol, find it in the key, and tap its number (or press keys 1–9). Go fast, but try not to make mistakes.</p>
     ${ghost != null ? `<p>Race your <b>first try: ${ghost}</b> correct. The grey bar shows your ghost's pace.</p>` : '<p>This round sets your baseline. Later you will race it.</p>'}
     <button class="btn big" id="goBtn" style="max-width:420px">▶ Start</button></div>`;
@@ -471,8 +503,8 @@ function runSprint(box, { onDone, doneLabel }) {
 function startSprint(box, ghost, onDone, doneLabel) {
   const d = [1, 2, 3, 4, 5, 6, 7, 8, 9].sort(() => Math.random() - .5);
   G = { key: Object.fromEntries(SYM.map((s, i) => [s, d[i]])), t0: performance.now(), ok: 0, bad: 0, combo: 0, best: 0, tgt: SYM[Math.floor(Math.random() * 9)], over: false, box, ghost, onDone, doneLabel };
-  box.innerHTML = `<div class="arcade"><div class="a-top"><div class="a-stat"><small>CORRECT</small><span id="aOk">0</span></div>
-      <div class="timer"><svg width="120" height="120" aria-hidden="true"><circle cx="60" cy="60" r="52" stroke="#2E3768" stroke-width="8" fill="none"/><circle id="tRing" cx="60" cy="60" r="52" stroke="#6BE7F5" stroke-width="8" fill="none" stroke-linecap="round" stroke-dasharray="326.7"/></svg><div class="t" id="tLeft" aria-label="seconds left">90</div></div>
+  box.innerHTML = `<div class="arcade" style="--c:#FBBF24"><div class="a-top"><div class="a-stat"><small>CORRECT</small><span id="aOk">0</span></div>
+      <div class="timer"><svg width="120" height="120" aria-hidden="true"><circle cx="60" cy="60" r="52" stroke="rgba(255,255,255,.08)" stroke-width="8" fill="none"/><circle id="tRing" cx="60" cy="60" r="52" stroke="#5EEAD4" stroke-width="8" fill="none" stroke-linecap="round" stroke-dasharray="326.7"/></svg><div class="t" id="tLeft" aria-label="seconds left">90</div></div>
       <div class="a-stat"><small>MISSES</small><span id="aBad">0</span></div></div>
     ${ghost != null ? `<div class="race"><div class="ghostbar"><span>You</span><div><i id="barYou"></i></div><b id="nYou">0</b></div><div class="ghostbar g"><span>First try</span><div><i id="barGhost"></i></div><b id="nGhost">0</b></div></div>` : ''}
     <div class="symbol" id="sym">${G.tgt}</div><div class="combo" id="combo"></div>
@@ -493,7 +525,7 @@ addEventListener('keydown', e => { if (G && !G.over && /^[1-9]$/.test(e.key)) an
 function tick() {
   if (!G || G.over) return;
   const el = (performance.now() - G.t0) / 1000, left = Math.max(0, 90 - el);
-  $('#tLeft').textContent = Math.ceil(left); $('#tRing').style.strokeDashoffset = 326.7 * (1 - left / 90); if (left <= 10) $('#tRing').setAttribute('stroke', '#FF8FA3');
+  $('#tLeft').textContent = Math.ceil(left); $('#tRing').style.strokeDashoffset = 326.7 * (1 - left / 90); if (left <= 10) $('#tRing').setAttribute('stroke', '#FB7185');
   if (G.ghost != null) { const gNow = Math.floor(G.ghost * Math.min(1, el / 90)), mx = Math.max(G.ghost, G.ok, 1) * 1.1;
     $('#barYou').style.width = G.ok / mx * 100 + '%'; $('#barGhost').style.width = gNow / mx * 100 + '%'; $('#nYou').textContent = G.ok; $('#nGhost').textContent = gNow; }
   if (left <= 0) return endSprint(); setTimeout(tick, 100);
@@ -503,12 +535,12 @@ async function endSprint() {
   let r; try { r = await api('/api/me/speed', { correct: g.ok, wrong: g.bad, best_combo: g.best }); } catch (e) { toast(e.message); return; }
   ME = r; const acc = g.ok / Math.max(1, g.ok + g.bad);
   const vs = g.ghost == null ? '<p>Baseline set. Next time you race this score.</p>' : `<p>You <b>${g.ok}</b> vs your first try <b>${g.ghost}</b>: ${g.ok > g.ghost ? `${g.ok - g.ghost} more 🎉` : g.ok === g.ghost ? 'a tie' : 'a little behind. Scores bounce around by a few from day to day; the trend over weeks is what matters.'}</p>`;
-  g.box.innerHTML = `<div class="arcade pop"><div class="eyebrow">Round complete</div><div class="a-big">${g.ok}</div><div class="muted">correct in 90 seconds · ${(acc * 100).toFixed(0)}% accurate</div>
+  g.box.innerHTML = `<div class="arcade pop" style="--c:#FBBF24"><div class="eyebrow">Round complete</div><div class="a-big">${g.ok}</div><div class="muted">correct in 90 seconds · ${(acc * 100).toFixed(0)}% accurate</div>
     ${prevBest != null && g.ok > prevBest ? '<div style="margin-top:10px"><span class="pb">New personal best</span></div>' : ''}${vs}
     ${r.history.length > 1 ? '<div class="chartbox" style="max-width:620px;margin:16px auto"><canvas id="hChart" aria-label="Your Speed Sprint scores over time"></canvas></div>' : ''}
     ${r.history.length < 3 ? '<p class="muted">Learning your baseline: play on 3 days to see a trend.</p>' : ''}
     <div class="row" style="justify-content:center">${g.onDone ? `<button class="btn" id="nextBtn">${g.doneLabel || 'Next'}</button>` : '<button class="btn" id="againBtn">↻ Play again</button><a class="ghost" href="#/checks">Back to Checks</a>'}</div></div>`;
-  if (r.history.length > 1) chart('hChart', { type: 'line', data: { labels: r.history.map((_, i) => `#${i + 1}`), datasets: [{ label: 'correct', data: r.history, borderColor: '#6BE7F5', backgroundColor: 'rgba(107,231,245,.15)', fill: true, tension: .3 }] }, options: chartOpts({ plugins: { legend: { display: false } } }) });
+  if (r.history.length > 1) chart('hChart', { type: 'line', data: { labels: r.history.map((_, i) => `#${i + 1}`), datasets: [{ label: 'correct', data: r.history, borderColor: '#5EEAD4', backgroundColor: 'rgba(94,234,212,.12)', fill: true, tension: .35 }] }, options: chartOpts({ plugins: { legend: { display: false } } }) });
   $('#nextBtn') && ($('#nextBtn').onclick = g.onDone);
   $('#againBtn') && ($('#againBtn').onclick = () => runSprint(g.box, {}));
   G = null;
@@ -527,13 +559,13 @@ async function pageBrain(mode, arg) {
   const stage = $('#stage');
   if (!brainView) {
     stage.innerHTML = '<div class="stagehint">Drag to turn · tap a part to learn what it does</div>';
-    try { const { createBrain } = await import('./brain3d.js?v=1'); brainView = await createBrain(stage); window.NT = { brain: brainView }; }
+    try { const { createBrain } = await import('./brain3d.js?v=2'); brainView = await createBrain(stage); window.NT = { brain: brainView }; }
     catch (e) { stage.innerHTML = `<div class="empty">The 3D brain couldn't load on this device (${esc(e.message)}). Everything else still works.</div>`; }
   }
   brainView?.start();
   if (brainView && !PICKBOUND) { PICKBOUND = true; bindPick(); }
   if (BMODE === 'mine') MINE = await api('/api/me/brain');
-  main.innerHTML = `<div class="brainpane"><h1>🧠 My Brain</h1>
+  main.innerHTML = `<div class="brainpane"><div class="eyebrow">My Brain</div><h1>Explore a real 3D brain</h1>
     <div class="seg" role="tablist"><button role="tab" aria-selected="${BMODE === 'learn'}" class="${BMODE === 'learn' ? 'on' : ''}" data-m="learn">Learn</button><button role="tab" aria-selected="${BMODE === 'mine'}" class="${BMODE === 'mine' ? 'on' : ''}" data-m="mine">Mine</button></div>
     <div id="bp"></div><div id="rinfo" class="regioninfo" aria-live="polite"></div></div>`;
   $$('.seg button').forEach(b => b.onclick = () => { location.hash = `#/brain/${b.dataset.m}`; });
@@ -557,8 +589,8 @@ const MYTHS = [
 function diseaseDetail() {
   const d = ATL.diseases.find(x => x.id === DSEL); if (!d) { DSEL = null; return learnList(); }
   const st = d.stages[Math.min(DSTAGE, d.stages.length - 1)], N = RN(), deep = d.stages.slice(0, DSTAGE + 1).some(s => s.regions.some(r => !r.startsWith('c')));
-  $('#bp').innerHTML = `<a class="ghost" href="#/brain/learn">← All diseases</a>
-    <div class="card" style="margin-top:12px;border-color:${d.color}"><h2>${d.icon} ${esc(d.name)}</h2><p>${esc(d.what)}</p>
+  $('#bp').innerHTML = `<a class="ghost back" href="#/brain/learn">← All diseases</a>
+    <div class="card pop" style="margin-top:14px;border-color:${d.color}88;box-shadow:var(--shadow),0 0 40px -18px ${d.color}"><div class="habithead"><span class="ico-tile lg" aria-hidden="true" style="background:${d.color}33;border-color:${d.color}77">${d.icon}</span><h2 style="margin:0">${esc(d.name)}</h2></div><p>${esc(d.what)}</p>
     <h3>Where in the brain</h3>
     ${d.stages.length > 1 ? `<label for="stageSlider" class="muted">Typical order of spread (approximate; it varies from person to person)</label>
       <input type="range" id="stageSlider" min="0" max="${d.stages.length - 1}" value="${DSTAGE}" aria-valuetext="${esc(st.label)}">
@@ -568,7 +600,7 @@ function diseaseDetail() {
     <h3>How it varies</h3><p>${esc(d.varies)}</p>
     ${d.id === 'stroke' ? `<h3>Spot a stroke: BE-FAST</h3><div class="befast">${[['B', 'Balance loss'], ['E', 'Eyes: vision loss'], ['F', 'Face drooping'], ['A', 'Arm weakness'], ['S', 'Speech trouble'], ['T', 'Time: call 911']].map(([l, t]) => `<div><b>${l}</b>${t}</div>`).join('')}</div>` : ''}
     <h3>What you can do at home</h3>${d.home.map(h => `<div class="lever"><b>${esc(h.do)}</b>${h.mission && HABIT[h.mission] ? `<a class="ghost" href="#/habit/${h.mission}">Habit →</a>` : h.game ? `<a class="ghost" href="#/check/${h.game}">Check →</a>` : '<span></span>'}<span class="muted" style="grid-column:1/-1">${esc(h.why)} <a href="${h.url}" target="_blank" rel="noopener">source ↗</a></span></div>`).join('')}
-    <div class="support-card" style="margin-top:14px;border-color:var(--gold);background:#3A3217"><b>When to call a doctor:</b> ${esc(d.doctor)}</div>
+    <div class="support-card warn" style="margin-top:14px"><b>🩺 When to call a doctor:</b> ${esc(d.doctor)}</div>
     <p class="muted">Source: <a href="${d.source[1]}" target="_blank" rel="noopener">${esc(d.source[0])} ↗</a>. Regions are mapped to the nearest areas of a standard brain atlas, so the picture is a guide, not a scan of anyone.</p></div>`;
   $('#stageSlider') && ($('#stageSlider').oninput = e => { DSTAGE = +e.target.value; diseaseDetail(); $('#stageSlider')?.focus(); });
   const colors = {}, c = hex(d.color);
@@ -578,7 +610,7 @@ function diseaseDetail() {
 }
 function mineView() {
   const S = MINE.skills;
-  const C = { learning: '#8A93C2', improving: '#5BE3A4', steady: '#6BE7F5', dipping: '#FFD166' };
+  const C = { learning: '#7D87A3', improving: '#4ADE80', steady: '#5EEAD4', dipping: '#FBBF24' };
   const st = s => s.plays < 3 ? 'learning' : s.status === 'baseline' ? 'steady' : s.status;
   const W = { learning: 'learning your baseline', improving: 'improving', steady: 'steady', dipping: 'dipping: worth keeping an eye on' };
   const colors = {};
@@ -593,7 +625,13 @@ function mineView() {
       <p>We tested our own MRI measures on 436 real scans and <b>they weren't reliable enough</b> to put a number on your brain. So here you can <b>learn from real research scans</b>, and check that your own file opens.</p>
       <div class="seg"><button class="on" data-mr="sample">Try a real research scan</button><button data-mr="upload">Upload my scan</button></div><div id="mriBox"></div></div>`;
   const show = m => { $$('[data-mr]').forEach(b => b.classList.toggle('on', b.dataset.mr === m)); m === 'sample' ? mriSamples() : mriUpload(); };
-  $$('[data-mr]').forEach(b => b.onclick = () => show(b.dataset.mr)); show('sample');
+  $$('[data-mr]').forEach(b => b.onclick = () => show(b.dataset.mr));
+  api('/api/mri/status').then(s => {
+    if (s.samples) return show('sample');
+    const sb = $('[data-mr="sample"]'); if (sb) { sb.disabled = true; sb.title = 'Research scans not downloaded'; }
+    show('upload');
+    $('#mriBox')?.insertAdjacentHTML('afterbegin', '<p class="muted">The real research scans aren\'t downloaded on this computer (they need a free Kaggle account: <code>python data/download_data.py</code>). You can still check your own file.</p>');
+  }).catch(() => show('upload'));
 }
 async function mriSamples() {
   const list = await api('/api/mri/samples'), box = $('#mriBox');
@@ -642,8 +680,8 @@ function bindPick() {
 // ================================================================== ME
 async function pageMe(section) {
   FACTS ||= await api('/api/facts');
-  main.innerHTML = `<div class="stack"><h1>🙂 Me</h1>
-    <nav class="chips" aria-label="Sections">${[['progress', '📈 Progress'], ['connect', '⌚ Connect a device'], ['answers', '📝 My answers'], ['security', '🔑 Security'], ['how', '🔬 How we know'], ['help', '💛 Support']].map(([k, t]) => `<a class="chip" href="#/me/${k}">${t}</a>`).join('')}</nav>
+  main.innerHTML = `<div class="stack"><div class="mehead"><span class="av" aria-hidden="true">${esc((AUTH.name || '?').trim()[0]?.toUpperCase() || '?')}</span><div><div class="eyebrow">Me</div><h1>${esc(AUTH.name || 'You')}</h1><span class="tag">${AUTH.passkey ? '🔑 Saved with a passkey' : '⚠ Not saved yet'}</span></div></div>
+    <nav class="chips sticky" aria-label="Sections">${[['progress', '📈 Progress'], ['connect', '⌚ Connect a device'], ['answers', '📝 My answers'], ['security', '🔑 Security'], ['how', '🔬 How we know'], ['help', '💛 Support']].map(([k, t]) => `<a class="chip" href="#/me/${k}">${t}</a>`).join('')}</nav>
     <section class="card" id="s-progress"><h2>📈 Progress</h2><div class="grid" id="charts"></div></section>
     <section class="card" id="s-connect"><h2>⌚ Connect a device</h2><div id="wbox"></div></section>
     <section class="card" id="s-answers"><h2>📝 My answers</h2><div id="abox"></div></section>
@@ -652,8 +690,8 @@ async function pageMe(section) {
       <div class="row"><button class="btn" id="addPk">${AUTH.passkey ? 'Add another passkey' : 'Save with a passkey'}</button><button class="ghost" id="signout">Sign out</button></div>
       <p class="muted">Passkeys (WebAuthn / FIDO2) are bound to this site, so a look-alike site can't phish them. Your health data is stored in a local SQLite database on this computer.</p></section>
     <section class="card" id="s-how"><h2>🔬 How we know</h2>${howWeKnow()}</section>
-    <section class="card" id="s-help"><h2>💛 Support</h2><ul class="plain"><li><b>988</b>: call or text the US Suicide & Crisis Lifeline, 24/7.</li><li><b>911</b>: emergencies, including any stroke sign (BE-FAST).</li>
-      <li><b>1-800-QUIT-NOW</b>: free help to stop smoking (CDC).</li><li><b>1-800-272-3900</b>: Alzheimer's Association 24/7 helpline, for memory worries and caregivers.</li></ul></section></div>`;
+    <section class="card" id="s-help"><h2>💛 Support</h2><ul class="help-list"><li><b>988</b><span>Call or text the US Suicide & Crisis Lifeline, 24/7.</span></li><li><b>911</b><span>Emergencies, including any stroke sign (BE-FAST).</span></li>
+      <li><b>1-800-QUIT-NOW</b><span>Free help to stop smoking (CDC).</span></li><li><b>1-800-272-3900</b><span>Alzheimer's Association 24/7 helpline, for memory worries and caregivers.</span></li></ul></section></div>`;
   $('#addPk').onclick = () => savePasskey(() => pageMe('security'));
   $('#signout').onclick = async () => { if (!AUTH.passkey && !confirm('You have not saved a passkey. If you sign out, you cannot get back to this progress. Sign out anyway?')) return; await api('/auth/logout', {}); AUTH = { signed_in: false }; renderWho(); history.replaceState(null, '', '/'); route(); };
   answersBox(); progressCharts(); wearBox();
@@ -699,10 +737,10 @@ async function progressCharts() {
     `<div><h3>🌙 Sleep</h3><p class="muted">Hours per night.</p>${P.sleep.length ? '<div class="chartbox"><canvas id="cSleep"></canvas></div>' : '<div class="empty">Log sleep in the sleep habit.</div>'}</div>`,
   ].join('') + `<p class="muted" style="grid-column:1/-1">${P.totals.quests} habits logged · ${P.totals.active_days} active days · ${P.totals.streak}-day streak</p>`;
   const line = (id, labels, data, color, extra = []) => chart(id, { type: 'line', data: { labels, datasets: [{ data, borderColor: color, backgroundColor: color + '33', fill: true, tension: .3, label: 'you' }, ...extra] }, options: chartOpts({ plugins: { legend: { display: false } } }) });
-  if (P.speed.length) line('cSpeed', P.speed.map(r => sh(r.date)), P.speed.map(r => r.correct), '#6BE7F5');
-  if (bp.length) line('cBP', bp.map(b => sh(b.date)), bp.map(b => b.value), '#FF8FA3', [{ data: bp.map(() => 120), borderColor: '#5BE3A4', borderDash: [6, 4], pointRadius: 0, label: 'target 120' }]);
-  if (P.steps.length) line('cSteps', P.steps.map(s => sh(s.date)), P.steps.map(s => s.value), '#5BE3A4', [{ data: P.steps.map(() => 3826), borderColor: '#FFD166', borderDash: [6, 4], pointRadius: 0 }, { data: P.steps.map(() => 9826), borderColor: '#A994FF', borderDash: [6, 4], pointRadius: 0 }]);
-  if (P.sleep.length) line('cSleep', P.sleep.map(s => sh(s.date)), P.sleep.map(s => s.value), '#A994FF');
+  if (P.speed.length) line('cSpeed', P.speed.map(r => sh(r.date)), P.speed.map(r => r.correct), '#5EEAD4');
+  if (bp.length) line('cBP', bp.map(b => sh(b.date)), bp.map(b => b.value), '#FB7185', [{ data: bp.map(() => 120), borderColor: '#4ADE80', borderDash: [6, 4], pointRadius: 0, label: 'target 120' }]);
+  if (P.steps.length) line('cSteps', P.steps.map(s => sh(s.date)), P.steps.map(s => s.value), '#4ADE80', [{ data: P.steps.map(() => 3826), borderColor: '#FBBF24', borderDash: [6, 4], pointRadius: 0 }, { data: P.steps.map(() => 9826), borderColor: '#A78BFA', borderDash: [6, 4], pointRadius: 0 }]);
+  if (P.sleep.length) line('cSleep', P.sleep.map(s => sh(s.date)), P.sleep.map(s => s.value), '#A78BFA');
 }
 async function wearBox() {
   const W = await api('/api/me/wearables'), S = W.summary, days = Object.entries(W.days), box = $('#wbox');
@@ -711,7 +749,7 @@ async function wearBox() {
     <p class="muted">iPhone: Health app → your photo → Export All Health Data.</p><div id="wmsg" aria-live="polite"></div>
     ${S.days_with_data ? `<div class="vstats">${S.steps != null ? `<div><b>${Math.round(S.steps).toLocaleString()}</b><span>steps a day</span></div>` : ''}${S.sleep_hours != null ? `<div><b>${S.sleep_hours.toFixed(1)} h</b><span>sleep a night</span></div>` : ''}${S.resting_hr != null ? `<div><b>${Math.round(S.resting_hr)}</b><span>resting heart rate</span></div>` : ''}</div>
       <p class="muted">${S.days_with_data} days imported (${S.from} to ${S.to}).</p><div class="chartbox"><canvas id="wch"></canvas></div>` : ''}`;
-  if (days.length) chart('wch', { type: 'bar', data: { labels: days.map(d => d[0].slice(5)), datasets: [{ label: 'steps', data: days.map(d => d[1].steps ?? null), backgroundColor: 'rgba(91,227,164,.75)', borderRadius: 4 }] }, options: chartOpts() });
+  if (days.length) chart('wch', { type: 'bar', data: { labels: days.map(d => d[0].slice(5)), datasets: [{ label: 'steps', data: days.map(d => d[1].steps ?? null), backgroundColor: 'rgba(74,222,128,.7)', borderRadius: 8 }] }, options: chartOpts() });
   const up = async f => { $('#wmsg').innerHTML = '<p class="muted">Reading your file… (large exports can take a minute)</p>';
     const fd = new FormData(); fd.append('file', f);
     try { const j = await postForm('/api/me/wearables', fd); ME = j.player; toast(`Imported ${j.imported_days} days ✓`); wearBox(); } catch (e) { $('#wmsg').innerHTML = `<p class="caveat">⚠ ${esc(e.message)}</p>`; } };

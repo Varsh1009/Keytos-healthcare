@@ -155,8 +155,17 @@ import secrets as _secrets
 
 
 def _set_cookie(resp: JSONResponse, token: str) -> JSONResponse:
-    resp.set_cookie(auth.COOKIE, token, httponly=True, samesite="strict", max_age=60 * 60 * 12, path="/")
+    resp.set_cookie(auth.COOKIE, token, httponly=True, samesite="strict", max_age=60 * 60 * 24 * auth.SESSION_DAYS, path="/")
     return resp
+
+
+def _site(request: Request) -> tuple[str, str]:
+    """RP ID + origin for the address the browser used (any localhost port, or a configured https host)."""
+    scheme = request.headers.get("x-forwarded-proto") or request.url.scheme
+    try:
+        return auth.site_for(scheme, request.headers.get("host", ""))
+    except auth.SiteError as e:
+        raise HTTPException(400, str(e))
 
 
 def _cookie(request: Request) -> str | None:
@@ -192,7 +201,7 @@ def auth_register_options(request: Request) -> dict:
     name = auth.player_for(_cookie(request))
     if not name:
         raise HTTPException(401, "Start as a guest first, then save with a passkey.")
-    return auth.register_options(name)
+    return auth.register_options(name, _site(request))
 
 
 class WebAuthnIn(BaseModel):
@@ -213,8 +222,8 @@ def auth_register_verify(body: WebAuthnIn) -> dict:
 
 
 @app.post("/auth/login/options")
-def auth_login_options() -> dict:
-    return auth.login_options()
+def auth_login_options(request: Request) -> dict:
+    return auth.login_options(_site(request))
 
 
 @app.post("/auth/login/verify")
@@ -457,8 +466,10 @@ def games_catalog() -> dict:
 
 
 @app.get("/api/games/recall-words")
-def recall_words() -> dict:
-    words = random.choice(gym.WORD_LISTS)
+def recall_words(avoid: str | None = None) -> dict:
+    """A word list, never the one you learned last time (avoid = its first word), so practice doesn't inflate scores."""
+    lists = [w for w in gym.WORD_LISTS if w[0] != avoid] or gym.WORD_LISTS
+    words = random.choice(lists)
     return {"words": words, "distractors": random.sample(gym.DISTRACTORS, 10)}
 
 
@@ -502,7 +513,7 @@ def play_game(name: str, body: GameIn) -> dict:
     if g is None or body.game == "speed":
         raise HTTPException(400, "unknown game (Speed Sprint records via /speed)")
     first_today = not any(r["date"] == today() for r in db.games(p.name, g["id"]))
-    sparks = gym.GAME_SPARKS if first_today else 0
+    sparks = gym.GAME_SPARKS if first_today and g["id"] != "recall_delayed" else 0   # part of Word Recall, no extra points
     db.add_game(p.name, g["id"], today(), body.score, body.detail, sparks)
     out = {"sparks_gained": sparks, "stats": game_stats(p, g["id"]), "player": snapshot(p)}
     norm_col = body.detail.get("norm_col") or g["norm"]
@@ -526,6 +537,15 @@ def _mri_payload(p: Player | None, v, age, source: str, only: int | None = None,
     if p is not None:
         db.add_mri(p.name, source, age, res.get("brain_age"), res.get("gap"), res["format"]["ok"], regions)
     return res
+
+
+OASIS_RAW = ROOT / "data" / "raw" / "oasis_mri"
+
+
+@app.get("/api/mri/status")
+def mri_status() -> dict:
+    """The sample scans are real OASIS files that aren't redistributed; they appear after data/download_data.py."""
+    return {"samples": (OASIS_RAW / "oasis_cross-sectional.csv").exists()}
 
 
 @app.get("/api/mri/samples")
@@ -559,14 +579,18 @@ def mri_sample(name: str, file: str = Form(...)) -> dict:
     import nibabel as nib
     from neurotrail import mri
     p = get(name)
-    meta = pd.read_csv(ROOT / "data" / "raw" / "oasis_mri" / "oasis_cross-sectional.csv")
+    if not mri_status()["samples"]:
+        raise HTTPException(503, "The research scans aren't downloaded on this computer. Run python data/download_data.py (needs a Kaggle account).")
+    meta = pd.read_csv(OASIS_RAW / "oasis_cross-sectional.csv")
     d = pd.read_csv(ART / "mri_cnn_predictions.csv")
     row = d[d["file"] == file]
     if row.empty:
         raise HTTPException(404, "unknown sample")
     r = row.iloc[0]
     mrow = meta[meta["ID"] == r["ID"]].iloc[0]
-    f = next((ROOT / "data" / "raw" / "oasis_mri").glob(f"**/{file}"))
+    f = next(OASIS_RAW.glob(f"**/{file}"), None)
+    if f is None:
+        raise HTTPException(503, "That scan file isn't downloaded on this computer.")
     v = np.asanyarray(nib.load(f).dataobj, dtype=np.float32)
     view = _nwbv_view(float(r["Age"]), bool(r["female"]), float(mrow["nWBV"]))
     imgs = mri.slices_png(v, None)
