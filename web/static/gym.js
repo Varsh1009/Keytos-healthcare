@@ -264,7 +264,7 @@ export async function pageMRI() {
   const cv = m.clinical_validity, tr = m.test_retest;
   $('#p-mri').innerHTML = `<div class="scrollpage"><div class="wrap">
     <div class="h1">🩻 MRI brain age</div>
-    <div class="sub">A 3D convolutional neural network trained on <b>${m.n_volumes} real MRI scans</b> from Kaggle (OASIS-1, ${m.data.split(':')[0]}), joined to each person's real age and dementia rating.</div>
+    <div class="sub">3D convolutional neural networks trained on <b>${m.n_volumes} real MRI scans</b> from Kaggle (OASIS-1, ${m.data.split(':')[0]}), joined to each person's real age and dementia rating.${m.active_model ? ` Active model: <b>${m.active_model === 'ensemble' ? `ensemble of ${Object.entries(m.n_models).map(([k, n]) => `${n} × ${k}`).join(' + ')}` : m.active_model}</b>${m.interval_coverage_95 != null ? `; its 95% intervals contain the true age of ${(m.interval_coverage_95 * 100).toFixed(0)}% of cognitively normal people` : ''}.` : ''}</div>
     <div class="kpis"><div class="kpi"><div class="v">${m.mae.toFixed(1)} yrs</div><div class="l">MAE on ${m.n_normal} cognitively normal people, 5-fold CV split by subject (r = ${m.r.toFixed(2)}). Volume-only model: ${m.nwbv_model_mae.toFixed(1)}.</div></div>
       <div class="kpi"><div class="v">AUC ${cv.auc.toFixed(2)}</div><div class="l">brain-age gap separates dementia (n=${m.n_dementia}) from age-matched normals · 95% CI ${cv.auc_ci[0].toFixed(2)}–${cv.auc_ci[1].toFixed(2)}</div></div>
       <div class="kpi"><div class="v">ICC ${tr.icc.toFixed(2)}</div><div class="l">${tr.n_pairs} people scanned twice: mean difference ${tr.mean_abs_diff.toFixed(1)} yrs</div></div>
@@ -282,13 +282,28 @@ export async function pageMRI() {
       </div>
       <div class="glass card" id="mout"><div class="empty">Pick a scan or upload one to see its brain age and a heatmap of the regions that drove the prediction.</div></div>
     </div></div></div>`;
-  const show = async (promise) => { $('#mout').innerHTML = '<div class="empty"><div class="typing"><span></span><span></span><span></span></div> Running the 5-model 3D CNN ensemble + Grad-CAM…</div>';
+  const show = async (promise) => { $('#mout').innerHTML = '<div class="empty"><div class="typing"><span></span><span></span><span></span></div> Running the 3D CNN brain-age models + Grad-CAM…</div>';
     try { renderMRI(await promise); } catch (e) { $('#mout').innerHTML = `<div class="empty">⚠ ${e.message}</div>`; } };
   $('#mrun').onclick = () => { const fd = new FormData(); fd.append('file', $('#msel').value); show(fetchForm(`/api/player/${encodeURIComponent(me().name)}/mri/sample`, fd)); };
   const up = f => { const fd = new FormData(); fd.append('file', f); fd.append('age', me().profile.age); show(fetchForm(`/api/player/${encodeURIComponent(me().name)}/mri/upload`, fd)); };
   $('#mfile').onchange = e => e.target.files[0] && up(e.target.files[0]);
   const d = $('#drop'); d.ondragover = e => { e.preventDefault(); d.classList.add('over'); }; d.ondragleave = () => d.classList.remove('over');
   d.ondrop = e => { e.preventDefault(); d.classList.remove('over'); e.dataTransfer.files[0] && up(e.dataTransfer.files[0]); };
+}
+function mriConfidence(r) {
+  const col = { high: '#3DDC97', medium: '#FFC83D', low: '#FF8A7A' }[r.confidence];
+  const lo = Math.min(r.interval_low, r.age ?? r.interval_low) - 5, hi = Math.max(r.interval_high, r.age ?? r.interval_high) + 5;
+  const x = v => `${((v - lo) / (hi - lo) * 100).toFixed(1)}%`;
+  return `<div class="tiny" style="margin-top:14px">95% INTERVAL ${r.interval_low.toFixed(0)}–${r.interval_high.toFixed(0)} YRS${r.gap != null ? ` · GAP ${r.gap > 0 ? '+' : ''}${r.gap.toFixed(1)} (${r.gap_low.toFixed(0)} to ${r.gap_high > 0 ? '+' : ''}${r.gap_high.toFixed(0)})` : ''}</div>
+    <div style="position:relative;height:30px;margin:6px 0 4px;background:rgba(255,255,255,.06);border-radius:8px">
+      <div style="position:absolute;top:8px;height:14px;left:${x(r.interval_low)};width:calc(${x(r.interval_high)} - ${x(r.interval_low)});background:${col}55;border:1px solid ${col};border-radius:7px"></div>
+      <div title="brain age" style="position:absolute;top:2px;height:26px;width:3px;left:${x(r.brain_age)};background:${col}"></div>
+      ${r.age != null ? `<div title="actual age" style="position:absolute;top:2px;height:26px;width:3px;left:${x(r.age)};background:#9AA3C7"></div>` : ''}</div>
+    <div class="tiny" style="color:#9AA3C7">colored bar = brain age${r.age != null ? ' · grey bar = actual age' : ''}</div>
+    <p style="margin:12px 0 4px"><span style="display:inline-block;padding:3px 12px;border-radius:999px;border:1px solid ${col};color:${col};font-weight:700;text-transform:uppercase;letter-spacing:.06em">${r.confidence} confidence</span></p>
+    <ul class="muted" style="margin:4px 0 8px 18px">${r.confidence_reasons.map(s => `<li>${s}</li>`).join('')}</ul>
+    <div class="tiny">MODEL AGREEMENT (spread ${r.model_disagreement.toFixed(1)} yrs)</div>
+    <div class="chips" style="margin:6px 0">${r.per_model.map(p => `<span class="chip" title="${p.n_models} fold model(s)">${p.label}: <b>${p.brain_age.toFixed(0)}</b></span>`).join('')}</div>`;
 }
 async function fetchForm(url, fd) { const r = await fetch(url, { method: 'POST', body: fd }); const j = await r.json(); if (!r.ok) throw new Error(j.detail || r.statusText); return j; }
 function renderMRI(r) {
@@ -300,7 +315,8 @@ function renderMRI(r) {
     <div style="display:flex;gap:24px;align-items:flex-end;flex-wrap:wrap"><div><div class="tiny">MRI BRAIN AGE</div><div style="font:700 64px/1 'Space Grotesk'">${r.brain_age.toFixed(0)}</div></div>
       ${r.age != null ? `<div><div class="tiny">ACTUAL AGE</div><div style="font:700 40px/1 'Space Grotesk';color:#9AA3C7">${Math.round(r.age)}</div></div>
       <div><div class="tiny">BIAS-CORRECTED GAP</div><div style="font:700 40px/1 'Space Grotesk';color:${gap > 0 ? '#FF8A7A' : '#3DDC97'}">${gap > 0 ? '+' : ''}${gap.toFixed(1)}</div></div>` : ''}</div>
-    <p class="muted">5 models: ${r.fold_preds.map(p => p.toFixed(0)).join(' · ')} yrs. Model error ±${r.mae.toFixed(1)} yrs (MAE). ${gap != null ? (inside ? `The gap is inside the ±${r.sdc.toFixed(1)}-yr scan-to-scan noise band.` : `The gap is larger than the ±${r.sdc.toFixed(1)}-yr scan-to-scan noise band.`) : ''} Template similarity r = ${f.similarity?.toFixed(2)}.</p>
+    ${r.confidence ? mriConfidence(r) : `<p class="muted">5 models: ${r.fold_preds.map(p => p.toFixed(0)).join(' · ')} yrs.</p>`}
+    <p class="muted">Model error ±${r.mae.toFixed(1)} yrs (MAE). ${gap != null ? (inside ? `The gap is inside the ±${r.sdc.toFixed(1)}-yr scan-to-scan noise band.` : `The gap is larger than the ±${r.sdc.toFixed(1)}-yr scan-to-scan noise band.`) : ''} Template similarity r = ${f.similarity?.toFixed(2)}.</p>
     ${t ? `<div class="ours"><b>Ground truth (OASIS):</b> ${t.id}, age ${t.age}, ${t.status}${t.cdr != null ? `, CDR ${t.cdr}` : ''}. Honest out-of-fold brain age: <b>${t.oof_brain_age.toFixed(1)}</b>. ${t.note}</div>` : ''}
     <div class="eyebrow" style="margin-top:16px">WHERE THE MODEL LOOKED (Grad-CAM, orange = pushed the age estimate up)</div>
     <div class="mslices">${['axial', 'coronal', 'sagittal'].map(k => `<figure><img src="${r.images[k]}" alt="${k} slice"><figcaption>${k}</figcaption></figure>`).join('')}</div>

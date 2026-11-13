@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import io
 import json
-import tempfile
 from functools import lru_cache
 from pathlib import Path
 
@@ -86,14 +85,17 @@ def template() -> np.ndarray:
 
 
 def load_upload(data: bytes, filename: str) -> np.ndarray:
+    import gzip
+
     import nibabel as nib
-    suffix = ".nii.gz" if filename.lower().endswith(".gz") else ".nii"
-    with tempfile.NamedTemporaryFile(suffix=suffix) as tmp:
-        tmp.write(data)
-        tmp.flush()
-        img = nib.load(tmp.name)
-        img = nib.as_closest_canonical(img)
-        return np.asanyarray(img.dataobj, dtype=np.float32).squeeze()
+    from nibabel.orientations import axcodes2ornt, io_orientation, ornt_transform
+    # Parsed in memory (no temp file: reopening an open temp file fails on Windows; scans are never stored).
+    raw = gzip.decompress(data) if filename.lower().endswith(".gz") else data
+    img = nib.Nifti1Image.from_bytes(raw)
+    # Training scans are stored in FSL MNI voxel order (LAS); reorient uploads to the same order
+    # (as_closest_canonical would give RAS, i.e. a left-right mirror of what the models saw).
+    img = img.as_reoriented(ornt_transform(io_orientation(img.affine), axcodes2ornt(("L", "A", "S"))))
+    return np.asanyarray(img.dataobj, dtype=np.float32).squeeze()
 
 
 def check_format(v: np.ndarray) -> dict:
