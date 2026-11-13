@@ -5,7 +5,7 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { pageGym, pageGame, pageMRI } from './gym.js?v=3';
+import { pageGym, pageGame, pageMRI } from './gym.js?v=4';
 import { pageHome as pageHome2, pageVoice, pageData, plainLever, plainAmount, buddy } from './ui2.js?v=1';
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -587,7 +587,7 @@ async function mriUI() {
 
 // ================================================================ SCIENCE
 async function pageScience() {
-  const S = await api('/api/science'), c = S.cognition, b = S.brainage, a = S.associations, cv = b.clinical_validity, tr = b.test_retest, lo = b.longitudinal, bm = b[b.chosen_model];
+  const [S, C] = await Promise.all([api('/api/science'), api('/api/mri/comparison').catch(() => null)]), c = S.cognition, b = S.brainage, a = S.associations, cv = b.clinical_validity, tr = b.test_retest, lo = b.longitudinal, bm = b[b.chosen_model];
   const fair = [...Object.entries(c.fairness.race_eth), ...Object.entries(c.fairness.female)];
   $('#p-science').innerHTML = `<div class="scrollpage"><div class="wrap">
     <div class="h1">Everything is real. Here's the proof.</div><div class="sub">Computed by <code>models/train_cognition.py</code> and <code>models/train_brainage.py</code> from raw public data. Re-run them to reproduce every number.</div>
@@ -611,6 +611,12 @@ async function pageScience() {
     <p class="muted">Error is similar across groups, but predictions run too high for Non-Hispanic Black and Other Hispanic participants and too low for Non-Hispanic White participants. That's why NeuroTrail reports within-person change and factor associations, never a cognitive diagnosis.</p></div>
     <h3>4 · MRI brain-age model (OASIS)</h3>
     <div class="glass card"><p class="muted">Trained on ${b.n_normal} cognitively normal OASIS-1 adults aged 18–96 (normalized brain volume, intracranial volume, sex). MAE ${bm.mae_mean.toFixed(1)} yrs (r = ${bm.r_mean.toFixed(2)}) vs ${b.baseline_mae_predict_mean.toFixed(1)} predicting the mean. Gap ${fmt(cv.mean_gap_dementia)} yrs in dementia (n=${cv.n_dementia}) vs ${fmt(cv.mean_gap_normal)} in age-matched normals (Mann–Whitney p = ${cv.mannwhitney_p.toExponential(1)}). Longitudinal (OASIS-2, ${lo.n_subjects} people, ${lo.n_sessions} scans): brain volume falls ${Math.abs(lo.nondemented_nwbv_pts_per_year).toFixed(2)} nWBV-points/yr in nondemented vs ${Math.abs(lo.demented_nwbv_pts_per_year).toFixed(2)} in dementia (p = ${lo.demented_vs_nd_p.toExponential(1)}). Honest limit: image CNNs reach MAE ≈ 2–4 yrs.</p></div>
+    ${C && C.rows.length ? `<h3>4b · MRI image models compared (same 5 folds, scored only by models that never saw the person)</h3>
+    <div class="glass card"><table class="t"><tr><th>Model</th><th>MAE (yrs)</th><th>r</th><th>Dementia AUC (95% CI)</th><th>ICC</th><th>Smallest detectable change</th><th>95% interval coverage</th></tr>
+      ${C.rows.map(x => `<tr><td>${x.model === C.active_model ? '<b>' + x.label + '</b>' : x.label}</td><td class="num">${x.mae.toFixed(2)}</td><td class="num">${x.r.toFixed(3)}</td><td class="num">${x.auc.toFixed(3)} (${x.auc_ci[0].toFixed(2)}–${x.auc_ci[1].toFixed(2)})</td><td class="num">${x.icc.toFixed(3)}</td><td class="num">±${x.sdc.toFixed(2)}</td><td class="num">${x.coverage != null ? (x.coverage * 100).toFixed(1) + '%' : 'n/a'}</td></tr>`).join('')}</table>
+      <p class="muted">Active in the MRI tab: <b>${C.active_model}</b>. Full report: <code>results/comparison.md</code>.</p>
+      ${C.rules ? `<p class="muted"><b>Confidence labels.</b> High: 95% interval under ${C.rules.high_width} yrs, models within ${C.rules.max_disagreement} yrs of each other, template similarity ≥ ${C.rules.similarity_comfort.toFixed(2)}, age ${C.rules.age_range[0]}–${C.rules.age_range[1]}. Medium: interval ${C.rules.high_width}–${C.rules.low_width} yrs or similarity between ${C.rules.similarity_cutoff.toFixed(2)} and ${C.rules.similarity_comfort.toFixed(2)}. Low: interval over ${C.rules.low_width} yrs, models disagree by more than ${C.rules.max_disagreement} yrs, age outside the training range, or similarity below ${C.rules.similarity_cutoff.toFixed(2)}. ${C.rules.how}.</p>` : ''}
+      <p class="muted"><b>Limits.</b> ${C.limits.join(' ')}</p></div>` : ''}
     <h3>5 · Quest weighting</h3>
     <div class="glass card"><table class="t"><tr><th>Quest</th><th>Evidence tier</th><th>Lancet 2024 PAF</th><th>Sparks</th><th>Key source</th></tr>${QUESTS.map(q => `<tr><td>${q.icon} ${q.title}</td><td>${q.tier}</td><td class="num">${q.lancet_paf ? q.lancet_paf + '%' : '–'}</td><td class="num">${q.sparks}</td><td><a href="${q.evidence[0].url}" target="_blank" style="color:#59F0FF">link ↗</a></td></tr>`).join('')}</table>
     <p class="muted">sparks = 20 + tier bonus (RCT 30 · cohort 15 · mixed 5) + 5 × PAF%. ${S.lancet}</p></div>

@@ -67,7 +67,7 @@ def snapshot(p: Player) -> dict:
 def index() -> str:
     # cache-bust the front-end on every server start
     v = str(int((WEB / "static" / "app.js").stat().st_mtime))
-    return (WEB / "index.html").read_text().replace("__V__", v)
+    return (WEB / "index.html").read_text(encoding="utf-8").replace("__V__", v)   # UTF-8 on every OS (Windows default is cp1252)
 
 
 @app.get("/api/quests")
@@ -360,8 +360,9 @@ def play_game(name: str, body: GameIn) -> dict:
 
 # ====================================================================== MRI brain age (real 3D CNN)
 def _mri_payload(p: Player | None, v, age, source: str, only: int | None = None) -> dict:
-    from neurotrail import mri
-    res = mri.analyze(v, age, only)
+    from neurotrail import brainage_ensemble as be, mri
+    # Upgraded models (interval + confidence) when trained; otherwise the original 4 mm CNN path.
+    res = be.estimate(v, age, only) if be.available() else mri.analyze(v, age, only)
     cam = res.pop("_cam", None)
     imgs = mri.slices_png(v, cam) if tuple(v.shape) == mri.SHAPE else {}
     res["images"] = {k: "data:image/png;base64," + base64.b64encode(b).decode() for k, b in imgs.items()}
@@ -395,12 +396,17 @@ def mri_sample(name: str, file: str = Form(...)) -> dict:
     fold = mri.heldout_fold(file) if row["status"].iloc[0] == "cognitively normal" else None
     out = _mri_payload(p, v, float(row["Age"].iloc[0]), f"OASIS sample {row['ID'].iloc[0]}", fold)
     r = row.iloc[0]
+    oof_age = float(r["brain_age"])
+    from neurotrail import brainage_ensemble as be
+    if be.available():   # the active model's own out-of-fold estimate for this scan
+        o = pd.read_csv(ROOT / "results" / f"oof_{be.config_name(be.MRI_MODEL)}.csv")
+        oof_age = float(o.loc[o["scan_id"] == r["ID"], "pred_age"].iloc[0])
     out["truth"] = {"id": r["ID"], "age": float(r["Age"]), "status": r["status"],
                     "cdr": None if pd.isna(r["CDR"]) else float(r["CDR"]),
-                    "oof_brain_age": float(r["brain_age"]),
-                    "note": ("Dementia participants were never seen by any model, so all 5 were used."
+                    "oof_brain_age": oof_age,
+                    "note": ("Dementia participants were never seen by any model, so every fold model was used."
                              if r["status"] != "cognitively normal"
-                             else f"Scored only by fold {fold}'s model, the one that never saw this person's scan.")}
+                             else f"Scored only by fold {fold}'s models, the ones that never saw this person's scan.")}
     return out
 
 
@@ -425,7 +431,48 @@ def mri_metrics() -> dict:
     from neurotrail import mri
     if not (ART / "mri_cnn_metrics.json").exists():
         raise HTTPException(503, "The 3D CNN is still training on the OASIS scans. Check back in a few minutes.")
-    return mri.metrics()
+    from neurotrail import brainage_ensemble as be
+    out = dict(mri.metrics())
+    if be.available():   # headline numbers of the model the app is actually using
+        em = be.config(be.MRI_MODEL)["metrics"]
+        tr = em["test_retest"]
+        out.update({"active_model": be.MRI_MODEL, "mae": em["mae"], "r": em["r"], "clinical_validity": em["clinical_validity"],
+                    "test_retest": {"n_pairs": tr["n_pairs"], "icc": tr["icc_3_1"], "mean_abs_diff": tr["mean_abs_diff"],
+                                    "smallest_detectable_change": tr["smallest_detectable_change"]},
+                    "interval_coverage_95": em.get("interval_coverage_95"), "nwbv_model_mae": out.get("nwbv_model_mae"),
+                    "n_models": {m: len(be.members(m)) for m in be.config(be.MRI_MODEL)["models"]}})
+    return out
+
+
+@app.get("/api/mri/comparison")
+def mri_comparison() -> dict:
+    """Every brain-age model on the same folds (results/metrics_*.json) + the frozen confidence rules."""
+    import json
+    res = ROOT / "results"
+    names = [("baseline_4mm", "Baseline 4 mm CNN"), ("cnn_2mm", "CNN 2 mm"), ("sfcn_ft", "SFCN fine-tuned"),
+             ("volume", "Volume model"), ("ensemble", "Ensemble (used by the app)")]
+    rows = []
+    for n, label in names:
+        f = res / f"metrics_{n}.json"
+        if not f.exists():
+            continue
+        m = json.loads(f.read_text())
+        # Calibrated intervals only: cal_<model> for single models (raw pred_std is just the seed spread).
+        cal = res / (f"metrics_{n}.json" if n == "ensemble" else f"metrics_cal_{n}.json")
+        cov = json.loads(cal.read_text()).get("interval_coverage_95") if cal.exists() else None
+        rows.append({"model": n, "label": label, "mae": m["mae"], "r": m["r"], "auc": m["clinical_validity"]["auc"],
+                     "auc_ci": m["clinical_validity"]["auc_ci"], "icc": m["test_retest"]["icc_3_1"],
+                     "sdc": m["test_retest"]["smallest_detectable_change"], "coverage": cov})
+    cfg = res / "ensemble_config.json"
+    c = json.loads(cfg.read_text()) if cfg.exists() else None
+    from neurotrail import brainage_ensemble as be
+    return {"rows": rows, "active_model": be.MRI_MODEL if be.available() else "baseline_4mm (original)",
+            "rules": c and {**c["rules"], "similarity_cutoff": c["similarity_cutoff"],
+                            "similarity_comfort": c["similarity_comfort_p5"], "age_range": c["age_range"]},
+            "limits": ["Small training set: 316 cognitively normal people from one dataset (OASIS-1).",
+                       "Scans must be preprocessed like the training scans: skull-stripped, N4, FSL MNI152 2 mm.",
+                       "Test-retest reliability comes from 20 young adults (19–34) only.",
+                       "A research tool, not a diagnosis."]}
 
 
 # ====================================================================== Voice check

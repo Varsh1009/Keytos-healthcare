@@ -1,0 +1,7 @@
+name, memory.total [MiB]
+NVIDIA H200, 143771 MiB
+Loaded 436 volumes (91, 109, 91) in 40s (device cuda)
+    f0 stage1 epoch   0  loss 0.4573  val MAE 18.19 (best 18.19 @ 0)
+    f0 stage2 epoch   0  loss 0.3645  val MAE 15.97 (best 15.97 @ 0)
+  fold 0: stage1 val 18.19, stage2 val 15.97, held-out MAE 17.04, 0.7 min, GPU 9.41 GB
+smoke test done; nothing written

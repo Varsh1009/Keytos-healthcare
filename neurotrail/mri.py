@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import io
 import json
-import tempfile
 from functools import lru_cache
 from pathlib import Path
 
@@ -86,14 +85,17 @@ def template() -> np.ndarray:
 
 
 def load_upload(data: bytes, filename: str) -> np.ndarray:
+    import gzip
+
     import nibabel as nib
-    suffix = ".nii.gz" if filename.lower().endswith(".gz") else ".nii"
-    with tempfile.NamedTemporaryFile(suffix=suffix) as tmp:
-        tmp.write(data)
-        tmp.flush()
-        img = nib.load(tmp.name)
-        img = nib.as_closest_canonical(img)
-        return np.asanyarray(img.dataobj, dtype=np.float32).squeeze()
+    from nibabel.orientations import axcodes2ornt, io_orientation, ornt_transform
+    # Parsed in memory (no temp file: reopening an open temp file fails on Windows; scans are never stored).
+    raw = gzip.decompress(data) if filename.lower().endswith(".gz") else data
+    img = nib.Nifti1Image.from_bytes(raw)
+    # Training scans are stored in FSL MNI voxel order (LAS); reorient uploads to the same order
+    # (as_closest_canonical would give RAS, i.e. a left-right mirror of what the models saw).
+    img = img.as_reoriented(ornt_transform(io_orientation(img.affine), axcodes2ornt(("L", "A", "S"))))
+    return np.asanyarray(img.dataobj, dtype=np.float32).squeeze()
 
 
 def check_format(v: np.ndarray) -> dict:
@@ -116,18 +118,14 @@ def check_format(v: np.ndarray) -> dict:
 
 
 def heldout_fold(file: str) -> int | None:
-    """For a cognitively normal training scan, the CV fold whose model never saw that person."""
-    import pandas as pd
-    from sklearn.model_selection import KFold
-    d = pd.read_csv(ART / "mri_cnn_predictions.csv")
-    normal = d.index[(d["session"] == "MR1") & (d["status"] == "cognitively normal")].to_numpy()
-    subj = d.loc[d["file"] == file, "ID"].str[:9]
-    if subj.empty:
+    """For a cognitively normal training scan, the CV fold whose model never saw that person
+    (folds come from results/splits.json, shared by every brain-age model)."""
+    import re
+    m = re.search(r"(OAS1_\d{4})", file)
+    if not m:
         return None
-    for k, (_, te) in enumerate(KFold(5, shuffle=True, random_state=0).split(normal)):
-        if subj.iloc[0] in set(d.loc[normal[te], "ID"].str[:9]):
-            return k
-    return None
+    k = json.loads((ROOT / "results" / "splits.json").read_text())["fold_of_subject"].get(m.group(1))
+    return k if k is not None and k >= 0 else None
 
 
 def predict_with_cam(v: np.ndarray, only: int | None = None) -> dict:

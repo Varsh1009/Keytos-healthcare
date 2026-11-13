@@ -1,0 +1,34 @@
+name, memory.total [MiB]
+NVIDIA H200, 143771 MiB
+Loaded 436 volumes (91, 109, 91) in 13s (device cuda)
+    f0 stage1 epoch   0  loss 0.4021  val MAE 16.41 (best 16.41 @ 0)
+    f0 stage1 epoch   7  loss 0.2098  val MAE 12.22 (best 12.22 @ 7)
+    f0 stage2 epoch   0  loss 0.1934  val MAE 15.20 (best 15.20 @ 0)
+    f0 stage2 epoch  10  loss 0.0415  val MAE 3.41 (best 3.41 @ 10)
+    f0 stage2 epoch  14  loss 0.0423  val MAE 3.92 (best 3.41 @ 10)
+  fold 0: stage1 val 12.22, stage2 val 3.41, held-out MAE 5.87, 1.4 min, GPU 9.42 GB
+    f1 stage1 epoch   0  loss 0.4303  val MAE 17.00 (best 17.00 @ 0)
+    f1 stage1 epoch   7  loss 0.2382  val MAE 12.50 (best 12.50 @ 7)
+    f1 stage2 epoch   0  loss 0.2665  val MAE 7.68 (best 7.68 @ 0)
+    f1 stage2 epoch  10  loss 0.0549  val MAE 5.23 (best 5.16 @ 3)
+    f1 stage2 epoch  14  loss 0.0518  val MAE 5.02 (best 5.02 @ 14)
+  fold 1: stage1 val 12.50, stage2 val 5.02, held-out MAE 4.86, 1.2 min, GPU 9.42 GB
+    f2 stage1 epoch   0  loss 0.4265  val MAE 18.51 (best 18.51 @ 0)
+    f2 stage1 epoch   7  loss 0.2408  val MAE 13.67 (best 13.65 @ 6)
+    f2 stage2 epoch   0  loss 0.2090  val MAE 8.27 (best 8.27 @ 0)
+    f2 stage2 epoch  10  loss 0.0492  val MAE 6.08 (best 5.98 @ 9)
+    f2 stage2 epoch  14  loss 0.0498  val MAE 5.95 (best 5.84 @ 12)
+  fold 2: stage1 val 13.65, stage2 val 5.84, held-out MAE 5.45, 1.2 min, GPU 9.42 GB
+    f3 stage1 epoch   0  loss 0.4717  val MAE 18.02 (best 18.02 @ 0)
+    f3 stage1 epoch   7  loss 0.2650  val MAE 13.79 (best 13.79 @ 7)
+    f3 stage2 epoch   0  loss 0.2097  val MAE 8.61 (best 8.61 @ 0)
+    f3 stage2 epoch  10  loss 0.0601  val MAE 5.11 (best 5.11 @ 10)
+    f3 stage2 epoch  14  loss 0.0479  val MAE 5.24 (best 5.08 @ 11)
+  fold 3: stage1 val 13.79, stage2 val 5.08, held-out MAE 5.04, 1.2 min, GPU 9.42 GB
+    f4 stage1 epoch   0  loss 0.4139  val MAE 16.55 (best 16.55 @ 0)
+    f4 stage1 epoch   7  loss 0.2403  val MAE 11.54 (best 11.54 @ 7)
+    f4 stage2 epoch   0  loss 0.2047  val MAE 7.03 (best 7.03 @ 0)
+    f4 stage2 epoch  10  loss 0.0445  val MAE 5.78 (best 5.78 @ 8)
+    f4 stage2 epoch  14  loss 0.0481  val MAE 5.70 (best 5.70 @ 14)
+  fold 4: stage1 val 11.54, stage2 val 5.70, held-out MAE 4.99, 1.2 min, GPU 9.42 GB
+sfcn_ft: MAE 5.24 r 0.959 AUC 0.625 ICC 0.928 SDC 3.85

@@ -8,18 +8,52 @@ brain health. NeuroTrail turns the habits with the strongest evidence into a dai
 - The score comes from models trained on real public data.
 - Each finished quest lights up a real region on a 3D brain.
 
-## Run it
+## Quick start (fresh clone)
+
+All trained models are in the repo, so nothing needs retraining. You only download the public data.
 
 ```bash
+# 1. Python 3.12 and Git installed
+git clone https://github.com/Varsh1009/Keytos-healthcare.git
+cd Keytos-healthcare
+git checkout brainage-accuracy         # skip once this branch is merged into main
+
+# 2. Python environment
+python -m venv .venv
+.venv\Scripts\activate                 # Mac/Linux: source .venv/bin/activate
 pip install -r requirements.txt
-python data/download_data.py        # CDC NHANES + OASIS (Kaggle; needs ~/.kaggle credentials)
-python models/train_cognition.py    # NHANES processing-speed models + associations + fairness
-python models/train_brainage.py     # OASIS MRI brain-age model + validation
-python models/train_mri_cnn.py      # 3D CNN brain age on 436 real OASIS MRIs (~30 min on M3 CPU)
-python -m neurotrail.brain_export   # high-res brain mesh + atlas regions for the 3D view
-python web/server.py                # open http://localhost:8600
-pytest -q                           # 21 tests
+# optional, NVIDIA GPU: pip install torch --index-url https://download.pytorch.org/whl/cu126
+
+# 3. Free Kaggle API key: kaggle.com > Settings > API > Create New Token,
+#    save kaggle.json in C:\Users\<you>\.kaggle\ (Mac/Linux: ~/.kaggle/)
+
+# 4. Public data: CDC NHANES (direct) + OASIS-1 tables and 436 MRI scans (Kaggle), ~1.6 GB
+python data/download_data.py
+
+# 5. Run
+python web/server.py                   # open http://localhost:8600
+pytest -q                              # optional: 35 tests
 ```
+
+- `CERTIFICATE_VERIFY_FAILED` while downloading or installing (antivirus / proxy): `pip install pip-system-certs`, then retry.
+- AI coach: works offline by default; set `ANTHROPIC_API_KEY` for the Claude agent.
+- No GPU: everything works, MRI results just take a few seconds longer.
+
+## Rebuild everything (optional)
+
+```bash
+python models/train_cognition.py    # NHANES processing-speed models + associations + fairness
+python models/train_brainage.py     # OASIS nWBV brain-age model + validation
+python models/splits.py             # fixed, age-balanced 5-fold split shared by every MRI model
+python models/train_mri_cnn.py      # 4 mm 3D CNN (~5 min GPU / ~30 min CPU)
+python models/train_mri_cnn_2mm.py  # 2 mm 3D CNN, 5 folds x 3 seeds (~1 h on an RTX 3060)
+python models/finetune_sfcn.py      # SFCN pretrained on UK Biobank, fine-tuned (~7 min H200 / ~3.5 h laptop GPU)
+python models/oof_volume_model.py   # nWBV volume model on the shared folds
+python models/ensemble.py --name ensemble --models baseline_4mm cnn_2mm sfcn_ft   # ranges + confidence labels
+python models/make_comparison.py    # results/comparison.md
+python -m neurotrail.brain_export   # high-res brain mesh + atlas regions for the 3D view
+```
+`notebooks/brainage_training.ipynb` runs the whole MRI pipeline step by step with charts.
 
 Stack: Python does all the work (pandas, scikit-learn, statsmodels, nilearn, FastAPI). The browser only
 draws it, using a single HTML/JS page with Three.js from a CDN. There is no Node and no build step.
@@ -45,24 +79,30 @@ draws it, using a single HTML/JS page with Three.js from a CDN. There is no Node
 - **Levers**: what-if sliders on the NHANES model, plus optional MRI brain age.
 - **Science**: every metric, the fairness audit, the evidence table and the architecture.
 
-## Real MRI scans: 3D CNN brain age (`models/train_mri_cnn.py`)
+## Real MRI scans: brain-age ensemble (`neurotrail/brainage_ensemble.py`)
 
 - **Data:** 436 real T1 MRI volumes from Kaggle `ninadaithal/oasis-1-shinohara` (OASIS-1). They're
   skull-stripped, N4 bias-corrected and on the MNI 2 mm grid. Each is joined to that person's real
   age and dementia rating (CDR).
-- **Model:** a compact 3D CNN on 4 mm input. Trained on cognitively normal people only, with 5-fold
-  cross-validation split by subject.
-- **Accuracy:** MAE **7.1 years** (r = 0.93), versus 21.3 for predicting the mean and 8.2 for the
-  brain-volume-only model.
-- **Dementia:** the bias-corrected brain-age gap is +8.4 years in dementia vs +0.7 in age-matched
-  normals, AUC **0.73** (95% CI 0.66–0.80).
-- **Test-retest** on 20 real repeat scans: ICC **0.97**. The smallest change that can be detected is
-  ±4.4 years.
-- **Upload:** the MRI tab takes a `.nii` / `.nii.gz` file and returns brain age, the gap, and Grad-CAM
-  heatmaps on real slices. Each upload is checked against the training format: skull-stripped, MNI
-  2 mm, and template similarity at or above the 1st percentile of the real training scans. Scans are
-  never stored.
+- **Models** (trained only on the 316 cognitively normal people; files in `models/checkpoints/` and
+  `models/artifacts/`): a 4 mm 3D CNN, a 2 mm 3D CNN (5 folds x 3 seeds) and SFCN pretrained on
+  12,949 UK Biobank brains and fine-tuned here. They are combined by weight (1 / error²).
+- **Fair testing:** one fixed, age-balanced 5-fold split by person (`results/splits.json`) for every
+  model; every person is scored only by models that never saw them; one shared scorer
+  (`models/eval_brainage.py`).
+- **Results** (`results/comparison.md`): ensemble usual miss **5.15 years** (r = 0.96; the original
+  single 4 mm model: 7.35), repeat-scan ICC **0.956**, smallest detectable change ±3.6 years, dementia
+  AUC **0.70** (95% CI 0.63–0.77). Its 95% ranges contained the true age for 94% of people.
+- **What the app shows:** brain age, a 95% range, a high / medium / low confidence label with reasons,
+  each model's estimate, and Grad-CAM heatmaps. Switch back to the original single model with
+  `NEUROTRAIL_MRI_MODEL=baseline_4mm`.
+- **Upload:** `.nii` / `.nii.gz`, checked against the training format (skull-stripped, MNI 2 mm,
+  template similarity at or above the 1st percentile of the training scans). Scans are never stored.
 - **Sample scans:** each is scored only by models that never saw that person.
+- **Limits:** one dataset and scanner type, 316 training people, repeat scans only from 20 young adults,
+  research-format scans only. An estimate for learning, not a diagnosis.
+- **Credit:** SFCN architecture and UK Biobank weights from Peng et al. 2021, *Medical Image Analysis*
+  68:101871 ([code, MIT license](https://github.com/ha-ha-ha-han/UKBiobank_deep_pretrain)).
 
 ## Voice check (`neurotrail/voice.py`)
 
