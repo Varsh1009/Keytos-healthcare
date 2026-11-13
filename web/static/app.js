@@ -236,11 +236,11 @@ const YN = [['1', 'Yes'], ['0', 'No']];
 const OBQ = [
   { k: 'age', q: 'How old are you?', age: true },
   { k: 'female', q: 'What is your sex?', opts: [['1', 'Female'], ['0', 'Male']], why: ['Why we ask', '<p>The CDC survey we learn from recorded sex, so we use it to compare you with similar people. That\'s all it\'s used for.</p>'] },
-  { k: 'toldbp', q: 'Has a doctor ever said you have high blood pressure?', opts: [['1', 'Yes'], ['0', 'No'], ['u', 'Not sure']], why: ['Why blood pressure', '<p>Lowering blood pressure is the brain-health step with the strongest trial evidence: in SPRINT MIND, a lower target reduced mild memory problems.</p>'] },
+  { k: 'toldbp', q: 'Has a doctor ever said you have high blood pressure?', opts: [['1', 'Yes'], ['0', 'No'], ['u', 'Not sure']], why: ['Why blood pressure', '<p>Lowering blood pressure is backed by a large randomized trial: in SPRINT MIND (9,361 adults), a target under 120 cut the risk of mild cognitive impairment by about 19%. Its effect on dementia itself was not statistically significant.</p>'] },
   { k: 'diabetes', q: 'Do you have diabetes?', opts: YN },
   { k: 'current_smoker', q: 'Do you smoke?', opts: YN },
   { k: 'sleep_hours', q: 'How much do you usually sleep?', opts: [['5.5', 'Under 6 hours'], ['6.5', '6 to 7 hours'], ['7.5', '7 to 8 hours'], ['8.5', 'More than 8 hours']] },
-  { k: 'hearing_trouble', q: 'Do you have trouble hearing, even with hearing aids?', opts: YN, why: ['Why hearing', '<p>Hearing loss is the largest single changeable risk factor in the 2024 Lancet report. Only about 1 in 7 adults over 50 with hearing loss uses hearing aids.</p>'] },
+  { k: 'hearing_trouble', q: 'Do you have trouble hearing, even with hearing aids?', opts: YN, why: ['Why hearing', '<p>Hearing loss is tied with high LDL cholesterol as the largest changeable dementia risk factor in the 2024 Lancet report (about 7% of cases each). Fewer than 1 in 3 adults over 70 with hearing loss use hearing aids.</p>'] },
   { k: 'feel_down', q: 'In the last 2 weeks, have you often felt down or hopeless?', opts: YN },
 ];
 let OB = null;
@@ -403,15 +403,15 @@ async function celebrate() {
 async function loadQuests() { QUESTS = await api('/api/quests'); QMAP = Object.fromEntries(QUESTS.map(q => [q.id, q])); }
 function nextWhy(id) {
   const L = ME.lever.per_factor;
-  return { bp: ME.profile.sbp == null ? 'Your blood pressure is unknown, and it\'s the step with the strongest trial evidence for the brain.' : 'The brain-health step with the strongest trial evidence.',
+  return { bp: ME.profile.sbp == null ? 'Your blood pressure is unknown. Lowering high blood pressure cut mild cognitive impairment by about 19% in a large trial (SPRINT MIND).' : 'Lowering high blood pressure cut mild cognitive impairment by about 19% in a large trial (SPRINT MIND).',
     labs: L.diabetes?.points > .1 ? 'Diabetes had the biggest link to slower thinking in the survey. Knowing your HbA1c is step one.' : 'Know your cholesterol and blood sugar.',
     sleep: 'Sleeping much more or less than 6–8 hours was linked to slower thinking.',
     smoke: 'Quitting at any age helps your brain.',
     mood: '8 short questions about the last 2 weeks.',
     steps: 'More walking is linked to lower dementia risk.',
     connect: 'Social isolation is one of the 14 changeable risk factors.',
-    hearing: 'Hearing loss is the largest changeable risk factor.',
-    joy: 'Planning one enjoyable thing is a proven way to lift mood.' }[id] || '';
+    hearing: 'Hearing loss is tied with high LDL cholesterol as the largest changeable risk factor (Lancet 2024).',
+    joy: 'Planning enjoyable activities (behavioural activation) helped low mood in a review of 26 trials.' }[id] || '';
 }
 async function pageHabit(id) {
   if (!QUESTS.length) await loadQuests();
@@ -481,7 +481,7 @@ function renderHabit(root, id, { onDone } = {}) {
     let note = '';
     if (k === 'bp' && value >= 180) note = '<p class="caveat"><b>180 or higher is very high.</b> Rest 5 minutes and measure again. If it stays this high, or you have chest pain, weakness, or vision or speech changes, call 911.</p>';
     else if (k === 'bp' && value >= 130) note = '<p>130 or above is worth raising with your doctor. Measure on a few different days to see your usual level.</p>';
-    else if (k === 'steps') note = `<p>${value >= 9800 ? 'You reached the "best" level from a UK study of 78,000 people.' : value >= 3800 ? `Above the minimum level. ${(9800 - value).toLocaleString()} more reaches the best level.` : `${(3800 - value).toLocaleString()} more steps reaches the minimum level.`}</p>`;
+    else if (k === 'steps') note = `<p>${value >= 9826 ? 'You reached the level linked to the lowest dementia risk in a UK study of 78,430 people (9,826 steps).' : value >= 3826 ? `Above the minimum level linked to lower risk (3,826 steps). ${(9826 - value).toLocaleString()} more reaches the best level.` : `${(3826 - value).toLocaleString()} more steps reaches the minimum level.`}</p>`;
     if (onDone && !note) { toast(`Logged · +${ME.gained} points`); onDone(); return; }
     $('#hRes', root).innerHTML = `<div class="card done-sheet pop" style="margin-top:14px"><h2>${ic('circle-check')} Logged</h2>${note}
       ${onDone ? '<button class="btn accent big" id="hCont">Continue</button>' : '<a class="btn secondary" href="#/today">Back to Today</a>'}</div>`;
@@ -509,7 +509,7 @@ function renderMood(root, { onDone } = {}) {
     const r = await api('/api/me/mood', { answers: a }); ME = r.player; store.set(habitFlag(), '1');
     const band = r.score < 5 ? 'few or no symptoms' : r.score < 10 ? 'mild symptoms' : r.score < 15 ? 'moderate symptoms' : r.score < 20 ? 'moderately severe symptoms' : 'severe symptoms';
     root.innerHTML = `<div class="pop">${r.support ? SUPPORT : ''}<div class="card" style="margin-top:14px;text-align:center"><div class="muted">Your score</div><div class="a-big">${r.score}<span style="font-size:1.4rem;color:var(--dim)"> / 24</span></div>
-      <p>That usually means <b>${band}</b>. It's a screening questionnaire (PHQ-8), not a diagnosis.</p>
+      <p>That usually means <b>${band}</b> (standard PHQ severity bands). It's a screening questionnaire, not a diagnosis.</p>
       ${r.support ? '<p>Scores of 10 or more are a good reason to talk with a doctor.</p>' : '<p class="muted">Mood changes. Check again in a couple of weeks.</p>'}
       ${onDone ? '<button class="btn accent big" id="mCont">Continue</button>' : '<a class="btn secondary" href="#/today">Back to Today</a>'}</div></div>`;
     $('#mCont', root) && ($('#mCont', root).onclick = onDone);
@@ -523,7 +523,7 @@ async function pageChecks() {
   const g = gameOfDay(), C = CHECK_BY[g];
   const stat = c => { if (c.id === 'voice') { const n = V.history.length; return n ? `${n} recording${n > 1 ? 's' : ''}` : 'New'; }
     const s = S[c.id]; return s?.plays ? `Best ${s.best} · ${s.plays} play${s.plays > 1 ? 's' : ''}` : 'New'; };
-  WHY.train = ['Do brain games work?', '<p>Only speed training has trial evidence linked to fewer dementia diagnoses (the ACTIVE trial). Practicing other games mostly makes you better at that game.</p><p>So here, games are <b>measurements</b>: you\'re compared only with your own earlier scores, and the trend over weeks matters more than any one day.</p>'];
+  WHY.train = ['Do brain games work?', '<p>In the ACTIVE trial, speed training (not memory or reasoning training) was linked to lower dementia risk in follow-up analyses: about 29% lower at 10 years, and about 25% lower at 20 years for people who did booster sessions. Our 90-second Speed Sprint is inspired by it, not the same training.</p><p>A major review found brain games mostly make you better at those games, with little evidence of better everyday thinking (Simons et al., 2016).</p><p>So here, games are <b>measurements</b>: you\'re compared only with your own earlier scores, and the trend over weeks matters more than any one day.</p>'];
   main.innerHTML = `<div class="stack stagger"><div><h1>Train</h1><p class="muted" style="margin-top:-4px">Short games based on real thinking tests.</p></div>
     <a class="card featured" href="#/check/${g}" style="text-decoration:none;color:inherit"><span class="ico lg ${C.tint}">${ic(C.icon)}</span><div class="txt"><div class="eyebrow">Today's game</div><b style="font:700 1.15rem var(--display)">${C.name}</b><div class="muted">${C.what} · ${C.time}</div></div><span class="btn accent">${ic('player-play')}</span></a>
     <div class="grid3">${CHECKS.map(c => `<a class="tile" href="#/check/${c.id}"><span class="ico ${c.tint}">${ic(c.icon)}</span><b>${c.name}</b><span>${c.what}</span><div class="st">${stat(c)} · ${c.time}</div></a>`).join('')}</div>
@@ -630,7 +630,7 @@ function learnList() {
 const MYTHS = [
   ['Dementia is a normal part of getting old.', 'Dementia is caused by diseases. Many people live into their 90s without it.', 'https://www.alz.org/alzheimers-dementia/what-is-alzheimers/myths'],
   ['Nothing can be done to lower dementia risk.', 'About 45% of cases are linked to 14 changeable factors, like blood pressure and hearing.', LANCET_URL],
-  ['Brain-training games prevent dementia.', 'Practice mostly improves the practiced game. Speed training is the one type linked to fewer diagnoses in a trial.', 'https://doi.org/10.1177/1529100616661983'],
+  ['Brain-training games prevent dementia.', 'Practice mostly improves the practiced game (Simons 2016). Speed training was linked to fewer dementia diagnoses in one trial\'s follow-up analyses.', 'https://doi.org/10.1177/1529100616661983'],
   ['A stroke only happens to old people.', 'Strokes can happen at any age. Know BE-FAST and call 911 right away.', 'https://pubmed.ncbi.nlm.nih.gov/28082668/'],
 ];
 function diseaseDetail() {
@@ -735,6 +735,7 @@ const ME_SECTIONS = {
   settings: ['settings', '', 'Text size and motion', 'Make it easier to read'],
   security: ['key', '', 'Passkey and sign-out', ''],
   how: ['microscope', '', 'How we know', 'The data, models and what we removed'],
+  sources: ['book', '', 'Sources', 'Every outside number, with the original paper'],
   help: ['lifebuoy', '', 'Help and support', 'Crisis and helplines'],
 };
 async function pageMe(section, sub, id) {
@@ -747,7 +748,7 @@ async function pageMe(section, sub, id) {
   main.innerHTML = `<div class="stack stagger"><div class="habit-h"><span class="ico lg teal">${ic('user')}</span><div><h1>${esc(firstName() || 'You')}</h1><span class="pill ${AUTH.passkey ? 'green' : 'amber'}">${ic(AUTH.passkey ? 'key' : 'alert-triangle')} ${AUTH.passkey ? 'Saved with a passkey' : 'Not saved yet'}</span></div></div>
     <div class="list">${['week', 'patterns', 'report', 'family', 'progress', 'focus'].map(row).join('')}</div>
     <div class="list">${['answers', 'connect', ...(coach ? ['ask'] : [])].map(row).join('')}</div>
-    <div class="list">${['settings', 'security', 'how', 'help'].map(row).join('')}</div></div>`;
+    <div class="list">${['settings', 'security', 'how', 'sources', 'help'].map(row).join('')}</div></div>`;
 }
 async function meSection(k) {
   const [, , title] = ME_SECTIONS[k];
@@ -762,6 +763,7 @@ async function meSection(k) {
   if (k === 'answers') { box.innerHTML = '<div class="card" id="abox"></div>'; return answersBox(); }
   if (k === 'connect') { box.innerHTML = '<div class="card" id="wbox"></div>'; return wearBox(); }
   if (k === 'ask') { box.innerHTML = '<div id="askBox"></div>'; return askCard(); }
+  if (k === 'sources') return sourcesBox(box);
   if (k === 'how') { FACTS ||= await api('/api/facts'); box.innerHTML = `<div class="card">${howWeKnow()}</div>`; return; }
   if (k === 'help') { box.innerHTML = `<div class="card">${HELP}</div>`; return; }
   if (k === 'settings') return settingsBox(box);
@@ -1108,6 +1110,58 @@ async function pageJoin(token) {
     info.needs_passkey ? savePasskey(accept) : accept();
   });
   $('#jLogin') && ($('#jLogin').onclick = () => passkeyLogin(accept));
+}
+
+// ------------------------------------------------------------------ Sources (every outside number in the app, checked against the primary paper)
+const SOURCES = [
+  ['Risk factors', [
+    ['About 45% of dementia cases are linked to 14 changeable risk factors; hearing loss and high LDL cholesterol are the largest, about 7% each. Sleep is not one of the 14.',
+      'Livingston G et al. Dementia prevention, intervention, and care: 2024 report of the Lancet standing Commission. Lancet. 2024;404(10452):572–628.', 'https://doi.org/10.1016/S0140-6736(24)01296-0'],
+  ]],
+  ['Habits and trials', [
+    ['Intensive blood pressure control (target under 120) lowered mild cognitive impairment by about 19% (HR 0.81). The effect on dementia alone was not statistically significant.',
+      'SPRINT MIND Investigators; Williamson JD et al. JAMA. 2019;321(6):553–561.', 'https://doi.org/10.1001/jama.2018.21442'],
+    ['Hearing intervention did not slow cognitive decline overall; in older adults at higher risk, 3-year decline was about 48% smaller (prespecified sensitivity analysis).',
+      'Lin FR et al. ACHIEVE. Lancet. 2023;402(10404):786–797.', 'https://doi.org/10.1016/S0140-6736(23)01406-X'],
+    ['About 9,826 steps a day was linked to about 50% lower dementia risk, and 3,826 steps to about 25% lower (observational, 78,430 adults).',
+      'del Pozo Cruz B et al. JAMA Neurol. 2022;79(10):1059–1063.', 'https://doi.org/10.1001/jamaneurol.2022.2672'],
+    ['Speed-of-processing training was linked to 29% lower dementia risk at 10 years (secondary analysis).',
+      'Edwards JD et al. Alzheimers Dement (N Y). 2017;3(4):603–611.', 'https://doi.org/10.1016/j.trci.2017.09.002'],
+    ['At 20 years, speed training with booster sessions was linked to about 25% lower diagnosed dementia; without boosters, no benefit.',
+      'Coe NB et al. Alzheimers Dement (N Y). 2026;12(1):e70197.', 'https://doi.org/10.1002/trc2.70197'],
+    ['Both lifestyle programs improved thinking scores; the structured, coached one improved them slightly more (0.029 SD per year).',
+      'Baker LD et al. US POINTER. JAMA. 2025;334(8):681–691.', 'https://doi.org/10.1001/jama.2025.12923'],
+    ['Behavioural activation (planning rewarding activities) beat control conditions for depression in a review of 26 trials in adults.',
+      'Ekers D et al. PLoS One. 2014;9(6):e100100.', 'https://doi.org/10.1371/journal.pone.0100100'],
+    ['Brain-training games improve the trained tasks, with little evidence of better everyday thinking.',
+      'Simons DJ et al. Psychol Sci Public Interest. 2016;17(3):103–186.', 'https://doi.org/10.1177/1529100616661983'],
+  ]],
+  ['Checks and screening', [
+    ['A night shorter than your own average was followed by slower next-day processing speed (adults 18–75).',
+      'Schwarz J et al. Sleep. 2026;49(1):zsaf321.', 'https://doi.org/10.1093/sleep/zsaf321'],
+    ['PHQ-8 scores range from 0 to 24; 10 or more suggests current depression.',
+      'Kroenke K et al. J Affect Disord. 2009;114(1–3):163–173.', 'https://doi.org/10.1016/j.jad.2008.06.026'],
+    ['In a small study, people with mild cognitive impairment spoke more slowly and paused more.',
+      'Tóth L et al. Curr Alzheimer Res. 2018;15(2):130–138.', 'https://doi.org/10.2174/1567205014666171121114930'],
+    ['In one hospital study, FAST missed about 14% of strokes; adding Balance and Eyes cut that to about 4%.',
+      'Aroor S et al. Stroke. 2017;48(2):479–481.', 'https://doi.org/10.1161/STROKEAHA.116.015169'],
+  ]],
+  ['The care gap', [
+    ['Only about 1 in 5 US adults with high blood pressure has it under control (below 130/80); 47.7% of adults have high blood pressure.',
+      'Fryar CD et al. NCHS Data Brief No. 511. CDC, 2024.', 'https://www.cdc.gov/nchs/products/databriefs/db511.htm'],
+    ['Fewer than 1 in 3 Medicare beneficiaries over 70 with hearing loss use hearing aids (29.2%, 2021).',
+      'Reed NS et al. JAMA Netw Open. 2023;6(7):e2326320.', 'https://doi.org/10.1001/jamanetworkopen.2023.26320'],
+    ['About 6 in 10 people living with dementia are undiagnosed (pooled 61.7%, 23 studies).',
+      'Lang L et al. BMJ Open. 2017;7(2):e011146.', 'https://doi.org/10.1136/bmjopen-2016-011146'],
+    ['Of 14 brain-health game apps, all claimed cognitive benefits but only one cited research.',
+      'Yu J et al. Healthcare (Basel). 2025;13(8):855.', 'https://doi.org/10.3390/healthcare13080855'],
+    ['65% of caregivers hold at least some of an older adult\'s logins; about 3 in 4 say the older adult has never asked to take back consent for data sharing (survey, not peer-reviewed).',
+      'Future of Privacy Forum. AgeTech Sector Report. 2026.', 'https://fpf.org/wp-content/uploads/2026/07/FPF-AgeTech-Sector-Report.pdf'],
+  ]],
+];
+function sourcesBox(box) {
+  box.innerHTML = `<p class="muted" style="margin-top:-6px">Every outside number in NeuroTrail, checked against the original paper. Our own model results are in How we know.</p>
+    ${SOURCES.map(([g, items]) => `<div class="section-h"><h2>${g}</h2></div><div class="list">${items.map(([claim, cite, url]) => `<a class="lrow" href="${url}" target="_blank" rel="noopener"><div class="txt"><b style="font-weight:600">${esc(claim)}</b><span>${esc(cite)}</span></div>${ic('external-link')}</a>`).join('')}</div>`).join('')}`;
 }
 
 // ================================================================== BOOT

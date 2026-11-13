@@ -135,9 +135,10 @@ QUESTS: list[Quest] = [
         log={"kind": "hearing"}, tier="Mixed / weak", lancet_paf=7.0, nhanes_key="hearing_trouble",
         evidence=[{"claim": "Lancet 2024: hearing loss RR 1.4, weighted PAF 7.0%, tied for largest factor.",
                    "url": LANCET_URL},
-                  {"claim": "ACHIEVE RCT: hearing aids had no effect on 3-year cognition overall (−0.002, "
-                            "95% CI −0.08 to 0.08); in the higher-risk ARIC subgroup, 48% less decline.",
-                   "url": LANCET_URL}],
+                  {"claim": "ACHIEVE RCT (n=977): hearing intervention had no effect on 3-year cognitive decline "
+                            "overall (0.002 SD, 95% CI −0.077 to 0.081); in the higher-risk ARIC subgroup (n=238, a "
+                            "prespecified sensitivity analysis), decline was 48% smaller.",
+                   "url": "https://pubmed.ncbi.nlm.nih.gov/37478886/"}],
         caveat="Rated Mixed because the big trial was null overall. In our NHANES 2011-12 model, "
                "self-reported hearing trouble was not associated with processing speed.",
     ),
