@@ -22,6 +22,7 @@
   --cyan: var(--accent); --gold: #D97706; --violet-2: var(--violet); --red: #DC2626; --panel: var(--surface); --panel2: var(--surface-2); --panel3: var(--surface-3);
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html { font-size: calc(18px * var(--scale)); -webkit-text-size-adjust: 100%; }
 body { margin: 0; min-height: 100vh; background: var(--bg); color: var(--ink); font: 400 1rem/1.55 Inter, system-ui, -apple-system, sans-serif; -webkit-font-smoothing: antialiased; padding-bottom: 130px; }
 h1, h2, h3, .h1 { font-family: var(--display); letter-spacing: -.02em; line-height: 1.2; margin: 0 0 .35em; font-weight: 700; }

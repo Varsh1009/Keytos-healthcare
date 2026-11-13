@@ -159,6 +159,37 @@ def register_verify(key: str, credential: dict) -> str:
     return player
 
 
+def approval_options(player: str, site: tuple[str, str], challenge: bytes) -> dict:
+    """Ask the person's own passkey to approve something specific: the challenge is that thing's SHA-256."""
+    _schema()
+    with db.conn() as c:
+        creds = [r["cred_id"] for r in c.execute("SELECT cred_id FROM credentials WHERE player=?", (player,))]
+    if not creds:
+        raise ValueError("Save a passkey first.")
+    opts = generate_authentication_options(rp_id=site[0], challenge=challenge, user_verification=UserVerificationRequirement.REQUIRED,
+                                           allow_credentials=[PublicKeyCredentialDescriptor(id=base64url_to_bytes(x)) for x in creds])
+    return {"key": _put_challenge(opts.challenge, player, site), "options": json.loads(options_to_json(opts))}
+
+
+def approval_verify(key: str, credential: dict, player: str, expected: bytes) -> dict:
+    """Check the passkey approved exactly `expected` and belongs to this person. Returns an audit record."""
+    _schema()
+    ch, who, rp_id, origin = _take_challenge(key)
+    if who != player or ch != expected:
+        raise ValueError("This approval doesn't match the report.")
+    with db.conn() as c:
+        row = c.execute("SELECT * FROM credentials WHERE cred_id=?", (credential.get("id"),)).fetchone()
+    if row is None or row["player"] != player:
+        raise ValueError("That passkey belongs to a different account.")
+    v = verify_authentication_response(credential=credential, expected_challenge=ch, expected_rp_id=rp_id,
+                                       expected_origin=origin, credential_public_key=row["public_key"],
+                                       credential_current_sign_count=row["sign_count"], require_user_verification=True)
+    with db.conn() as c:
+        c.execute("UPDATE credentials SET sign_count=? WHERE cred_id=?", (v.new_sign_count, row["cred_id"]))
+    return {"method": "passkey (WebAuthn)", "user_verified": bool(v.user_verified), "credential": row["cred_id"][:12] + "…",
+            "approved_report_sha256": ch.hex(), "at": db.now()}
+
+
 def login_options(site: tuple[str, str]) -> dict:
     opts = generate_authentication_options(rp_id=site[0], user_verification=UserVerificationRequirement.REQUIRED)
     return {"key": _put_challenge(opts.challenge, None, site), "options": json.loads(options_to_json(opts))}

@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#F6F5F1">
+<meta name="robots" content="noindex">
+<title>Verify a NeuroTrail report</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='9' fill='%230F766E'/><circle cx='16' cy='16' r='8.5' fill='none' stroke='white' stroke-width='3' stroke-dasharray='36 60' stroke-linecap='round' transform='rotate(-90 16 16)'/></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
+<link rel="stylesheet" href="/static/style.css?v=__V__">
+<style>
+  body { padding-bottom: 40px; }
+  main { max-width: 720px; }
+  .vstatus { display: flex; gap: 16px; align-items: center; }
+  .vstatus .ico { width: 64px; height: 64px; border-radius: 20px; font-size: 2rem; }
+  .vstatus h1 { margin: 0; font-size: 1.6rem; }
+  .sigrow { display: flex; gap: 14px; align-items: flex-start; padding: 14px 0; border-bottom: 1px solid var(--line); }
+  .sigrow:last-child { border-bottom: 0; }
+  .sigrow b { display: block; }
+  .ok { color: var(--green); } .bad { color: var(--rose); } .warn { color: #92400E; }
+  .tamper { border: 1.5px dashed var(--line-2); }
+  .tamper.fail { border-color: #FDA4AF; background: var(--rose-soft); }
+  .hexline { font: 500 .8rem ui-monospace, Menlo, monospace; word-break: break-all; color: var(--mute); }
+  pre { white-space: pre-wrap; word-break: break-all; font-size: .72rem; background: var(--surface-2); padding: 10px; border-radius: 10px; }
+</style>
+</head>
+<body class="r-report">
+<header class="top"><div class="top-in"><span class="brand"><span class="logo" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><circle cx="12" cy="12" r="7" stroke-dasharray="30 44" transform="rotate(-90 12 12)"/></svg></span>NeuroTrail</span><span class="pill teal"><i class="ti ti-shield-check" aria-hidden="true"></i> Report check</span></div></header>
+<main id="main"><div class="card"><p class="muted">Checking the report…</p></div></main>
+<script type="module">
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const ic = n => `<i class="ti ti-${n}" aria-hidden="true"></i>`;
+const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+const hex = buf => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2, '0')).join('');
+const canon = v => Array.isArray(v) ? '[' + v.map(canon).join(',') + ']' : v && typeof v === 'object' ? '{' + Object.keys(v).sort().map(k => JSON.stringify(k) + ':' + canon(v[k])).join(',') + '}' : JSON.stringify(v);
+const fmtD = s => new Date(s.length === 10 ? s + 'T12:00' : s).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+const rid = location.pathname.split('/').filter(Boolean).pop();
+
+const r = await fetch(`/api/verify/${encodeURIComponent(rid)}`);
+if (!r.ok) { $('#main').innerHTML = `<div class="card"><div class="vstatus"><span class="ico rose">${ic('x')}</span><h1>No report with this code</h1></div><p class="muted">Check the QR code or link. The report may have been deleted.</p></div>`; throw 0; }
+const d = await r.json();
+const env = JSON.parse(d.payload_json), R = env.report, A = env.patient_approval;
+
+// Check the signature here, in this browser, with the signing certificate's public key (WebCrypto).
+let key = null, inBrowser = !!(window.crypto && crypto.subtle);
+const check = async text => {
+  if (!inBrowser) return d.server_check && text === d.payload_json;
+  key ||= await crypto.subtle.importKey('spki', b64(d.chain.spki), { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
+  return crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, key, b64(d.sig_raw), new TextEncoder().encode(text));
+};
+const sha = async text => inBrowser ? hex(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))) : null;
+const ok = await check(d.payload_json);
+const status = !ok ? ['rose', 'alert-octagon', 'This report has been changed', 'The signature does not match these contents. Don\'t rely on it.']
+  : d.revoked ? ['amber', 'ban', 'Revoked by the patient', 'The signature is genuine, but the patient has withdrawn this report.']
+  : d.expired ? ['amber', 'clock', 'Expired', `The signature is genuine, but this report expired on ${fmtD(R.expires_at)}.`]
+  : ['green', 'shield-check', 'Authentic and unaltered', 'Every number below is exactly what NeuroTrail signed. If your paper copy differs, it was changed.'];
+const G = R.glance;
+$('#main').innerHTML = `<div class="stack">
+  <div class="card"><div class="vstatus"><span class="ico ${status[0]}">${ic(status[1])}</span><div><h1>${status[2]}</h1><p class="muted" style="margin:4px 0 0">${status[3]}</p></div></div>
+    <p class="tiny" style="margin-top:12px">${inBrowser ? 'Checked in this browser with NeuroTrail\'s public key. Nothing was sent anywhere.' : 'Checked by the NeuroTrail server. Open this page over https to check it in your own browser.'}</p></div>
+
+  <div class="card"><div class="eyebrow">Two signatures</div>
+    <div class="sigrow"><span class="ico ${A ? 'green' : ''}">${ic(A ? 'fingerprint' : 'user-question')}</span><div><b>${A ? 'Approved by the patient' : 'Not approved with a passkey'}</b>
+      <span class="muted">${A ? `With their own passkey (fingerprint, face or PIN), ${fmtD(A.at)}. The passkey signed this exact report.` : 'Made from a guest account without a passkey, so only NeuroTrail signed it.'}</span></div></div>
+    <div class="sigrow"><span class="ico ${d.chain.chain_valid && ok ? 'green' : 'rose'}">${ic('certificate')}</span><div><b>Signed by NeuroTrail</b>
+      <span class="muted">${esc(d.chain.signing.subject)} certificate, issued by ${esc(d.chain.root.issuer)}. Chain ${d.chain.chain_valid ? 'checks out' : 'does NOT check out'}.</span></div></div></div>
+
+  <div class="card tamper" id="tamper"><div class="eyebrow">See it work</div><h2 style="font-size:1.1rem">What if someone edits a number?</h2>
+    <p class="muted">Try changing one value. We re-check the signature against the edited report.</p>
+    <div class="row"><button class="btn accent" id="tBtn">${ic('pencil')} Change blood pressure to 118</button><button class="btn secondary" id="tUndo" hidden>Undo</button></div><div id="tOut" aria-live="polite"></div></div>
+
+  <article class="report">
+    <h2 style="border:0;margin-top:0;padding-top:0">${esc(R.subject.label)} · age ${R.subject.age} · ${esc(R.subject.sex)}</h2>
+    <div class="meta"><span>${fmtD(R.period[0])} to ${fmtD(R.period[1])}</span><span>Issued ${fmtD(R.issued_at)}</span><span>Expires ${fmtD(R.expires_at)}</span><span>Report ${esc(R.report_id)}</span></div>
+    <h2>At a glance</h2>
+    <div class="statrow"><div class="stat"><span>Blood pressure (avg)</span><b id="vBp">${G.bp_avg ?? '–'}</b><span>${G.bp_readings} reading${G.bp_readings === 1 ? '' : 's'}</span></div>
+      <div class="stat"><span>Mood (PHQ-8)</span><b>${G.phq8 ?? '–'}</b><span>of 24</span></div><div class="stat"><span>Sleep (avg)</span><b>${G.sleep_avg_h != null ? G.sleep_avg_h + ' h' : '–'}</b></div>
+      <div class="stat"><span>Steps (avg)</span><b>${G.steps_avg != null ? Math.round(G.steps_avg).toLocaleString() : '–'}</b></div></div>
+    ${R.questions.length ? `<h2>Questions the patient wants to ask</h2><ul>${R.questions.map(q => `<li>${esc(q)}</li>`).join('')}</ul>` : ''}
+    ${R.bp_readings.length ? `<h2>Home blood pressure</h2><div class="tablewrap"><table class="t"><tr><th>Date</th><th>Reading</th></tr>${R.bp_readings.slice().reverse().map(([dd, s, di]) => `<tr><td>${fmtD(dd)}</td><td>${s}${di ? ' / ' + di : ''} mmHg</td></tr>`).join('')}</table></div>` : ''}
+    ${R.games.length ? `<h2>Thinking games (compared only with themselves)</h2><div class="tablewrap"><table class="t"><tr><th>Game</th><th>Plays</th><th>First</th><th>Best</th><th>Latest</th></tr>${R.games.map(g => `<tr><td>${esc(g.game)}</td><td>${g.plays}</td><td>${g.first}</td><td>${g.best}</td><td>${g.latest}</td></tr>`).join('')}</table></div>` : ''}
+    ${R.patterns.length ? `<h2>Patterns in their own data</h2><ul>${R.patterns.map(p => `<li>${esc(p.finding)} (${p.level === 'clear' ? 'clear pattern' : 'early hint'}, ${p.days[0]} vs ${p.days[1]} days)</li>`).join('')}</ul>` : ''}
+    ${R.self_reported.length ? `<h2>Self-reported</h2><p>${R.self_reported.map(esc).join(' · ')}</p>` : ''}
+    <p class="tiny" style="margin-top:20px">${esc(R.note)}</p>
+  </article>
+
+  <details class="card"><summary>Technical details</summary>
+    <p class="tiny">ECDSA P-256 / SHA-256 over the canonical JSON (sorted keys). Report SHA-256:</p><p class="hexline">${esc(d.digest)}</p>
+    <p class="tiny">Signing certificate (${esc(d.chain.signing.subject)}), valid until ${esc(d.chain.signing.not_after)}, SHA-256 fingerprint:</p><p class="hexline">${esc(d.chain.signing.sha256)}</p>
+    <p class="tiny">Root (${esc(d.chain.root.subject)}), SHA-256 fingerprint:</p><p class="hexline">${esc(d.chain.root.sha256)}</p>
+    ${A ? `<p class="tiny">Passkey approval covered report SHA-256:</p><p class="hexline">${esc(A.approved_report_sha256)}</p>` : ''}
+    <pre>${esc(d.chain.signing.pem)}</pre></details>
+</div>`;
+
+const origBp = G.bp_avg;
+$('#tBtn').onclick = async () => {
+  const edited = structuredClone(env); edited.report.glance.bp_avg = 118;
+  const text = canon(edited), good = await check(text), [h1, h2] = [await sha(d.payload_json), await sha(text)];
+  $('#vBp').textContent = 118; $('#vBp').classList.add('bad');
+  $('#tamper').classList.toggle('fail', !good);
+  $('#tOut').innerHTML = `<p style="margin-top:12px"><b class="${good ? 'ok' : 'bad'}">${ic(good ? 'circle-check' : 'alert-octagon')} ${good ? 'Still valid' : 'Signature check failed: this edit is caught.'}</b></p>
+    ${h1 ? `<p class="tiny">Fingerprint of the report before and after the edit:</p><p class="hexline">${h1.slice(0, 32)}…<br><span class="bad">${h2.slice(0, 32)}…</span></p>` : ''}`;
+  $('#tUndo').hidden = false;
+};
+$('#tUndo').onclick = () => { $('#vBp').textContent = origBp ?? '–'; $('#vBp').classList.remove('bad'); $('#tamper').classList.remove('fail'); $('#tOut').innerHTML = ''; $('#tUndo').hidden = true; };
+</script>
+</body>
+</html>

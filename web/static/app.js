@@ -794,38 +794,60 @@ async function weekStory(box) {
 }
 
 // ------------------------------------------------------------------ Doctor report (print / save as PDF)
-async function doctorReport(box) {
-  const [P, Gs, I] = await Promise.all([api('/api/me/progress?days=30'), api('/api/me/games'), api('/api/me/insights').catch(() => null)]);
-  const p = ME.profile, bp = P.bp.filter(b => b.value != null), bpAvg = avg(bp.map(b => b.value));
-  const sl = avg(P.sleep.map(s => s.value).filter(v => v != null)), stp = avg(P.steps.map(s => s.value).filter(v => v != null));
-  const fmtD = d => new Date(d + 'T12:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
-  const asks = [];
-  if (bpAvg != null && bpAvg >= 130) asks.push(`My home blood pressure averages about ${Math.round(bpAvg)}. What should my target be?`);
-  if (bpAvg == null && p.sbp == null) asks.push('I don\'t know my blood pressure. Can we check it?');
-  if (p.hearing_trouble) asks.push('I have trouble hearing. Should I have a hearing test?');
-  if ((p.phq9 ?? 0) >= 10) asks.push(`My mood questionnaire (PHQ-8) score was ${p.phq9}. Can we talk about it?`);
-  if (p.diabetes) asks.push('Is my blood sugar (HbA1c) on target?');
-  if (p.current_smoker) asks.push('What support is there to help me quit smoking?');
-  if (sl != null && sl < 6) asks.push(`I've been sleeping about ${sl.toFixed(1)} hours. Could anything help?`);
-  const rows = CHECKS.filter(c => c.id !== 'voice' && Gs[c.id]?.plays).map(c => { const g = Gs[c.id]; return `<tr><td>${c.name}</td><td>${g.plays}</td><td>${g.history[0]}</td><td>${g.best}</td><td>${g.last}</td></tr>`; }).join('');
-  const pats = I?.ready ? I.insights.filter(i => i.level === 'clear' || i.level === 'hint') : [];
-  const risk = [p.diabetes && 'Diabetes', p.current_smoker && 'Current smoker', p.hearing_trouble && 'Trouble hearing', store.get('nt-toldbp') === '1' && 'Told they have high blood pressure', p.feel_down && 'Recently felt down'].filter(Boolean);
-  box.innerHTML = `<div class="row noprint" style="justify-content:flex-end;margin-bottom:12px"><button class="btn accent" id="printBtn">${ic('printer')} Print or save as PDF</button></div>
+async function doctorReport(box, signed = null) {
+  const { report: R, signed: list } = await api('/api/me/report');
+  const G = R.glance, fmtD = d => new Date(d.length === 10 ? d + 'T12:00' : d).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+  const live = list.filter(s => !s.revoked && new Date(s.expires) > new Date());
+  WHY.signing = ['How signing works', `<p><b>1. You approve it</b> with your passkey (fingerprint, face or PIN). Your passkey signs this exact report.</p>
+    <p><b>2. NeuroTrail signs it</b> with a certificate from its own certificate authority, the same way hospitals and banks sign documents.</p>
+    <p><b>3. Your doctor scans the QR code.</b> Their browser checks both signatures. If anyone changed a single number, it shows "This report has been changed".</p>
+    <p class="muted">The report expires in 90 days, and you can revoke it at any time.</p>`];
+  box.innerHTML = `<div class="row noprint" style="justify-content:space-between;margin-bottom:12px"><span class="pill ${signed ? 'green' : ''}">${ic(signed ? 'shield-check' : 'file-text')} ${signed ? 'Signed and verifiable' : 'Draft'}</span>
+      <button class="btn secondary" id="printBtn">${ic('printer')} Print or PDF</button></div>
+  ${signed ? '' : `<div class="card noprint" style="margin-bottom:14px"><div class="habit-h" style="margin:0 0 6px"><span class="ico teal">${ic('signature')}</span><div><b style="font:700 1.1rem var(--display)">Make it verifiable</b><div class="muted">Add a QR code your doctor can scan to check nothing was changed.</div></div></div>
+      <button class="btn accent big" id="signBtn">${ic(AUTH.passkey ? 'fingerprint' : 'qrcode')} ${AUTH.passkey ? 'Approve with your passkey and sign' : 'Sign and add QR code'}</button>
+      <div style="text-align:center">${whyBtn('signing', 'How signing works')}</div>
+      ${AUTH.passkey ? '' : '<p class="tiny">Save a passkey (You → Passkey) so your doctor also sees that you approved it.</p>'}</div>`}
   <article class="report">
     <h1>Brain-health summary</h1>
-    <div class="meta"><span>${esc(firstName() || 'NeuroTrail user')}</span><span>Age ${p.age}</span><span>${p.female ? 'Female' : 'Male'}</span><span>${fmtD(P.days[0])} to ${fmtD(P.days[P.days.length - 1])}</span><span>From the NeuroTrail app</span></div>
+    <div class="meta"><span>${esc(R.subject.label)}</span><span>Age ${R.subject.age}</span><span>${esc(R.subject.sex)}</span><span>${fmtD(R.period[0])} to ${fmtD(R.period[1])}</span></div>
     <h2>At a glance</h2>
-    <div class="statrow"><div class="stat"><span>Blood pressure (avg)</span><b>${bpAvg != null ? Math.round(bpAvg) : '–'}</b><span>${bp.length} reading${bp.length === 1 ? '' : 's'}</span></div>
-      <div class="stat"><span>Mood (PHQ-8)</span><b>${p.phq9 ?? '–'}</b><span>of 24</span></div><div class="stat"><span>Sleep (avg)</span><b>${sl != null ? sl.toFixed(1) + ' h' : '–'}</b></div><div class="stat"><span>Steps (avg)</span><b>${stp != null ? Math.round(stp).toLocaleString() : '–'}</b></div></div>
-    ${asks.length ? `<h2>Questions to ask</h2><ul>${asks.map(a => `<li>${esc(a)}</li>`).join('')}</ul>` : ''}
-    ${bp.length ? `<h2>Home blood pressure</h2><div class="tablewrap"><table class="t"><tr><th>Date</th><th>Reading</th></tr>${bp.slice(-10).reverse().map(b => `<tr><td>${fmtD(b.date)}</td><td>${Math.round(b.value)}${b.readings?.[0]?.[1] ? ' / ' + b.readings[0][1] : ''} mmHg</td></tr>`).join('')}</table></div>` : ''}
-    ${rows ? `<h2>Thinking games (compared only with themselves)</h2><div class="tablewrap"><table class="t"><tr><th>Game</th><th>Plays</th><th>First</th><th>Best</th><th>Latest</th></tr>${rows}</table></div>
+    <div class="statrow"><div class="stat"><span>Blood pressure (avg)</span><b>${G.bp_avg ?? '–'}</b><span>${G.bp_readings} reading${G.bp_readings === 1 ? '' : 's'}</span></div>
+      <div class="stat"><span>Mood (PHQ-8)</span><b>${G.phq8 ?? '–'}</b><span>of 24</span></div><div class="stat"><span>Sleep (avg)</span><b>${G.sleep_avg_h != null ? G.sleep_avg_h + ' h' : '–'}</b></div>
+      <div class="stat"><span>Steps (avg)</span><b>${G.steps_avg != null ? Math.round(G.steps_avg).toLocaleString() : '–'}</b></div></div>
+    ${R.questions.length ? `<h2>Questions to ask</h2><ul>${R.questions.map(a => `<li>${esc(a)}</li>`).join('')}</ul>` : ''}
+    ${R.bp_readings.length ? `<h2>Home blood pressure</h2><div class="tablewrap"><table class="t"><tr><th>Date</th><th>Reading</th></tr>${R.bp_readings.slice().reverse().map(([d, s, di]) => `<tr><td>${fmtD(d)}</td><td>${s}${di ? ' / ' + di : ''} mmHg</td></tr>`).join('')}</table></div>` : ''}
+    ${R.games.length ? `<h2>Thinking games (compared only with themselves)</h2><div class="tablewrap"><table class="t"><tr><th>Game</th><th>Plays</th><th>First</th><th>Best</th><th>Latest</th></tr>${R.games.map(g => `<tr><td>${esc(g.game)}</td><td>${g.plays}</td><td>${g.first}</td><td>${g.best}</td><td>${g.latest}</td></tr>`).join('')}</table></div>
       <p class="tiny">Scores usually rise with practice. A steady drop over several weeks is more meaningful than any single result.</p>` : ''}
-    ${pats.length ? `<h2>Patterns in their own data</h2><ul>${pats.map(i => `<li>${esc(i.headline)} (${i.level === 'clear' ? 'clear pattern' : 'early hint'}, ${i.n_yes} vs ${i.n_no} days)</li>`).join('')}</ul>` : ''}
-    ${risk.length ? `<h2>Self-reported</h2><p>${risk.join(' · ')}</p>` : ''}
-    <p class="tiny" style="margin-top:22px">Self-reported and home-measured data. Not a diagnosis or a dementia risk score. Thinking-game results are compared only with the person's own earlier scores.</p>
-  </article>`;
+    ${R.patterns.length ? `<h2>Patterns in their own data</h2><ul>${R.patterns.map(p => `<li>${esc(p.finding)} (${p.level === 'clear' ? 'clear pattern' : 'early hint'}, ${p.days[0]} vs ${p.days[1]} days)</li>`).join('')}</ul>` : ''}
+    ${R.self_reported.length ? `<h2>Self-reported</h2><p>${R.self_reported.map(esc).join(' · ')}</p>` : ''}
+    ${signed ? `<h2>Verify this report</h2><div class="row" style="align-items:center;gap:18px"><img src="/api/report/${encodeURIComponent(signed.id)}/qr.svg" alt="QR code to verify this report" width="132" height="132" style="border-radius:12px;border:1px solid var(--line)">
+      <div><p style="margin:0"><b>${signed.approved ? 'Approved by the patient with a passkey and signed by NeuroTrail' : 'Signed by NeuroTrail'}</b></p>
+      <p class="tiny" style="margin:4px 0">Scan to check it hasn't been changed, or visit:<br><a href="${esc(signed.url)}" target="_blank" rel="noopener">${esc(signed.url)}</a></p>
+      <p class="tiny" style="margin:0">Report ${esc(signed.id)} · valid 90 days</p></div></div>` : ''}
+    <p class="tiny" style="margin-top:22px">${esc(R.note)}</p>
+  </article>
+  ${live.length ? `<div class="section-h noprint"><h2>Your signed reports</h2></div><div class="list noprint">${live.map(s => `<div class="lrow"><span class="ico green">${ic('shield-check')}</span><div class="txt"><b>${fmtD(s.issued)}</b><span>Valid until ${fmtD(s.expires)}</span></div>
+      <a class="btn secondary" href="/verify/${encodeURIComponent(s.id)}" target="_blank" rel="noopener">Open</a><button class="btn secondary" data-revoke="${esc(s.id)}">Revoke</button></div>`).join('')}</div>` : ''}`;
   $('#printBtn').onclick = () => print();
+  $$('[data-revoke]', box).forEach(b => b.onclick = async () => {
+    if (!confirm('Revoke this report? Anyone who scans it will see it was withdrawn.')) return;
+    await api(`/api/me/report/${encodeURIComponent(b.dataset.revoke)}/revoke`, {}); toast('Report revoked'); doctorReport(box, signed?.id === b.dataset.revoke ? null : signed);
+  });
+  $('#signBtn') && ($('#signBtn').onclick = async () => {
+    $('#signBtn').disabled = true;
+    try {
+      const o = await api('/api/me/report/options', {});
+      let body = { id: o.id };
+      if (o.approval) {
+        const block = passkeyBlocker(); if (block) throw new Error(block);
+        const credential = await SimpleWebAuthnBrowser.startAuthentication({ optionsJSON: o.approval.options });
+        body = { ...body, key: o.approval.key, credential };
+      }
+      const s = await api('/api/me/report/sign', body);
+      toast(s.approved ? 'Approved and signed' : 'Signed'); doctorReport(box, s); scrollTo(0, 0);
+    } catch (e) { toast(e.name === 'NotAllowedError' ? 'Passkey approval was cancelled.' : e.message, 6000); $('#signBtn') && ($('#signBtn').disabled = false); }
+  });
 }
 
 // ------------------------------------------------------------------ What matters (survey model + what-if)

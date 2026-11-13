@@ -13,6 +13,8 @@ pydantic
 python-multipart     # file uploads (voice, MRI, wearables)
 pillow               # MRI slice previews
 webauthn             # passkey sign-in
+cryptography         # report signing (also pulled in by webauthn)
+segno                # QR codes on verifiable doctor reports
 kaggle
 pytest
 httpx

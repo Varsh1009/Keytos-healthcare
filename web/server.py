@@ -25,7 +25,7 @@ from pydantic import BaseModel, Field
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from neurotrail import auth, coach, db, demo, diseases, games as gym, insights, regions as RG, scoring, tissue, voice as vox, wearables  # noqa: E402
+from neurotrail import auth, coach, db, demo, diseases, games as gym, insights, regions as RG, reports, scoring, tissue, voice as vox, wearables  # noqa: E402
 from neurotrail.quests import LANCET_CITE, QUEST_BY_ID, QUESTS, TIER_BONUS  # noqa: E402
 from neurotrail.state import Player, today  # noqa: E402
 
@@ -763,6 +763,94 @@ def _skill_status(p: Player) -> list[dict]:
             "improving" if len(good) > len(bad) else "dipping" if len(bad) > len(good) else "steady"
         out.append({"id": sk["id"], "name": sk["name"], "icon": sk["icon"], "status": status, "plays": plays, "series": series})
     return out
+
+
+# ====================================================================== Verifiable doctor reports (PKI + passkey)
+REPORT_DRAFTS: dict[str, tuple[str, dict, float]] = {}   # report id -> (player, stamped report, created)
+
+
+def _public_base(request: Request) -> str:
+    """Base URL for the QR code: NT_PUBLIC_URL (e.g. an https tunnel) or the address the browser used."""
+    import os
+    return (os.environ.get("NT_PUBLIC_URL") or str(request.base_url)).rstrip("/")
+
+
+@app.get("/api/player/{name}/report")
+def report_preview(name: str) -> dict:
+    p = get(name)
+    return {"report": reports.build(p, auth.has_passkey(p.name)), "signed": reports.mine(p.name)}
+
+
+@app.post("/api/player/{name}/report/options")
+def report_options(name: str, request: Request) -> dict:
+    """Freeze a draft (id + timestamps). Passkey accounts get WebAuthn options whose challenge is the report's SHA-256."""
+    import time
+    p = get(name)
+    for k in [k for k, v in REPORT_DRAFTS.items() if time.time() - v[2] > 600]:
+        REPORT_DRAFTS.pop(k, None)
+    stamped = reports.stamp(reports.build(p, auth.has_passkey(p.name)))
+    REPORT_DRAFTS[stamped["report_id"]] = (p.name, stamped, time.time())
+    approval = auth.approval_options(p.name, _site(request), reports.approval_challenge(stamped)) if auth.has_passkey(p.name) else None
+    return {"id": stamped["report_id"], "approval": approval}
+
+
+class SignIn(BaseModel):
+    id: str
+    key: str | None = None
+    credential: dict | None = None
+
+
+@app.post("/api/player/{name}/report/sign")
+def report_sign(name: str, body: SignIn, request: Request) -> dict:
+    p = get(name)
+    draft = REPORT_DRAFTS.pop(body.id, None)
+    if draft is None or draft[0] != p.name:
+        raise HTTPException(400, "That draft expired. Try again.")
+    stamped, approval = draft[1], None
+    if auth.has_passkey(p.name):
+        if not (body.key and body.credential):
+            raise HTTPException(400, "Approve the report with your passkey first.")
+        try:
+            approval = auth.approval_verify(body.key, body.credential, p.name, reports.approval_challenge(stamped))
+        except Exception as e:  # noqa: BLE001
+            raise HTTPException(400, f"Passkey approval failed: {e}")
+    out = reports.seal(p.name, stamped, approval)
+    return {**out, "url": f"{_public_base(request)}/verify/{out['id']}", "approved": approval is not None}
+
+
+@app.post("/api/player/{name}/report/{rid}/revoke")
+def report_revoke(name: str, rid: str) -> dict:
+    p = get(name)
+    if not reports.revoke(p.name, rid):
+        raise HTTPException(404, "No such report")
+    return {"ok": True, "signed": reports.mine(p.name)}
+
+
+@app.get("/api/verify/{rid}")
+def report_verify_data(rid: str) -> dict:
+    """Public by design: whoever holds the QR code (the clinic) can check the report. Ids are 96-bit random."""
+    v = reports.public_view(rid)
+    if v is None:
+        raise HTTPException(404, "No report with that id")
+    return v
+
+
+@app.get("/api/report/{rid}/qr.svg")
+def report_qr(rid: str, request: Request):
+    import io
+    import segno
+    from fastapi.responses import Response
+    if reports.get(rid) is None:
+        raise HTTPException(404, "No report with that id")
+    buf = io.BytesIO()
+    segno.make(f"{_public_base(request)}/verify/{rid}", error="m").save(buf, kind="svg", scale=4, border=2, dark="#1F1E1B")
+    return Response(buf.getvalue(), media_type="image/svg+xml")
+
+
+@app.get("/verify/{rid}", response_class=HTMLResponse)
+def verify_page(rid: str) -> str:
+    v = str(int((WEB / "static" / "app.js").stat().st_mtime))
+    return (WEB / "verify.html").read_text().replace("__V__", v)
 
 
 @app.get("/api/player/{name}/insights")

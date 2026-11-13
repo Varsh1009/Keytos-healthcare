@@ -24,7 +24,7 @@ python models/build_facts.py        # writes models/artifacts/facts.json: every 
 python -m neurotrail.brain_export   # fsaverage6 brain mesh for the 3D view
 python -m neurotrail.atlas_export   # deep-structure meshes + Harvard-Oxford labels
 python web/server.py                # open http://localhost:8600
-pytest -q                           # 48 tests (one needs the NHANES download)
+pytest -q                           # 53 tests (one needs the NHANES download)
 ```
 
 Python does all the work (pandas, scikit-learn, statsmodels, nilearn, nibabel, PyTorch, FastAPI).
@@ -56,6 +56,21 @@ other day, rotating with the other games) → **one habit** from your plan → a
 
 The details (sources, p-values, caveats) are one tap away behind small "Why?" links instead of on every screen.
 A Help button in the header opens crisis lines (988, 911) from anywhere.
+
+### Verifiable doctor reports (`neurotrail/signing.py`, `neurotrail/reports.py`)
+
+Most dementia goes undetected in primary care, and home data usually reaches the doctor as an
+unverifiable screenshot. NeuroTrail's one-page report can be **signed twice and checked by anyone**:
+
+1. **The server builds the report** from the database (the browser can't inject numbers).
+2. **You approve it with your passkey**: a WebAuthn assertion whose challenge is the report's SHA-256.
+3. **NeuroTrail signs** {report + your approval} with ECDSA P-256 using a *Report Signing* certificate issued by
+   a local *NeuroTrail Root CA* (created on first run in `data/keys/`, never committed).
+4. A **QR code** opens `/verify/<id>`: the signature is checked **in the clinic's browser** (WebCrypto) and the
+   certificate chain on the server. A "change blood pressure to 118" button shows a tampered copy failing live.
+5. Reports **expire after 90 days** and can be **revoked**; the verify page then says so.
+
+For phones scanning the QR, serve over https (e.g. a tunnel) and set `NT_PUBLIC_URL` and `NT_RP_ID`.
 
 ### Personal insights (`neurotrail/insights.py`)
 

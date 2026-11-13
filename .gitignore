@@ -8,3 +8,6 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .DS_Store
+
+# Report-signing keys (local root CA + signing key), created on first run
+data/keys/
