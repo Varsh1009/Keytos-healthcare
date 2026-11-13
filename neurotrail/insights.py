@@ -150,8 +150,12 @@ def personal_insights(player: str) -> dict:
     habits = day_habits(player)
     check_days = sorted(scores)
     known_days = [d for d in check_days if d in habits]
-    status = {"check_days": len(check_days), "days_with_both": len(known_days), "days_needed": DAYS_TO_UNLOCK}
+    # Progress counts every day with a game and a habit, even before a game has the 3 plays it needs to be scored.
+    played_days = {d for plays in _plays(player).values() for d, _ in plays}
+    progress = max(len(known_days), len(played_days & habits.keys()))
+    status = {"check_days": len(played_days), "days_with_both": progress, "days_needed": DAYS_TO_UNLOCK}
     if len(known_days) < DAYS_TO_UNLOCK:
+        status["days_with_both"] = min(progress, DAYS_TO_UNLOCK - 1)   # never show "0 days to go" while still locked
         return {"ready": False, "status": status, "insights": []}
 
     steps_days = [habits[d]["steps"] for d in known_days if habits[d]["steps"] is not None]

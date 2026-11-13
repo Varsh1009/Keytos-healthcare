@@ -29,32 +29,33 @@ pytest -q                           # 48 tests (one needs the NHANES download)
 
 Python does all the work (pandas, scikit-learn, statsmodels, nilearn, nibabel, PyTorch, FastAPI).
 The browser only draws it: one HTML page, plain ES modules, Three.js / Chart.js / SimpleWebAuthn
-served locally from `web/static/vendor/`. No Node, no build step, no CDN at runtime (fonts aside).
+served locally from `web/static/vendor/`. No Node, no build step, no CDN at runtime (fonts and the Tabler icon font aside).
 
 ## How it works (the user flow)
 
-1. **Welcome**: Start as a guest, or sign in with a passkey.
-2. **About you**: age and sex (two taps).
-3. **Speed Sprint** (90 s, skippable): a digital symbol-matching task modeled on the Digit Symbol test.
-   It becomes your "first try" that you race later as a ghost.
-4. **6 taps**: told you have high blood pressure (optional reading), diabetes, smoking, sleep hours,
-   hearing trouble, feeling down. If you've been feeling down, a 988 support card shows first.
-5. **Your result**:
-   - A 100-person icon array: of 100 dementia cases, about 45 are linked to 14 changeable factors
-     (Lancet Commission 2024). The ones linked to your answers are gold. Population numbers, not your personal risk.
-   - **What matters most for you**: each factor with a clear link in the CDC survey, ranked, in test
-     points with a 95% range (for example diabetes: about 3.6 points lower, range 2.1 to 5.1).
-   - Your first 3 habits.
-   - **Save with a passkey** (WebAuthn / FIDO2): fingerprint, face or device PIN. No password.
+**The idea: one 3-minute session a day.** Open the app, tap Start, do three small things, done.
 
-Then four tabs:
+1. **Welcome**: get started as a guest, or sign in with a passkey.
+2. **Onboarding, one question per screen** (8 taps): age, sex, told you have high blood pressure,
+   diabetes, smoking, usual sleep, hearing trouble, feeling down. If you've been feeling down, a 988
+   support card shows first.
+3. **The big picture**: a 100-person icon array: about 45 of 100 dementia cases are linked to 14 changeable
+   factors (Lancet Commission 2024); the ones linked to your answers are highlighted. Population numbers, not your risk.
+4. **Your plan**: the factors with a clear link in the CDC survey (e.g. diabetes: about 3.6 points slower on a
+   thinking-speed test), your first habits, and **Save with a passkey** (WebAuthn / FIDO2). No password.
+
+Then the **daily session** (Today → Start): **check-in** (how you slept) → **today's game** (Speed Sprint every
+other day, rotating with the other games) → **one habit** from your plan → a short celebration with your streak.
 
 | Tab | What's there |
 |---|---|
-| **Today** | One next step, today's 3 habits, care rings (Move / Mind / Body, filled by evidence-weighted points), a kind streak (one rest day a week never breaks it), "Try a change" what-if, tip of the day |
-| **Checks** | Speed Sprint (race your ghost), Word Recall, Animal Naming, Voice check; more: Trail Connect, Color Clash, Memory Grid, Reflex. Compared only with your own first tries; "learning your baseline" until 3 plays |
-| **My Brain** | **Learn**: 7 diseases grouped by what you can do (lower your risk / live better / early help matters): where each one strikes on a 3D brain, a stage slider, how it varies, what to do at home, when to call a doctor, BE-FAST, myth-or-fact cards. **Mine**: a skills map colored from your checks, plus an MRI research preview |
-| **Me** | Progress charts, connect a device (Apple Health / CSV), edit answers, passkey security, **How we know**, support lines |
+| **Today** | The session ring (0/3 → done), your top personal insight, and this week at a glance |
+| **Train** | Today's game plus all 8 games (Speed Sprint, Color Clash, Memory Grid, Reflex, Trail Connect, Animal Naming, Word Recall, Voice check). Compared only with your own earlier scores |
+| **Learn** | 7 brain diseases on a real 3D brain: where each one strikes, a stage slider, what you can do, when to call a doctor, BE-FAST, myth-or-fact cards. **Your brain map**: skills colored from your games, plus an MRI research preview |
+| **You** | **Your week** (a weekly story), **My patterns** (personal insights), **Doctor report** (one printable page), charts, what matters for you + what-ifs, your answers, phone and watch import, text size and Calm mode, passkey, How we know, help |
+
+The details (sources, p-values, caveats) are one tap away behind small "Why?" links instead of on every screen.
+A Help button in the header opens crisis lines (988, 911) from anywhere.
 
 ### Personal insights (`neurotrail/insights.py`)
 
@@ -66,17 +67,17 @@ checks go better than on your other days?
   so getting used to a game isn't credited to a habit.
 - Days are compared with a Welch t-test; a **"Clear pattern"** must survive a **Holm correction** for testing
   several habits at once and have 5+ days on each side. Weaker results are "Early hint" or "No clear difference yet".
-- Unlocks after 6 days with both a logged habit and a check. Shown on Today and in Me → My patterns.
+- Unlocks after 6 days with both a logged habit and a check. Shown on Today and in You → My patterns.
 
 **Demo mode:** `NT_DEMO=1 python web/server.py` adds "Explore a demo person" to the welcome page: four weeks of
 clearly labeled, made-up data (a yellow "Demo person" banner stays on screen). It's off by default.
 
-Each habit page has numbered "how to do it" steps (guidance, not gates), one input that counts, and one
-big **Done**. The blood pressure habit has an "I don't have a cuff" path. The mood habit is the PHQ-8;
-a score of 10+ shows support resources before anything else.
+Each habit has one input that counts and one big **Done**; the how-to steps and evidence sit behind "How to do it"
+and "Why it matters". The blood pressure habit has an "I don't have a cuff" path and a 180+ safety warning. The mood
+check is the PHQ-8, one question per screen; a score of 10+ shows support resources first.
 
-Accessibility: 18 px body text (nothing under 16 px), 48 px tap targets, solid high-contrast panels,
-A / A+ / A++ text size, Calm mode and `prefers-reduced-motion` (no animation), keyboard focus rings,
+Accessibility: 18 px body text, 48 px tap targets, AA-contrast light theme, one question per screen,
+A / A+ / A++ text size (You → Text size), Calm mode and `prefers-reduced-motion` (no animation), keyboard focus rings,
 skip link, single-column phone layout with a bottom tab bar. The 3D brain spins for 5 s, then holds still.
 
 ## Data (all real, all public)

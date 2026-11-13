@@ -3,12 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#06080F">
-<title>NeuroTrail: the honest brain coach</title>
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%235EEAD4'/><stop offset='.55' stop-color='%23818CF8'/><stop offset='1' stop-color='%23C084FC'/></linearGradient></defs><rect width='32' height='32' rx='9' fill='url(%23g)'/><path d='M7 20c3 0 4-8 7-8s3 8 6 8 3-6 5-6' fill='none' stroke='%2306121A' stroke-width='2.6' stroke-linecap='round'/></svg>">
+<meta name="theme-color" content="#F6F5F1">
+<title>NeuroTrail: 3 minutes a day for your brain</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='9' fill='%230F766E'/><circle cx='16' cy='16' r='8.5' fill='none' stroke='white' stroke-width='3' stroke-dasharray='36 60' stroke-linecap='round' transform='rotate(-90 16 16)'/></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700;12..96,800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.19.0/dist/tabler-icons.min.css">
 <link rel="stylesheet" href="/static/style.css?v=__V__">
 <script src="/static/vendor/chart.umd.min.js"></script>
 <script src="/static/vendor/simplewebauthn.umd.min.js"></script>
@@ -20,36 +21,24 @@
 <a class="skip" href="#main">Skip to content</a>
 
 <header class="top">
-  <a class="brand" href="#/today" aria-label="NeuroTrail home">
-    <span class="logo" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 15c2.5 0 3-8 6-8s3 10 6 10 3-6 6-6"/></svg></span>
-    NeuroTrail
-  </a>
-  <div class="top-right">
-    <div class="sizer" role="group" aria-label="Text size">
-      <button data-size="1" aria-label="Normal text">A</button><button data-size="1.15" aria-label="Larger text">A+</button><button data-size="1.3" aria-label="Largest text">A++</button>
-    </div>
-    <button class="pill" id="calmBtn" aria-pressed="false" aria-label="Calm mode: no motion">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg><span class="wide">Calm mode</span>
-    </button>
-    <span class="who" id="who"></span>
+  <div class="top-in">
+    <a class="brand" href="#/today" aria-label="NeuroTrail home">
+      <span class="logo" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><circle cx="12" cy="12" r="7" stroke-dasharray="30 44" transform="rotate(-90 12 12)"/></svg></span>
+      NeuroTrail
+    </a>
+    <button class="helpbtn" id="helpBtn" aria-haspopup="dialog"><i class="ti ti-lifebuoy" aria-hidden="true"></i>Help</button>
   </div>
 </header>
 
 <nav class="tabs" id="tabs" aria-label="Main">
-  <a href="#/today" data-r="today">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg><b>Today</b></a>
-  <a href="#/checks" data-r="checks">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg><b>Checks</b></a>
-  <a href="#/brain" data-r="brain">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M12 5v13"/></svg><b>My Brain</b></a>
-  <a href="#/me" data-r="me">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 0 0-16 0"/></svg><b>Me</b></a>
+  <a href="#/today" data-r="today"><i class="ti ti-sun" aria-hidden="true"></i>Today</a>
+  <a href="#/checks" data-r="checks"><i class="ti ti-barbell" aria-hidden="true"></i>Train</a>
+  <a href="#/brain" data-r="brain"><i class="ti ti-brain" aria-hidden="true"></i>Learn</a>
+  <a href="#/me" data-r="me"><i class="ti ti-user" aria-hidden="true"></i>You</a>
 </nav>
 
 <div id="stage" aria-hidden="true"></div>
 <main id="main" tabindex="-1"></main>
-
-<footer class="support" id="supportBar"><span class="wide">Need help now? </span>💛 Call or text <b>988</b> · Emergency <b>911</b><span class="wide"> · NeuroTrail is not watched by a person</span></footer>
 <div id="toast" role="status" aria-live="polite"></div>
 <script type="module" src="/static/app.js?v=__V__"></script>
 </body>

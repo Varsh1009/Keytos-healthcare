@@ -97,14 +97,14 @@ export function stopVoice() {
 export async function pageVoice() {
   const [T, VH] = await Promise.all([X().api('/api/voice/tasks'), X().api(`/api/me/voice`)]);
   $('#p-voice').innerHTML = `<div class="scrollpage"><div class="wrap">
-    <div class="h1">🎙️ Voice check</div>
-    <div class="sub">Speak for about a minute. We measure <b>how</b> you talk (your pace, pauses and pitch), not what you say. The sound is analyzed on this computer and thrown away; only the numbers are saved. Experimental: compared only with you.</div>
+    <h1>Voice check</h1>
+    <div class="sub">We measure <b>how</b> you talk (pace and pauses), not what you say. Audio never leaves this computer.</div>
     <div class="cr-grid">
       <div class="glass card">
-        <div class="chips" style="margin-bottom:12px"><button class="chip on" data-t="reading">📖 Read aloud</button><button class="chip" data-t="free">💬 Tell a story</button></div>
+        <div class="chips" style="margin-bottom:12px"><button class="chip on" data-t="reading">Read aloud</button><button class="chip" data-t="free">Tell a story</button></div>
         <div class="vprompt" id="vprompt">${esc(T.reading)}</div>
-        <div class="recwrap"><button class="recbtn" id="rec"><span>🎙️</span></button><canvas id="wave" width="600" height="80"></canvas><div class="muted" id="rstat">Tap the mic, read the text at your normal pace, then tap again to stop.</div></div>
-        <p class="muted">Why: in a 2018 study, people with early memory problems spoke more slowly and paused more than healthy peers (Tóth et al., <a href="${T.evidence}" target="_blank" style="color:var(--cyan)">source ↗</a>). Here you only compare with <b>yourself</b> over time. It's not a diagnosis.</p>
+        <div class="recwrap"><button class="recbtn" id="rec" aria-label="Start or stop recording"><i class="ti ti-microphone" aria-hidden="true"></i></button><canvas id="wave" width="600" height="80"></canvas><div class="muted" id="rstat">Tap the mic, read the text at your normal pace, then tap again to stop.</div></div>
+        <p class="tiny">People with early memory problems tend to speak more slowly and pause more (<a href="${T.evidence}" target="_blank" rel="noopener">study</a>). You're only compared with yourself. Not a diagnosis.</p>
       </div>
       <div class="glass card" id="vout">${VH.history.length ? '' : '<div class="empty">Your results show up here after your first recording.</div>'}</div>
     </div></div></div>`;

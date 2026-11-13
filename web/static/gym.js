@@ -48,18 +48,17 @@ export async function pageGame(id) {
   STATS = await X().api('/api/me/games').catch(() => ({}));   // so the intro shows your real best
   if (run !== RUN) return;
   $('#p-game').innerHTML = `<div class="sprint-wrap"><div class="arcade gamebox" style="--c:${g.color}">
-    <a class="close" href="#/checks" style="text-decoration:none;display:grid;place-items:center">✕</a>
+    <a class="close" href="${X().closeHref?.() || '#/checks'}" aria-label="Close"><i class="ti ti-x" aria-hidden="true"></i></a>
     <div id="gb"></div></div></div>`;
   intro(g);
 }
 function intro(g) {
   const s = STATS[g.id] || {};
-  $('#gb').innerHTML = `<div class="eyebrow">${g.domain.toUpperCase()} · ${g.test}</div>
-    <h2 class="game-title">${g.icon} ${g.title}</h2>
-    <p class="muted" style="max-width:600px;margin:0 auto">${g.how}</p>
-    <div class="a-big">${s.best ?? '–'}</div><div class="muted">your best · ${g.unit}</div>
-    <p class="muted" style="max-width:600px;margin:12px auto">${g.evidence} <a href="${g.url}" target="_blank">source ↗</a></p>
-    <div class="row" style="justify-content:center" id="startRow"><button class="cta" id="go">▶ Start</button></div>`;
+  $('#gb').innerHTML = `<div class="eyebrow">${g.domain}</div>
+    <h2 class="game-title">${g.title}</h2>
+    <p class="muted" style="max-width:480px;margin:0 auto">${g.how}</p>
+    ${s.best != null ? `<div class="a-big" style="font-size:3rem;margin-top:16px">${s.best}</div><div class="tiny">your best · ${g.unit}</div>` : '<p class="tiny" style="margin-top:14px">Your first play sets your baseline.</p>'}
+    <div class="stack" style="max-width:360px;margin:18px auto 0" id="startRow"><button class="btn accent big" id="go"><i class="ti ti-player-play" aria-hidden="true"></i> Start</button></div>`;
   $('#go').onclick = () => ({ recall: recall, fluency: fluency, trails: trails, stroop: stroop, corsi: corsi, reaction: reaction })[g.id](g);
   if (g.id === 'recall') recallDelayedButton(g);
 }
@@ -71,15 +70,17 @@ async function finish(g, score, detail, lines = [], run = RUN) {
   const prevBest = r.stats.history.length > 1 ? (g.better === 'higher' ? Math.max(...r.stats.history.slice(0, -1)) : Math.min(...r.stats.history.slice(0, -1))) : null;
   const pb = prevBest != null && (g.better === 'higher' ? score > prevBest : score < prevBest);
   
-  $('#gb').innerHTML = `<div class="eyebrow">${g.title.toUpperCase()} · RESULT</div><div class="a-big">${score}</div><div class="muted">${g.unit}</div>
-    ${pb ? '<div style="margin-top:10px"><span class="pb">NEW PERSONAL BEST</span></div>' : ''}
-    ${r.sparks_gained ? `<div class="reward" style="text-align:center;margin-top:8px">+${r.sparks_gained} ⚡</div>` : g.base ? '' : '<div class="muted" style="margin-top:8px">Already earned today\'s sparks for this game. Practice still counts in your history.</div>'}
-    ${lines.map(l => `<p class="muted">${l}</p>`).join('')}
-    <p class="muted">Compared only with you: your first try was ${r.stats.history[0]}. ${r.stats.plays < 3 ? 'Learning your baseline: play on 3 different days to see a trend.' : ''}</p>
-    ${r.stats.history.length > 1 ? `<div style="max-width:560px;height:160px;margin:16px auto"><canvas id="gh"></canvas></div>` : ''}
-    <div class="row" style="justify-content:center"><button class="cta" id="again">↻ Play again</button><a class="ghost" href="#/checks">Back to Checks</a></div>`;
-  if (r.stats.history.length > 1) X().chart('gh', { type: 'line', data: { labels: r.stats.history.map((_, i) => i + 1), datasets: [{ data: r.stats.history, borderColor: g.color, backgroundColor: 'rgba(255,255,255,.05)', fill: true, tension: .3 }] }, options: X().chartOpts({ plugins: { legend: { display: false } } }) });
-  $('#again').onclick = () => intro(g.base || g);
+  const next = X().afterGame?.();
+  $('#gb').innerHTML = `<div class="eyebrow">${g.title} · result</div><div class="a-big">${score}</div><div class="muted">${g.unit}</div>
+    ${pb ? '<div style="margin-top:10px"><span class="pb">New personal best</span></div>' : ''}
+    ${lines.filter(Boolean).map(l => `<p class="tiny">${l}</p>`).join('')}
+    <p class="tiny">${r.stats.plays < 3 ? 'Learning your baseline: play on 3 different days to see a trend.' : `First try: ${r.stats.history[0]}. You're only compared with yourself.`}</p>
+    ${r.stats.history.length > 1 ? `<div style="height:150px;margin:12px 0"><canvas id="gh"></canvas></div>` : ''}
+    <div class="stack" style="max-width:420px;margin:14px auto 0">${next ? '<button class="btn accent big" id="cont">Continue</button>'
+      : '<button class="btn accent big" id="again"><i class="ti ti-refresh" aria-hidden="true"></i> Play again</button><a class="btn secondary big" href="#/checks">Back to Train</a>'}</div>`;
+  if (r.stats.history.length > 1) X().chart('gh', { type: 'line', data: { labels: r.stats.history.map((_, i) => i + 1), datasets: [{ data: r.stats.history, borderColor: '#0F766E', backgroundColor: 'rgba(15,118,110,.08)', fill: true, tension: .3 }] }, options: X().chartOpts({ plugins: { legend: { display: false } } }) });
+  $('#again') && ($('#again').onclick = () => intro(g.base || g));
+  $('#cont') && ($('#cont').onclick = next);
   X().renderHUD();
 }
 
@@ -202,7 +203,7 @@ function trailPart(part, labels, run) {
 
 // ============================================================ COLOR CLASH (Stroop)
 async function stroop(g) {
-  const run = RUN, C = [['RED', '#FF5A6E'], ['GREEN', '#4ADE80'], ['BLUE', '#4FC3F7'], ['YELLOW', '#FFC83D']];
+  const run = RUN, C = [['RED', '#DC2626'], ['GREEN', '#15803D'], ['BLUE', '#1D4ED8'], ['YELLOW', '#A16207']];
   let ok = 0, bad = 0; const rts = { con: [], inc: [] };
   $('#gb').innerHTML = `<div class="a-top"><div class="a-stat"><small>CORRECT</small><span id="sok">0</span></div><div class="a-stat"><small>TIME</small><span id="stl">45</span></div><div class="a-stat"><small>ERRORS</small><span id="sbad">0</span></div></div>
     <div class="muted">Tap the <b>ink color</b>, not the word.</div><div class="stroopword" id="sw"></div>
