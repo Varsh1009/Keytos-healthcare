@@ -8,6 +8,9 @@ const me = () => X().getME();
 const shuffle = a => a.map(v => [Math.random(), v]).sort((x, y) => x[0] - y[0]).map(v => v[1]);
 
 async function catalog() { CAT ||= (await X().api('/api/games')).games; return CAT; }
+let MOVE = null;   // camera games module, loaded on first use
+// Leaving a game page turns the camera off (the light goes out straight away).
+addEventListener('hashchange', () => { if (!location.hash.startsWith('#/game/')) { RUN++; MOVE?.stopCamera(); } });
 
 // ============================================================ GYM HUB
 export async function pageGym() {
@@ -17,7 +20,7 @@ export async function pageGym() {
   const played = Object.values(STATS).filter(s => s.played_today).length;
   $('#p-gym').innerHTML = `<div class="scrollpage"><div class="wrap">
     <div class="h1">🧩 Brain Gym</div>
-    <div class="sub">Seven games, each a digital version of a real neuropsychological test. ${played}/7 played today · +15 ⚡ for each game's first play of the day.
+    <div class="sub">Seven thinking games plus three camera movement tests, each based on a real clinical test. ${played}/${games.length} played today · +15 ⚡ for each game's first play of the day.
       <br><b>Honest note:</b> only Speed Sprint has trial evidence linked to dementia. The others track your abilities over time; brain-training reviews find little transfer to everyday life (Simons 2016).</div>
     <div class="gymgrid">${games.map(g => { const s = STATS[g.id] || {}; return `
       <a class="gcard glass" href="${g.id === 'speed' ? '#/sprint' : '#/game/' + g.id}" style="--c:${g.color}">
@@ -54,7 +57,8 @@ function intro(g) {
     <div class="a-big">${s.best ?? '–'}</div><div class="muted">your best · ${g.unit}</div>
     <p class="muted" style="max-width:600px;margin:12px auto">${g.evidence} <a href="${g.url}" target="_blank" style="color:var(--cyan)">source ↗</a></p>
     <div class="row" style="justify-content:center" id="startRow"><button class="cta" id="go">▶ Start</button></div>`;
-  $('#go').onclick = () => ({ recall: recall, fluency: fluency, trails: trails, stroop: stroop, corsi: corsi, reaction: reaction })[g.id](g);
+  $('#go').onclick = () => g.camera ? moveGame(g) : ({ recall: recall, fluency: fluency, trails: trails, stroop: stroop, corsi: corsi, reaction: reaction })[g.id](g);
+  if (g.camera) import('./move.js?v=1').then(m => { MOVE = m; m.warmUp(); });   // fetch the tracking model while you read
   if (g.id === 'recall') recallDelayedButton(g);
 }
 async function finish(g, score, detail, lines = []) {
@@ -66,7 +70,8 @@ async function finish(g, score, detail, lines = []) {
   $('#gb').innerHTML = `<div class="eyebrow">${g.title.toUpperCase()} · RESULT</div><div class="a-big">${score}</div><div class="muted">${g.unit}</div>
     ${pb ? '<div style="margin-top:10px"><span class="pb">NEW PERSONAL BEST</span></div>' : ''}
     ${r.sparks_gained ? `<div class="reward" style="text-align:center;margin-top:8px">+${r.sparks_gained} ⚡</div>` : '<div class="muted" style="margin-top:8px">Already earned today\'s sparks for this game. Practice still counts in your history.</div>'}
-    ${lines.map(l => `<p class="muted">${l}</p>`).join('')}
+    ${lines.filter(Boolean).map(l => `<p class="muted">${l}</p>`).join('')}
+    ${r.reference ? `<div class="mv-ref ${r.reference.level === 'warn' ? 'warn' : ''}"></div>` : ''}
     ${nh ? `<div class="card" style="max-width:560px;margin:14px auto;text-align:left"><div class="eyebrow">VS REAL NHANES ADULTS (${me().profile.female ? 'women' : 'men'} ${nh.age_band[0]}–${nh.age_band[1]}, n=${nh.n})</div>
       <div style="font:700 30px 'Space Grotesk';margin:6px 0">${Math.round(nh.percentile)}th percentile</div>
       <div class="pctbar"><i style="left:${nh.percentile}%"></i><span style="left:25%"></span><span style="left:50%"></span><span style="left:75%"></span></div>
@@ -75,8 +80,18 @@ async function finish(g, score, detail, lines = []) {
     ${r.stats.history.length > 1 ? `<div style="max-width:560px;height:160px;margin:16px auto"><canvas id="gh"></canvas></div>` : ''}
     <div class="row" style="justify-content:center"><button class="cta" id="again">↻ Play again</button><a class="ghost" href="#/gym" style="text-decoration:none">Back to the gym</a></div>`;
   if (r.stats.history.length > 1) X().chart('gh', { type: 'line', data: { labels: r.stats.history.map((_, i) => i + 1), datasets: [{ data: r.stats.history, borderColor: g.color, backgroundColor: 'rgba(255,255,255,.05)', fill: true, tension: .3 }] }, options: X().chartOpts({ plugins: { legend: { display: false } } }) });
+  if (r.reference) $('.mv-ref').textContent = r.reference.text;
   $('#again').onclick = () => intro(g);
   X().renderHUD();
+}
+
+// ============================================================ CAMERA MOVEMENT GAMES
+async function moveGame(g) {
+  const run = RUN;
+  MOVE ||= await import('./move.js?v=1');
+  if (run !== RUN) return;
+  MOVE.playMove(g, { box: $('#gb'), alive: () => run === RUN && !!$('#gb'),
+    done: (score, detail, lines) => score == null ? intro(g) : finish(g, score, detail, lines) });
 }
 
 // ============================================================ WORD RECALL (CERAD-style)

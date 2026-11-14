@@ -6,6 +6,7 @@ Run:  python web/server.py   then open http://localhost:8600
 """
 from __future__ import annotations
 
+import os
 import sys
 from collections import Counter
 from datetime import date, timedelta
@@ -352,6 +353,9 @@ def play_game(name: str, body: GameIn) -> dict:
     sparks = gym.GAME_SPARKS if first_today else 0
     db.add_game(p.name, g["id"], today(), body.score, body.detail, sparks)
     out = {"sparks_gained": sparks, "stats": game_stats(p, g["id"]), "player": snapshot(p)}
+    ref = gym.movement_reference(g["id"], body.score, p.age, p.female)
+    if ref:
+        out["reference"] = ref
     norm_col = body.detail.get("norm_col") or g["norm"]
     if norm_col and body.detail.get("comparable", False):
         out["nhanes"] = gym.nhanes_percentile(norm_col, body.score, p.age, p.female)
@@ -543,4 +547,4 @@ def wearables_get(name: str) -> dict:
 
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=8600, log_level="warning")
+    uvicorn.run(app, host="127.0.0.1", port=int(os.environ.get("PORT", "8600")), log_level="warning")

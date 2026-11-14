@@ -138,6 +138,24 @@ Audio is never stored.
 Only Speed Sprint has dementia-outcome trial evidence. The others are tracking tools: brain-training
 gains rarely transfer to everyday life (Simons et al. 2016, PubMed 27697851).
 
+## Camera movement tests (`web/static/move.js`, `web/static/movelogic.js`)
+
+Three 30–40 second tests in the **Brain Gym** (`#/gym`). Your body is tracked with MediaPipe Pose Landmarker (lite model) running
+**in the browser**: the video is never uploaded or saved. After GPU warm-up, a frame takes about 15 ms (90th percentile 18 ms),
+so tracking keeps up with a 30 fps camera.
+
+| Test | What it measures | Evidence |
+|---|---|---|
+| **Chair Stand** (30 s) | Full sit-to-stands with arms crossed; flags if your hands leave your chest | CDC STEADI cut-offs by age and sex (fall risk) |
+| **One-Leg Balance** (up to 30 s) | Seconds on one leg, plus sideways sway | Under 20 s linked to silent small-vessel brain damage (Tabara 2015); failing 10 s linked to higher mortality (Araujo 2022) |
+| **Reach & Hold Back** (40 s) | Touch green targets, leave red ones (always 3 red in 10) | Cognitive-motor training: modest executive-function gains (Wollesen 2020). Here it's a measurement |
+
+Every length is measured in torso lengths, so the distance from the camera doesn't matter. Chair Stand learns your own seated and
+standing positions (thresholds tuned on a real photo run through the model). If the camera didn't see the movement, the app asks
+you to retry and saves nothing. The result screen compares you with the published cut-off and says it's a flag, not a diagnosis.
+`tests/test_movelogic.mjs` checks the counting on synthetic movement: exact chair-stand counts at three camera heights and two
+body shapes, balance timing within 0.35 s, and reach timing within 80 ms.
+
 ## Database
 
 SQLite, stored locally at `data/neurotrail.db` (`neurotrail/db.py`). It has six tables: `players`,
