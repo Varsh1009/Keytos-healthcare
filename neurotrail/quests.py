@@ -57,15 +57,16 @@ QUESTS: list[Quest] = [
         region_fact="The middle frontal gyrus supports working memory and attention, abilities a "
                     "symbol-matching speed task draws on.",
         steps=["Find a quiet spot with no distractions",
-               "Play one 90-second Speed Sprint round",
-               "Booster: play a second round and try to beat your first score"],
+               "Play one 15-second Speed Sprint round",
+               "Booster: play a second round and try to beat your score or reach the next level"],
         log={"kind": "speed"}, tier="Randomized trial", lancet_paf=None,
         evidence=[{"claim": "ACTIVE trial, 20-year Medicare follow-up (n=2,021): speed training with ≥1 "
                             "booster session → lower diagnosed dementia, HR 0.75 (95% CI 0.59–0.95). "
                             "Without boosters: HR 1.01. Memory and reasoning training: no effect.",
                    "url": "https://pubmed.ncbi.nlm.nih.gov/41669119/"}],
         caveat="Only speed training *with boosters* was linked to benefit, hence the second round. "
-               "The game is our own digital version, not the trial software.",
+               "The game is our own digital version, not the trial software, and 15-second rounds are far "
+               "shorter than the trial's hour-long sessions.",
     ),
     Quest(
         id="bp", title="Pressure Point", stop="Cingulate Crossing", icon="🩺", color="#FF5A6E",
