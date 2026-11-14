@@ -367,6 +367,23 @@ function areaState(vs) {
   return up > dn ? 'better' : dn > up ? 'lower' : up || c('steady') ? 'steady' : 'building';
 }
 const shortName = t => t.replace(/^\S+\s/, '');
+// One sample = one result, so we draw what it means instead of a flat one-point line.
+function sampleViz(v) {
+  if (v.id === 'mri_gap' && v.age != null && v.brain_age != null) {
+    const top = Math.max(100, v.age, v.brain_age), gap = v.brain_age - v.age, col = gap > v.error ? '#FFB86B' : gap < -v.error ? '#3DDC97' : '#59F0FF';
+    const bar = (lab, val, c) => `<div class="sv-row"><span>${lab}</span><div class="sv-track"><i style="width:${val / top * 100}%;background:${c}"></i></div><b>${Math.round(val)}</b></div>`;
+    return `<div class="sv">${bar('Real age', v.age, 'rgba(255,255,255,.35)')}${bar('Brain age', v.brain_age, col)}
+      <p class="sv-cap">Brain looks <b style="color:${col}">${Math.abs(Math.round(gap))} years ${gap >= 0 ? 'older' : 'younger'}</b> than the person's real age.
+        The model's error is about ±${v.error} years, so ${Math.abs(gap) <= v.error ? 'this is within normal range' : 'this is a real difference'}.</p></div>`;
+  }
+  if (v.id === 'eeg_paf') {
+    const hz = v.latest, pos = (Math.min(14, Math.max(6, hz)) - 6) / 8 * 100, ok = hz >= 8 && hz <= 12, col = ok ? '#3DDC97' : '#FFB86B';
+    return `<div class="sv"><div class="sv-scale"><span class="sv-band"></span><i style="left:${pos}%;background:${col}"><em>${hz.toFixed(1)} Hz</em></i></div>
+      <div class="sv-lab"><span>6 Hz · slower</span><span>typical 8–12 Hz</span><span>faster · 14 Hz</span></div>
+      <p class="sv-cap">Resting brain rhythm is <b style="color:${col}">${ok ? 'in the typical range' : hz < 8 ? 'slower than typical' : 'faster than typical'}</b>.${v.clear_alpha === false ? ' The rhythm wasn\'t very clear in this recording.' : ''}</p></div>`;
+  }
+  return '';
+}
 let PO = null;
 async function pageProgress() {
   const O = await api(`/api/player/${enc(ME.name)}/overview`), C = O.combined, T = O.today || { items: [] };
@@ -407,11 +424,11 @@ async function pageProgress() {
       P.innerHTML = `<div class="pp-h"><b>${AREA_ICON[a.id]} ${esc(shortName(a.title))}</b><span class="pv-pill" style="--c:${col}">${ar} ${w}</span><button class="chip" id="ppX">✕</button></div>
         <div class="pp-pills">${a.vs.map((x, i) => `<button class="chip ${i === Math.min(PO.metric, a.vs.length - 1) ? 'on' : ''}" data-m="${i}">${esc(x.label.replace(/ \(.*\)/, ''))}</button>`).join('')}</div>
         <div class="pp-big" style="--c:${vc}"><div><b>${last != null ? Math.round(last * 100) / 100 : '–'}</b><span>${esc(unit)}</span></div>
-          <em>${vr} ${vw}${!v.sample && first != null && v.points.length > 1 ? ` · started at ${Math.round(first * 100) / 100}` : v.sample ? ` · ${v.n} tried` : ''}</em></div>
-        ${v.sample ? `<p class="pp-sample">🧪 ${esc(v.note)}</p>` : ''}
-        <div class="pp-chart"><canvas id="ppChart"></canvas></div>
+          <em>${vr} ${vw}${!v.sample && first != null && v.points.length > 1 ? ` · started at ${Math.round(first * 100) / 100}` : v.sample ? ` · ${esc(v.sample_id || 'latest sample')}` : ''}</em></div>
+        ${v.sample ? `<p class="pp-sample">🧪 ${esc(v.note)}</p>${sampleViz(v)}` : '<div class="pp-chart"><canvas id="ppChart"></canvas></div>'}
         <a class="pp-go" href="${v.link || AREA_LINK[a.id]}">Open ${esc(shortName(a.title).toLowerCase())} →</a>`;
       $$('#poPanel [data-m]').forEach(b => b.onclick = () => { PO.metric = +b.dataset.m; show(); });
+      if (v.sample) { $('#ppX') && ($('#ppX').onclick = () => { PO.sel = null; show(); }); return; }   // one sample: a result picture, not a line
       const pts = v.points || [], ctx = $('#ppChart').getContext('2d'), g = ctx.createLinearGradient(0, 0, 0, 220);
       g.addColorStop(0, vc + '66'); g.addColorStop(1, vc + '00');
       chart('ppChart', { type: 'line', data: { labels: pts.map(p => new Date(p.date.slice(0, 10) + 'T12:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })),

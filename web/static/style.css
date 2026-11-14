@@ -984,3 +984,16 @@ body.r-gym #caption, body.r-play #caption { bottom: 120px; max-width: 340px; }
 .rtabs a small { display: none; }
 @media (max-width: 860px) { .mx-grid { grid-template-columns: 1fr; } }
 .pp-sample { font-size: 13px; line-height: 1.45; color: #C9B8FF; background: rgba(155,123,255,.1); border: 1px solid rgba(155,123,255,.3); border-radius: 12px; padding: 8px 12px; margin: 8px 0; }
+.sv { margin: 14px 0 6px; }
+.sv-row { display: grid; grid-template-columns: 80px 1fr 40px; gap: 10px; align-items: center; margin: 10px 0; font-size: 13px; }
+.sv-row b { font: 700 18px 'Space Grotesk'; text-align: right; }
+.sv-track { height: 14px; border-radius: 7px; background: rgba(255,255,255,.06); overflow: hidden; }
+.sv-track i { display: block; height: 100%; border-radius: 7px; animation: svgrow .9s ease-out; }
+@keyframes svgrow { from { width: 0 !important; } }
+.sv-scale { position: relative; height: 14px; border-radius: 7px; background: rgba(255,255,255,.08); margin: 34px 0 6px; }
+.sv-band { position: absolute; left: 25%; width: 50%; top: 0; height: 100%; border-radius: 7px; background: rgba(61,220,151,.28); }
+.sv-scale i { position: absolute; top: -6px; width: 6px; height: 26px; border-radius: 3px; transform: translateX(-3px); animation: svslide .9s ease-out; }
+.sv-scale i em { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); font: 700 15px 'Space Grotesk'; font-style: normal; white-space: nowrap; color: var(--ink); }
+@keyframes svslide { from { left: 0; } }
+.sv-lab { display: flex; justify-content: space-between; font-size: 11px; color: var(--mute); }
+.sv-cap { font-size: 14px; line-height: 1.5; margin: 12px 0 4px; }

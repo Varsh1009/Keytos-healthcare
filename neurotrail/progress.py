@@ -396,22 +396,24 @@ def build(p) -> dict:
             last = smp[-1]
             vars_.append({"id": "mri_gap", "group": "brain_scan", "label": "Brain age minus real age (sample scans)",
                           "unit": "years", "source": "sample MRI", "sample": True, "status": "snapshot",
-                          "n": len(smp), "latest": float(last["gap"]), "latest_date": last["ts"][:10],
+                          "n": 1, "latest": float(last["gap"]), "latest_date": last["ts"][:10],   # only the latest sample
                           "brain_age": last["brain_age"], "age": last["age"], "error": round(mae, 1), "link": "#/mri",
-                          "points": [{"date": m["ts"], "value": round(float(m["gap"]), 2)} for m in smp],
-                          "note": "Sample scans from OASIS research volunteers. Each is a different person, so they show "
-                                  "how the analysis works but don't count toward your result. Upload your own scan to track you."})
+                          "points": [{"date": last["ts"], "value": round(float(last["gap"]), 2)}],
+                          "sample_id": str(last["source"]).replace("OASIS sample ", ""),
+                          "note": "Your latest sample scan, from an OASIS research volunteer. It shows how the analysis works "
+                                  "but doesn't count toward your result. Upload your own scan to track you."})
 
     # ---------------- EEG (own uploads only; samples belong to PhysioNet volunteers)
     all_eeg = db.eegs(p.name)
     own_eeg = [e for e in all_eeg if e["source"].startswith("upload")]
     if not own_eeg and all_eeg:                   # samples only: shown, marked, not counted (see MRI above)
         vars_.append({"id": "eeg_paf", "group": "brain_scan", "label": "Resting brain rhythm (sample EEGs)", "unit": "Hz",
-                      "source": "sample EEG", "sample": True, "status": "snapshot", "n": len(all_eeg),
+                      "source": "sample EEG", "sample": True, "status": "snapshot", "n": 1,          # only the latest sample
                       "latest": float(all_eeg[-1]["paf_hz"]), "latest_date": all_eeg[-1]["ts"][:10], "link": "#/eeg",
-                      "points": [{"date": e["ts"], "value": round(float(e["paf_hz"]), 2)} for e in all_eeg],
-                      "note": "Sample recordings from PhysioNet volunteers. They show how the analysis works but don't count "
-                              "toward your result. Upload your own .edf recording to track you."})
+                      "points": [{"date": all_eeg[-1]["ts"], "value": round(float(all_eeg[-1]["paf_hz"]), 2)}],
+                      "clear_alpha": all_eeg[-1].get("clear_alpha"), "sample_id": all_eeg[-1]["source"].replace("PhysioNet sample ", ""),
+                      "note": "Your latest sample recording, from a PhysioNet volunteer. It shows how the analysis works but "
+                              "doesn't count toward your result. Upload your own .edf recording to track you."})
     if own_eeg:
         pts = [(e["ts"], float(e["paf_hz"])) for e in own_eeg]
         vars_.append(_var("eeg_paf", "brain_scan", "Resting brain rhythm (EEG alpha)", "Hz", "EEG upload", pts,
