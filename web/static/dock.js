@@ -100,6 +100,25 @@ function onRoute() {
   $('#coachFab').hidden = HIDE_BUDDY_ON.includes(r);
   if ($('#coachFab').hidden) togglePop(false);
   toggleDrawer(false);
+  mediaCheck(r);
+}
+
+// Camera / mic blocked? Say so up front with the fix, instead of a check that silently never records.
+const NEEDS = { hands: ['camera', '📷 Camera'], voice: ['microphone', '🎙️ Microphone'] };
+async function mediaCheck(r) {
+  document.getElementById('mediaBanner')?.remove();
+  const voiceGame = r === 'game' && /#\/game\/(voice|readaloud|fluency)/.test(location.hash);
+  const need = NEEDS[r] || (voiceGame ? NEEDS.voice : null);
+  if (!need) return;
+  let state = 'prompt';
+  try { state = (await navigator.permissions.query({ name: need[0] })).state; } catch { }
+  if (state !== 'denied') return;
+  const url = location.href;
+  document.body.insertAdjacentHTML('beforeend', `<div class="media-banner glass" id="mediaBanner" role="alert">
+    <b>${need[1]} is blocked in this window</b><span>Nothing can be recorded here. Allow it in the browser, or open the app in Chrome.</span>
+    <button class="chip" id="mbCopy">Copy link for Chrome</button><button class="chip" id="mbClose" aria-label="Close">✕</button></div>`);
+  $('#mbCopy').onclick = () => navigator.clipboard?.writeText(url).then(() => X().toast('Link copied. Paste it into Chrome.'));
+  $('#mbClose').onclick = () => document.getElementById('mediaBanner')?.remove();
 }
 
 export function initDock() {

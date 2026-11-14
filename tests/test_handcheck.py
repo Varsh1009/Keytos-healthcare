@@ -199,3 +199,18 @@ def test_api_analyzes_saves_and_compares_hands(client):
 
 def test_api_rejects_a_bad_hand_label(client):
     assert client.post("/api/player/Hands/hands", json={"hand": "middle", "tasks": {}}).status_code == 422
+
+
+def test_hand_check_shows_in_progress_today_and_speech_hands_area(client):
+    """A hand check must land in Progress: the Today row and the Speech & hands area."""
+    steady = record(lambda s: (0, 1, 3 * np.sin(2 * np.pi * 5 * s), 0))
+    tap = record(lambda s: (0, 1 - cyc(3.5, s), 0, 0))
+    body = {"hand": "right", "aspect": ASPECT, "tasks": {"steady": {"t": steady[0], "lm": steady[1], "wl": steady[2]},
+                                                          "tap": {"t": tap[0], "lm": tap[1], "wl": tap[2]}}}
+    assert client.post("/api/player/Hands/hands", json=body).status_code == 200
+    o = client.get("/api/player/Hands/overview").json()
+    today = {i["id"]: i for i in o["today"]["items"]}
+    assert "hands" in today and "taps/s" in today["hands"]["text"]
+    ids = {v["id"] for v in o["variables"] if v["group"] == "speech_hands"}
+    assert {"hand_tap_right", "hand_tremor_right"} <= ids
+    assert next(g for g in o["groups"] if g["id"] == "speech_hands")["has_data"]

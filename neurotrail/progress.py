@@ -313,6 +313,14 @@ def build(p) -> dict:
 
     # ---------------- voice + hands
     voices = db.voices(p.name)
+    # The Voice Check GAME measures the same speech timing (talking on a topic) and keeps it with its score:
+    # count it as a "telling a story" recording so it feeds Speech & hands too, not only the games area.
+    voices = voices + [{"date": r["date"], "task": "free", "metrics": r["detail"]["metrics"], "words": r["detail"].get("words"),
+                        "ts": r["ts"], "from_game": True}
+                       for r in db.games(p.name, "voice")
+                       if isinstance(r["detail"].get("metrics"), dict) and r["detail"].get("finished", True)
+                       and r["detail"]["metrics"].get("speech_tempo")]
+    voices.sort(key=lambda v: v["ts"])
     for key, label, unit, better, floor in (("speech_tempo", "Speech tempo", "syll/s", "higher", 0.15),
                                             ("silent_pause_ratio", "Time spent pausing", "share", "lower", 0.03)):
         for task, tlabel in (("reading", "read aloud"), ("free", "telling a story")):
@@ -718,7 +726,7 @@ def today_section(p, rows_all: dict, voices: list, hands: list, today: date | No
         items.append(item)
     for task, label in (("reading", "Voice check (read aloud)"), ("free", "Voice check (story)")):
         now = [v for v in voices if v["date"] == d0 and v["task"] == task and v["metrics"].get("speech_tempo")]
-        if not now:
+        if not now or all(v.get("from_game") for v in now):     # the Voice Check game already has its own chip
             continue
         before = [v for v in voices if v["date"] < d0 and v["task"] == task and v["metrics"].get("speech_tempo")]
         m = now[-1]["metrics"]

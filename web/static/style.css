@@ -881,3 +881,8 @@ body.r-gym #caption, body.r-play #caption { bottom: 120px; max-width: 340px; }
 @keyframes gcBounce { 40% { transform: translateY(-6px) rotate(-8deg) scale(1.12); } 70% { transform: translateY(1px) rotate(4deg); } }
 .gc.done::after { content: ''; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; box-shadow: inset 0 0 0 1px rgba(61,220,151,.35); }
 @media (max-width: 760px) { .gh-skills { grid-template-columns: 1fr; } .gh-next { flex-direction: column; } .gh-demo { flex-basis: auto; } }
+
+/* camera / mic blocked banner */
+.media-banner { position: fixed; top: 92px; left: 50%; transform: translateX(-50%); z-index: 70; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; max-width: min(760px, calc(100vw - 32px));
+  padding: 14px 16px; border-radius: 18px; background: rgba(60,20,40,.95); border: 1px solid rgba(255,120,150,.6); color: #fff; box-shadow: 0 12px 40px rgba(0,0,0,.45); }
+.media-banner b { font: 700 16px Inter; } .media-banner span { flex: 1 1 260px; color: #F3D6DE; font-size: 14px; }

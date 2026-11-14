@@ -7,7 +7,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { pageGym, pageGame, pageMRI, railHTML, boardHTML, startDemo } from './gym.js?v=20';
 import { pageHands } from './hands.js?v=7';
-import { initDock } from './dock.js?v=1';
+import { initDock } from './dock.js?v=2';
 import { pageEEG } from './records.js?v=4';
 import { pageHome as pageHome2, pageVoice, pageData, plainLever, plainAmount, buddy } from './ui2.js?v=10';
 
@@ -378,7 +378,7 @@ function ringSVG(state, icon, frac) {
 }
 async function pageProgress() {
   const O = await api(`/api/player/${enc(ME.name)}/overview`), C = O.combined, T = O.today || { items: [] };
-  const todayAreas = new Set(T.items.map(i => i.id.startsWith('voice') || i.id === 'hands' ? 'speech_hands' : 'thinking'));
+  const todayAreas = new Set(T.items.flatMap(i => i.id === 'voice' ? ['thinking', 'speech_hands'] : i.id.startsWith('voice') || i.id === 'hands' ? ['speech_hands'] : ['thinking']));
   const areas = O.groups.map(g => { const vs = O.variables.filter(v => v.group === g.id), st = areaState(vs);
     return { ...g, vs, st, frac: st === 'add' ? 0 : st === 'building' ? 0.35 : 1, today: todayAreas.has(g.id) }; });
   const chips = T.items.map(i => { const [a, c] = ST[TV[i.verdict]] || ST.steady;

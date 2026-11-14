@@ -51,3 +51,24 @@ def test_overview_counts_a_single_speed_round_today(tmp_path):
         assert T["items"][0]["verdict"] == "first"
     finally:
         db.set_path(old)
+
+
+def test_voice_check_game_feeds_speech_area(tmp_path):
+    """Voice Check game results (speech pace) must show in Speech & hands, not only in the games area."""
+    from neurotrail import db
+    old = db.DB_PATH
+    db.set_path(tmp_path / "t.db")
+    try:
+        from fastapi.testclient import TestClient
+        import web.server as srv
+        c = TestClient(srv.app)
+        c.post("/api/players", json={"name": "Talker"})
+        m = {"speech_tempo": 4.1, "silent_pause_ratio": 0.12, "speaking_span_s": 28, "pauses": 6}
+        r = c.post("/api/player/Talker/game", json={"game": "voice", "score": 88, "detail": {"finished": True, "metrics": m, "level": 1}})
+        assert r.status_code == 200, r.text
+        o = c.get("/api/player/Talker/overview").json()
+        ids = {v["id"] for v in o["variables"] if v["group"] == "speech_hands"}
+        assert "voice_speech_tempo_free" in ids
+        assert [i["id"] for i in o["today"]["items"]].count("voice") == 1          # one chip, not two
+    finally:
+        db.set_path(old)
