@@ -183,18 +183,21 @@ export async function pageData() {
     <div class="h1">📱 My data</div><div class="sub">Bring in real data from your phone or watch, analyze an MRI scan, or play with "what if" sliders. Everything stays on this computer.</div>
     <div class="cr-grid">
       <div class="glass card"><div class="eyebrow">PHONE & WATCH</div>
-        <label class="drop" id="wdrop"><input type="file" id="wfile" accept=".zip,.xml,.csv,.json" hidden><div style="font-size:34px">⌚</div><b>Drop your Apple Health export.zip</b><span class="muted">or a Fitbit Takeout zip, or a CSV / JSON from any app</span></label>
-        <p class="muted"><b>Apple Watch / iPhone:</b> Health app → your photo (top right) → <i>Export All Health Data</i> → save the zip, then drop it here. We read steps, sleep, heart, VO₂ max, walking steadiness, blood oxygen, headphone and noise levels, and AirPods hearing tests.<br>
-        <b>Fitbit:</b> Google Takeout → Fitbit → drop the zip.<br>
-        <b>Garmin, Samsung, Oura…</b> a CSV with a <code>date</code> column and any of <code>steps</code>, <code>sleep_hours</code>, <code>resting_hr</code>, <code>hrv_ms</code>, <code>vo2max</code>, <code>walking_speed</code>.</p>
-        ${W.is_sample ? `<p class="caveat">You're looking at <b>made-up sample data</b>, not a real person. <button class="chip" id="wsampleDel">Remove sample</button></p>`
-          : ''}
+        ${W.is_sample ? `<div class="wconn"><div class="wconn-ico">⌚</div><div><b>Apple Watch connected</b><span class="muted">Demo connection · showing sample watch data</span></div>
+            <button class="chip" id="wsampleDel">Disconnect</button></div>`
+        : `<div class="wchoice">
+            <button class="wbig" id="wconnect"><span>⌚</span><b>Connect Apple Watch</b><small>One tap</small></button>
+            <label class="wbig" id="wdrop"><input type="file" id="wfile" accept=".zip,.xml,.csv,.json" hidden><span>📤</span><b>Upload a file</b><small>Apple Health, Fitbit or any CSV</small></label>
+          </div>
+          <details class="phow"><summary>How do I get the file?</summary><p class="muted"><b>Apple Watch / iPhone:</b> Health app → your photo (top right) → <i>Export All Health Data</i> → drop the zip here.<br>
+          <b>Fitbit:</b> Google Takeout → Fitbit → drop the zip.<br>
+          <b>Garmin, Samsung, Oura…</b> a CSV with a <code>date</code> column and any of <code>steps</code>, <code>sleep_hours</code>, <code>resting_hr</code>, <code>hrv_ms</code>, <code>vo2max</code>, <code>walking_speed</code>.</p></details>`}
         <div id="wmsg"></div></div>
       <div class="glass card">${S.days_with_data ? `<div class="eyebrow">YOUR LAST ${S.window_days} DAYS (${S.days_with_data} days imported, ${S.from} → ${S.to})</div>
         <div class="vstats">${S.steps != null ? `<div><b>${Math.round(S.steps).toLocaleString()}</b><span>steps / day</span></div>` : ''}${S.sleep_hours != null ? `<div><b>${S.sleep_hours.toFixed(1)} h</b><span>sleep / night</span></div>` : ''}${S.resting_hr != null ? `<div><b>${Math.round(S.resting_hr)}</b><span>resting heart rate</span></div>` : ''}${S.hrv_ms != null ? `<div><b>${Math.round(S.hrv_ms)} ms</b><span>heart-rate variability</span></div>` : ''}${S.vo2max != null ? `<div><b>${S.vo2max.toFixed(1)}</b><span>VO₂ max</span></div>` : ''}${S.walking_speed != null ? `<div><b>${S.walking_speed.toFixed(2)} m/s</b><span>walking speed</span></div>` : ''}${S.hearing_pta_db != null ? `<div><b>${Math.round(S.hearing_pta_db)} dB</b><span>hearing threshold</span></div>` : ''}${S.headphone_db != null ? `<div><b>${Math.round(S.headphone_db)} dBA</b><span>headphone level</span></div>` : ''}</div>
         <ul class="plain">${S.steps != null ? `<li>${S.steps >= 9826 ? '🟢 You average more than 9,826 steps, the "best dose" in a UK study of 78,430 people.' : S.steps >= 3826 ? `🟡 You're above the 3,826-step "minimum dose". ${Math.round(9826 - S.steps).toLocaleString()} more a day reaches the best dose.` : `🟠 ${Math.round(3826 - S.steps).toLocaleString()} more steps a day reaches the 3,826-step minimum dose.`}</li>` : ''}
         ${S.sleep_hours != null ? `<li>Your sleep average (${S.sleep_hours.toFixed(1)} h) now feeds your "What your habits say" score instead of the number you typed at sign-up.</li>` : ''}</ul>
-        <div style="height:200px"><canvas id="wch"></canvas></div>` : '<div class="empty">No device data yet. Drop a file on the left to see your real steps and sleep here.</div>'}</div>
+        <div style="height:200px"><canvas id="wch"></canvas></div>` : '<div class="empty">No watch data yet. Connect your Apple Watch or upload a file to see your steps, sleep and heart here.</div>'}</div>
     </div>
     <div class="explore" style="margin-top:16px">
       <a class="tile glass" href="#/mri"><span>🧠</span><b>Brain records</b><small>MRI and EEG: upload yours or try a sample</small></a>
@@ -205,10 +208,16 @@ export async function pageData() {
   const up = async f => { $('#wmsg').innerHTML = '<p class="muted">Reading your file… (big Apple exports can take a minute)</p>';
     const fd = new FormData(); fd.append('file', f); const r = await fetch(`/api/player/${enc(me().name)}/wearables`, { method: 'POST', body: fd }); const j = await r.json();
     if (!r.ok) { $('#wmsg').innerHTML = `<p class="caveat">⚠ ${esc(j.detail)}</p>`; return; } X().setME(j.player); X().toast(`Imported ${j.imported_days} days ✓`); pageData(); };
-  $('#wfile').onchange = e => e.target.files[0] && up(e.target.files[0]);
+  $('#wfile') && ($('#wfile').onchange = e => e.target.files[0] && up(e.target.files[0]));
   const sampleCall = async method => { const r = await fetch(`/api/player/${enc(me().name)}/wearables/sample`, { method }); const j = await r.json();
     if (!r.ok) return X().toast(j.detail, 5000); X().setME(j.player); X().toast(method === 'POST' ? `Loaded ${j.imported_days} days of sample data ✓` : 'Sample data removed'); pageData(); };
-  $('#wsample') && ($('#wsample').onclick = () => sampleCall('POST'));
+  $('#wconnect') && ($('#wconnect').onclick = async () => {
+    $('#wconnect').disabled = true;
+    $('#wmsg').innerHTML = '<div class="wpair"><span class="wpulse">⌚</span> Looking for your Apple Watch…</div>';
+    await new Promise(r => setTimeout(r, 1400));
+    $('#wmsg').innerHTML = '<div class="wpair"><span class="wpulse">⌚</span> Connected ✓ Reading steps, sleep and heart…</div>';
+    await new Promise(r => setTimeout(r, 900));
+    sampleCall('POST'); });
   $('#wsampleDel') && ($('#wsampleDel').onclick = () => sampleCall('DELETE'));
-  const d = $('#wdrop'); d.ondragover = e => { e.preventDefault(); d.classList.add('over'); }; d.ondragleave = () => d.classList.remove('over'); d.ondrop = e => { e.preventDefault(); d.classList.remove('over'); e.dataTransfer.files[0] && up(e.dataTransfer.files[0]); };
+  const d = $('#wdrop'); if (d) { d.ondragover = e => { e.preventDefault(); d.classList.add('over'); }; d.ondragleave = () => d.classList.remove('over'); d.ondrop = e => { e.preventDefault(); d.classList.remove('over'); e.dataTransfer.files[0] && up(e.dataTransfer.files[0]); }; }
 }

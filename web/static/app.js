@@ -9,7 +9,7 @@ import { pageGym, pageGame, pageMRI, railHTML, boardHTML, startDemo } from './gy
 import { pageHands } from './hands.js?v=7';
 import { initDock } from './dock.js?v=1';
 import { pageEEG } from './records.js?v=1';
-import { pageHome as pageHome2, pageVoice, pageData, plainLever, plainAmount, buddy } from './ui2.js?v=5';
+import { pageHome as pageHome2, pageVoice, pageData, plainLever, plainAmount, buddy } from './ui2.js?v=7';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
