@@ -39,46 +39,41 @@ function greeting() { const h = new Date().getHours(); return h < 12 ? 'Good mor
 
 // ------------------------------------------------------------ HOME
 export async function pageHome() {
-  const M = me(), L = M.lever, P = plainLever(L);
+  const M = me(), L = M.lever, P = plainLever(L), amt = plainAmount(L.years);
   const [GS, games] = await Promise.all([X().api(`/api/player/${enc(M.name)}/games`), X().api('/api/games')]);
   // Today's plan: 1) Speed Sprint (the one game with trial evidence), 2) Read Aloud, 3) the game you've played least
   const G = Object.fromEntries(games.games.map(x => [x.id, x]));
   const g = games.games.filter(x => x.id !== 'speed' && x.id !== 'readaloud').sort((a, b) => (GS[a.id]?.plays ?? 0) - (GS[b.id]?.plays ?? 0))[0];
   const item = (x, why, time, href) => x && { icon: x.icon, color: x.color, title: x.title, why, time, href, done: GS[x.id]?.played_today };
   const plan = [   // skip any game this server doesn't have (e.g. an older server still running), never crash
-    item(G.speed, 'Match symbols to numbers, fast. Play twice for the booster round.', '1 min', '#/sprint'),
-    item(G.readaloud, 'Read a short passage out loud. Each word lights up as you say it.', '1 min', '#/game/readaloud'),
-    g && item(g, `${g.domain}: ${g.how}`, '2 min', `#/game/${g.id}`),
+    item(G.speed, 'Match symbols, fast', '1 min', '#/sprint'),
+    item(G.readaloud, 'Read out loud', '1 min', '#/game/readaloud'),
+    g && item(g, g.domain, '2 min', `#/game/${g.id}`),
   ].filter(Boolean).map((p, i) => ({ ...p, n: i + 1 }));
   const done = plan.filter(p => p.done).length, next = plan.find(p => !p.done), N = plan.length;
   const Lv = M.level, frac = Lv.next_at ? (M.sparks - Lv.floor) / (Lv.next_at - Lv.floor) : 1;
   const mood = done === N ? 'wow' : 'happy';
   $('#p-home').innerHTML = `<div class="scrollpage"><div class="home2">
     <section class="hello glass">
-      <div class="buddywrap">${buddy(mood, 132)}</div>
-      <div><div class="eyebrow">${greeting().toUpperCase()}</div><div class="hi">Hi ${esc(M.name)}!</div>
-        <div class="bubble2">${done === N ? "You did everything today. Your brain buddy is proud! 🎉 Come back tomorrow." : done ? `Nice, ${done} of ${N} done! Next: <b>${next.title}</b>.` : `Here's your plan for today: <b>${N} quick games</b>, about 5 minutes. Tap the first one to start.`}</div></div>
+      <div class="buddywrap">${buddy(mood, 92)}</div>
+      <div><div class="hi">Hi ${esc(M.name)}! 👋</div>
+        <div class="hello-sub">${done === N ? 'All done today 🎉 See you tomorrow' : done ? `${done}/${N} done · keep going 🔥` : `${N} games · 5 min · let's go ⚡`}</div></div>
     </section>
 
-    <section class="glass plan"><div class="sec-h"><span>📋 Today's plan</span><span class="muted">${done}/${N} done</span></div>
+    <section class="glass plan"><div class="sec-h"><span>Today</span><span class="muted">${done}/${N}</span></div>
       ${plan.map(p => `<a class="pcard ${p.done ? 'done' : ''} ${next === p ? 'next' : ''}" href="${p.href}" style="--c:${p.color}">
         <div class="pnum">${p.done ? '✓' : p.n}</div><div class="picon">${p.icon}</div>
         <div class="ptxt"><b>${p.title}</b><span>${p.why}</span></div>
         <div class="pgo">${p.done ? 'Done' : `${p.time} →`}</div></a>`).join('')}
     </section>
 
-    <section class="glass insight"><div class="sec-h"><span>🧠 What your habits say</span><a href="#/levers" class="muted">try "what if" →</a></div>
-      <div class="ins-head">${P.head}</div>
-      ${P.why ? `<div class="ins-why">${P.why} ${P.top ? `<a href="#/levers">See what changes it →</a>` : ''}</div>` : ''}
+    <section class="glass insight"><div class="sec-h"><span>🧠 Brain age</span><a href="#/levers" class="muted">what if? →</a></div>
+      <div class="ins-big ${L.years > 0.05 ? '' : 'good'}">${!amt ? 'On target 🎉' : L.years > 0 ? `+${amt}` : `${amt} younger 🎉`}</div>
+      ${amt && L.years > 0 ? '<div class="ins-sub">older than it could be, from your habits</div>' : ''}
       <div class="meterbar"><div class="mtrack"><i style="left:${Math.max(2, Math.min(98, 50 + L.years / 4 * 50))}%"></i></div>
         <div class="mlabels"><span>younger</span><span>on target</span><span>older</span></div></div>
-      <details class="ev"><summary>What does this mean?</summary><div class="evb"><p>${P.how}</p><p>The range is ${X().fmt(L.ci[0])} to ${X().fmt(L.ci[1])} years (95% confidence). Only habits with a clear link in the data count.</p></div></details>
-    </section>
-
-    <section class="stats3">
-      <div class="glass st"><div class="stv">🔥 ${M.streak}</div><div class="stl">day streak</div></div>
-      <div class="glass st"><div class="stv">⚡ ${M.sparks.toLocaleString()}</div><div class="stl">sparks</div></div>
-      <div class="glass st"><div class="stv">Lv ${Lv.index}</div><div class="stl">${Lv.name}${Lv.next_at ? ` · ${Lv.next_at - M.sparks} to go` : ''}</div><div class="lvbar"><i style="width:${frac * 100}%"></i></div></div>
+      ${P.top ? `<a class="ins-fix" href="#/levers">Fix first: <b>${esc(P.top.label)}</b> ${Math.round(P.top.value * 10) / 10} → ${P.top.target} →</a>` : ''}
+      <details class="ev"><summary>How do we know?</summary><div class="evb"><p>${P.how}</p><p>The range is ${X().fmt(L.ci[0])} to ${X().fmt(L.ci[1])} years (95% confidence). Only habits with a clear link in the data count.</p></div></details>
     </section>
 
     <section class="explore">${[['🧩', 'Games', '#/gym', `${games.games.length + 2} brain games`], ['📱', 'My data', '#/data', 'Watch and health files'], ['🤖', 'Coach', '#/coach', 'Ask anything'], ['📈', 'Progress', '#/progress', 'Your charts']]
