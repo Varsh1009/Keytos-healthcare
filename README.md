@@ -148,11 +148,16 @@ Three 10-second tasks from the neurologist's movement exam (MDS-UPDRS part III),
 | **Open and close your fist** (UPDRS 3.5) | Count, rate, how many were a **full** fist and a **full** open, decrement (getting smaller), hesitations, rhythm | Slowing and fading are the signs of bradykinesia |
 | **Finger taps** (UPDRS 3.4) | Same, for index-to-thumb taps (did they touch? did they open wide?) | Webcam finger tapping rated Parkinson's severity about as well as trained non-specialists (Islam 2023, 250 people) |
 
-**How it works:** the browser tracks 21 hand points per frame with MediaPipe Hand Landmarker (on the device, GPU) and uploads
-only those points with their timestamps. The **server** analyzes them with numpy/scipy:
+**How it works:** the browser tracks 21 hand points per frame (2D image points plus the model's 3D hand points) with MediaPipe
+Hand Landmarker, on the device, using each frame's real capture time. It uploads only those points.
+The tracker files (~17 MB) are downloaded once by the server into `data/mediapipe/` and served locally with a one-year cache,
+and the 3D brain no longer blocks page load: the Hands page shows in ~2 s instead of ~11 s. The **server** analyzes them with numpy/scipy:
 - **Tremor:** a 2 Hz high-pass removes arm drift. A Welch spectrum then finds the strongest rhythm between 3.5 and 12 Hz (capped below the camera's Nyquist limit). Its size comes from a sine fit straight to the real frame timestamps. It counts as tremor only if it is at least 2 mm and stands well out of the spectrum.
 - **Fist and taps:** sizes are in palm lengths (wrist to middle knuckle), so the distance from the camera doesn't matter. Each dip in the signal is one movement.
-- **Calibration:** the "full fist" (≤ 1.2) and "fingers touched" (≤ 0.35) lines were set from real photos run through the same model. Open hands read 1.64–2.10, fists 0.80–0.86, and a thumb-index touch 0.16.
+- **Calibration:** fist and tap shapes use the 3D points, so a tilted hand doesn't fool them. On 16 real photos, a fist seen at an angle read 1.95 in 2D (looks open) but 1.26 in 3D (closed).
+  The lines are set from those photos: full fist ≤ 1.3, fingers touched ≤ 0.4 (palm lengths, 3D).
+- **Tremor size** uses the person's own palm size from the 3D points (84–108 mm on real photos).
+- **Slow tracking:** if the camera is tracked below 15 frames a second, the result says so rather than hiding it.
 - **Comparisons:** results are compared with your last check of the same hand and with your other hand (a clear one-sided difference is flagged).
 
 **Tested:**

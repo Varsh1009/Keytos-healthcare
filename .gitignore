@@ -10,3 +10,7 @@ __pycache__/
 .DS_Store
 # Pretrained SFCN weights: downloaded + hash-checked by models/finetune_sfcn.py
 models/pretrained/
+# Hand-tracking model files, fetched once by the server (web/server.py: /mp/)
+data/mediapipe/
+# Local signing keys (other branches); never committed
+data/keys/

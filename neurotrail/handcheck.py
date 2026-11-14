@@ -11,8 +11,10 @@ their timestamps. Everything below runs on the server:
             For both: count, rate, whether each movement was complete, rhythm, hesitations,
             and decrement (movements getting smaller), the signs a clinician looks for.
 
-Sizes are normalized by the hand's own palm (wrist to middle-finger knuckle), so the distance to
-the camera doesn't matter; mm values assume a 95 mm palm, so they're approximate. A camera cannot
+Fist and tap shapes use the model's 3D hand points ("world landmarks"), normalized by the hand's own
+palm (wrist to middle-finger knuckle), so neither the distance to the camera nor a tilted hand changes
+them. On 16 real photos, a fist seen at an angle read 1.95 in 2D (looks open) but 1.26 in 3D (closed).
+Tremor uses the 2D image points, converted to mm with the person's own 3D palm size. A camera cannot
 diagnose anything: flags mean "worth showing a doctor if it keeps happening".
 """
 from __future__ import annotations
@@ -25,10 +27,14 @@ WRIST, THUMB_TIP, INDEX_TIP = 0, 4, 8
 KNUCKLES = [5, 9, 13, 17]
 TIPS = [8, 12, 16, 20]
 TREMOR_BAND = (3.5, 12.0)
+MIN_FPS = 15.0                     # below this, fast taps and tremor can be missed
 MIN_TREMOR_MM = 2.0                # smaller than this is within camera noise
 MIN_PEAK_RATIO = 6.0               # tremor must stand out of the spectrum (rhythmic, not noise)
-FIST_CLOSED, FIST_OPEN = 1.2, 1.5       # fingertip-to-wrist / palm (see analyze_fist)
-TAP_TOUCH, TAP_OPEN = 0.35, 0.6        # thumb-to-index / palm (see analyze_tap)
+# Thresholds, set from real photos run through the same model (fingertip-to-wrist / palm, thumb-to-index / palm):
+#   3D: open hands 1.67-1.90, fists 0.83-1.26, thumb-index touching 0.24-0.31, open 0.70-1.19
+#   2D: open hands 1.64-2.12, fists 0.80-0.86, thumb-index touching 0.12-0.19 (fallback when no 3D points)
+FIST_CLOSED, FIST_OPEN = {"3d": 1.3, "2d": 1.2}, {"3d": 1.5, "2d": 1.5}
+TAP_TOUCH, TAP_OPEN = {"3d": 0.4, "2d": 0.35}, {"3d": 0.6, "2d": 0.6}
 UPDRS_AMPLITUDE = [(10.0, "slight"), (30.0, "mild"), (100.0, "moderate"), (float("inf"), "severe")]
 
 
@@ -37,17 +43,21 @@ class HandDataError(ValueError):
 
 
 # ---------------------------------------------------------------- frames → uniform signals
-def _frames(t, lm, aspect: float):
-    """t (ms), lm: per frame 21 [x, y] (image-normalized) or None. Returns valid t (s), points (n, 21, 2)."""
+def _frames(t, lm, aspect: float, wl=None):
+    """t (ms); lm: per frame 21 [x, y] (image-normalized) or None; wl: per frame 21 [x, y, z] in metres or None.
+    Returns valid t (s), image points (n, 21, 2), 3D points (n, 21, 3) or None, share of frames tracked."""
     t = np.asarray(t, float)
-    ok = np.array([f is not None and len(f) == 21 for f in lm])
+    has3d = wl is not None and len(wl) == len(lm)
+    ok = np.array([f is not None and len(f) == 21 and (not has3d or (w is not None and len(w) == 21))
+                   for f, w in zip(lm, wl if has3d else [None] * len(lm))])
     if ok.sum() < 20:
         raise HandDataError("We couldn't see your hand for long enough.")
     pts = np.array([f for f, k in zip(lm, ok) if k], float)[:, :, :2]
     pts[:, :, 0] *= aspect                               # isotropic units
+    w3 = np.array([w for w, k in zip(wl, ok) if k], float)[:, :, :3] if has3d else None
     tt = (t[ok] - t[ok][0]) / 1000.0
     keep = np.concatenate([[True], np.diff(tt) > 1e-4])  # drop duplicate timestamps
-    return tt[keep], pts[keep], float(ok.mean())
+    return tt[keep], pts[keep], (w3[keep] if has3d else None), float(ok.mean())
 
 
 def _palm(pts):
@@ -67,13 +77,22 @@ def _fs(tt) -> float:
 
 
 # ---------------------------------------------------------------- tremor
-def analyze_steady(t, lm, aspect: float) -> dict:
-    tt, pts, cover = _frames(t, lm, aspect)
+def _palm_mm(w3) -> float:
+    """The person's own palm length from the 3D points (falls back to an adult average if implausible)."""
+    if w3 is None:
+        return PALM_MM
+    mm = float(np.median(np.linalg.norm(w3[:, 9] - w3[:, WRIST], axis=1))) * 1000
+    return mm if 55 <= mm <= 135 else PALM_MM
+
+
+def analyze_steady(t, lm, aspect: float, wl=None) -> dict:
+    tt, pts, w3, cover = _frames(t, lm, aspect, wl)
     if tt[-1] < 5:
         raise HandDataError("Hold your hand up for the whole 10 seconds.")
     fs = _fs(tt)
     hi = min(TREMOR_BAND[1], 0.45 * fs)                  # stay below the camera's Nyquist limit
-    mm_per_unit = PALM_MM / float(np.median(_palm(pts)))
+    palm_mm = _palm_mm(w3)
+    mm_per_unit = palm_mm / float(np.median(_palm(pts)))
     centre = pts[:, [WRIST] + KNUCKLES].mean(axis=1)     # the hand as a whole
     grid, c = _uniform(tt, centre, fs)
     c = (c - c.mean(axis=0)) * mm_per_unit
@@ -103,7 +122,7 @@ def analyze_steady(t, lm, aspect: float) -> dict:
     view = f <= hi
     return {"tremor": bool(detected), "frequency_hz": round(best[1], 2) if detected else None,
             "peak_hz": round(best[1], 2), "amplitude_mm": round(float(p2p), 1), "peak_ratio": round(ratio, 1),
-            "updrs_amplitude": grade, "fps": round(fs, 1), "max_hz": round(hi, 1), "tracked": round(cover, 2),
+            "updrs_amplitude": grade, "palm_mm": round(palm_mm), "fps": round(fs, 1), "max_hz": round(hi, 1), "tracked": round(cover, 2),
             "spectrum": {"hz": [round(float(x), 2) for x in f[view]], "power": [round(float(x), 5) for x in p[view] / max(p[view].max(), 1e-12)]}}
 
 
@@ -135,29 +154,30 @@ def _cycles(grid, sig, fs, *, closed: float, opened: float, min_prom: float) -> 
     return out
 
 
-def analyze_fist(t, lm, aspect: float) -> dict:
-    tt, pts, cover = _frames(t, lm, aspect)
-    fs = _fs(tt)
-    palm = _palm(pts)
-    # How far the fingertips are from the wrist, in palms. Measured through the same model on real
-    # photos: open hands 1.64-2.10, clenched fists 0.80-0.86. Thresholds sit between with margin.
-    o = np.linalg.norm(pts[:, TIPS] - pts[:, [WRIST]], axis=2).mean(axis=1) / palm
+def analyze_fist(t, lm, aspect: float, wl=None) -> dict:
+    tt, pts, w3, cover = _frames(t, lm, aspect, wl)
+    fs, mode = _fs(tt), "3d" if w3 is not None else "2d"
+    P = w3 if w3 is not None else pts
+    # How far the fingertips are from the wrist, in palm lengths (open ~1.8, fist ~0.9).
+    o = np.linalg.norm(P[:, TIPS] - P[:, [WRIST]], axis=2).mean(axis=1) / np.linalg.norm(P[:, 9] - P[:, WRIST], axis=1)
     grid, s = _uniform(tt, o, fs)
-    out = _cycles(grid, s, fs, closed=FIST_CLOSED, opened=FIST_OPEN, min_prom=0.25)
-    return out | {"tracked": round(cover, 2), "fps": round(fs, 1), "signal": {"t": [round(float(x), 3) for x in grid], "v": [round(float(x), 3) for x in s]}}
+    out = _cycles(grid, s, fs, closed=FIST_CLOSED[mode], opened=FIST_OPEN[mode], min_prom=0.25)
+    return out | {"mode": mode, "closed_line": FIST_CLOSED[mode], "tracked": round(cover, 2), "fps": round(fs, 1),
+                  "signal": {"t": [round(float(x), 3) for x in grid], "v": [round(float(x), 3) for x in s]}}
 
 
-def analyze_tap(t, lm, aspect: float) -> dict:
-    tt, pts, cover = _frames(t, lm, aspect)
-    fs = _fs(tt)
-    palm = _palm(pts)
-    # Thumb-tip to index-tip gap, in palms. Real photos: 0.16 touching (OK sign), 0.8-1.6 open hand.
-    d = np.linalg.norm(pts[:, THUMB_TIP] - pts[:, INDEX_TIP], axis=1) / palm
+def analyze_tap(t, lm, aspect: float, wl=None) -> dict:
+    tt, pts, w3, cover = _frames(t, lm, aspect, wl)
+    fs, mode = _fs(tt), "3d" if w3 is not None else "2d"
+    P = w3 if w3 is not None else pts
+    # Thumb-tip to index-tip gap, in palm lengths (touching ~0.25 in 3D).
+    d = np.linalg.norm(P[:, THUMB_TIP] - P[:, INDEX_TIP], axis=1) / np.linalg.norm(P[:, 9] - P[:, WRIST], axis=1)
     grid, s = _uniform(tt, d, fs)
-    out = _cycles(grid, s, fs, closed=TAP_TOUCH, opened=TAP_OPEN, min_prom=0.15)
+    out = _cycles(grid, s, fs, closed=TAP_TOUCH[mode], opened=TAP_OPEN[mode], min_prom=0.15)
     if out["count"]:
-        out["opening_mm"] = round(float(np.median(out["amplitudes"])) * PALM_MM, 0)
-    return out | {"tracked": round(cover, 2), "fps": round(fs, 1), "signal": {"t": [round(float(x), 3) for x in grid], "v": [round(float(x), 3) for x in s]}}
+        out["opening_mm"] = round(float(np.median(out["amplitudes"])) * _palm_mm(w3))
+    return out | {"mode": mode, "closed_line": TAP_TOUCH[mode], "tracked": round(cover, 2), "fps": round(fs, 1),
+                  "signal": {"t": [round(float(x), 3) for x in grid], "v": [round(float(x), 3) for x in s]}}
 
 
 # ---------------------------------------------------------------- plain-language summary
@@ -198,7 +218,14 @@ def analyze(payload: dict) -> dict:
         if not task:
             continue
         try:
-            res[key] = fn(task["t"], task["lm"], aspect)
+            res[key] = fn(task["t"], task["lm"], aspect, task.get("wl"))
         except HandDataError as e:
             errors[key] = str(e)
-    return {"hand": payload.get("hand"), "results": res, "errors": errors, "flags": flags(res)}
+    # Honesty about tracking speed: fast taps (4-6 a second) and tremor need roughly 15+ frames a second.
+    fps = min((r["fps"] for r in res.values()), default=None)
+    quality = {"fps": fps, "ok": fps is None or fps >= MIN_FPS}
+    fl = flags(res)
+    if not quality["ok"]:
+        fl.append({"level": "info", "text": f"Your camera was tracked at only {fps:.0f} frames a second, so fast taps or shaking can be missed. "
+                                            "Close other apps and redo for the most accurate result."})
+    return {"hand": payload.get("hand"), "results": res, "errors": errors, "flags": fl, "quality": quality}

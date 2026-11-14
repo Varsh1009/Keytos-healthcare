@@ -6,7 +6,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { pageGym, pageGame, pageMRI } from './gym.js?v=6';
-import { pageHands } from './hands.js?v=2';
+import { pageHands } from './hands.js?v=6';
 import { pageHome as pageHome2, pageVoice, pageData, plainLever, plainAmount, buddy } from './ui2.js?v=1';
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -142,7 +142,7 @@ function paintRegions(hover) {
   }
 }
 let flight = null, SPLIT = 0, VIEW_X = 0, VIEW_TARGET = 0;
-function regionPoint(qid, h = 'left') { return toWorld(...META.centroids[qid][h]).sub(brain.userData.center).add(new THREE.Vector3(h === 'left' ? -3 : 3, 0, 0)); }
+function regionPoint(qid, h = 'left') { if (!META || !brain.userData.center) return new THREE.Vector3(); return toWorld(...META.centroids[qid][h]).sub(brain.userData.center).add(new THREE.Vector3(h === 'left' ? -3 : 3, 0, 0)); }
 function flyTo(qid) {
   if (!META?.centroids?.[qid]) return;
   const pL = regionPoint(qid), medial = Math.abs(pL.x) < 22;
@@ -200,7 +200,8 @@ function update(dt) {
   }
   controls.update();
 }
-function frame() { update(Math.min(clock.getDelta(), .05)); composer.render(); requestAnimationFrame(frame); }
+// The 3D brain is decoration: pause it on the hand check so the GPU is free for hand tracking.
+function frame() { const dt = Math.min(clock.getDelta(), .05); if (ROUTE !== 'hands' && !document.hidden) { update(dt); composer.render(); } requestAnimationFrame(frame); }
 addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight); });
 
 // ================================================================ HUD
@@ -714,6 +715,8 @@ async function boot() {
   try { QUESTS = await api('/api/quests'); } catch { toast('NeuroTrail server not reachable. Start it with: python3 web/server.py', 10000); return; }
   QMAP = Object.fromEntries(QUESTS.map(q => [q.id, q]));
   window.NTX = { api, toast, chart, chartOpts, renderHUD, fmt, QMAP: () => QMAP, getME: () => ME, setME: (m) => { ME = m; } };
-  frame(); await loadBrain(); await boot();
+  // Show the page first; build the 3D brain (2 MB, a few seconds of work) afterwards. It used to block every page.
+  frame(); await boot();
+  (window.requestIdleCallback || (f => setTimeout(f, 50)))(() => loadBrain().catch(() => { }));
   window.NT = { camera, hemis, step: (dt, n = 1) => { for (let i = 0; i < n; i++) update(dt); composer.render(); }, get me() { return ME; } };
 })();

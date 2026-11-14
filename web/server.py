@@ -7,6 +7,9 @@ Run:  python web/server.py   then open http://localhost:8600
 from __future__ import annotations
 
 import os
+import shutil
+import threading
+import urllib.request
 import sys
 from collections import Counter
 from datetime import date, timedelta
@@ -19,7 +22,7 @@ import base64
 import random
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from typing import Literal
 
@@ -35,6 +38,63 @@ WEB = Path(__file__).resolve().parent
 ART = ROOT / "models" / "artifacts"
 app = FastAPI(title="NeuroTrail")
 app.mount("/static", StaticFiles(directory=WEB / "static"), name="static")
+
+# ---------------------------------------------------------------- hand-tracking model files, served locally
+# The hand check needs MediaPipe's runtime (~9 MB) and hand model (~8 MB). Fetching them from the CDN and
+# Google on every visit was slow (Google only lets browsers cache the model for an hour), so the server
+# downloads each file once into data/mediapipe/ (in the background at startup) and serves it with a
+# one-year cache. Only this fixed list can be fetched.
+MP_DIR = ROOT / "data" / "mediapipe"
+_MP_CDN = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14"
+MP_FILES = {
+    "vision_bundle.mjs": f"{_MP_CDN}/vision_bundle.mjs",
+    "wasm/vision_wasm_internal.js": f"{_MP_CDN}/wasm/vision_wasm_internal.js",
+    "wasm/vision_wasm_internal.wasm": f"{_MP_CDN}/wasm/vision_wasm_internal.wasm",
+    "wasm/vision_wasm_nosimd_internal.js": f"{_MP_CDN}/wasm/vision_wasm_nosimd_internal.js",
+    "wasm/vision_wasm_nosimd_internal.wasm": f"{_MP_CDN}/wasm/vision_wasm_nosimd_internal.wasm",
+    "hand_landmarker.task": "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+}
+_MP_LOCK = threading.Lock()
+
+
+def mp_file(name: str) -> Path:
+    """Local copy of an allowed MediaPipe file, downloading it the first time."""
+    dest = MP_DIR / name
+    if dest.exists():
+        return dest
+    with _MP_LOCK:
+        if not dest.exists():
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            tmp = dest.with_suffix(dest.suffix + ".part")
+            with urllib.request.urlopen(MP_FILES[name], timeout=60) as r, open(tmp, "wb") as f:
+                shutil.copyfileobj(r, f)
+            tmp.replace(dest)
+    return dest
+
+
+def _mp_prefetch() -> None:
+    for name in ("vision_bundle.mjs", "wasm/vision_wasm_internal.js", "wasm/vision_wasm_internal.wasm", "hand_landmarker.task"):
+        try:
+            mp_file(name)
+        except Exception:   # offline: the page falls back to the CDN
+            return
+
+
+@app.on_event("startup")
+def _start_mp_prefetch() -> None:
+    threading.Thread(target=_mp_prefetch, daemon=True).start()
+
+
+@app.get("/mp/{name:path}")
+def mediapipe_file(name: str):
+    if name not in MP_FILES:
+        raise HTTPException(404)
+    try:
+        path = mp_file(name)
+    except Exception:
+        raise HTTPException(502, "couldn't fetch the hand-tracking files")
+    kind = "application/wasm" if name.endswith(".wasm") else "text/javascript" if name.endswith((".js", ".mjs")) else "application/octet-stream"
+    return FileResponse(path, media_type=kind, headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
 
 @app.middleware("http")
@@ -365,6 +425,7 @@ def play_game(name: str, body: GameIn) -> dict:
 class HandTask(BaseModel):
     t: list[float] = Field(max_length=2000)                     # ms timestamps
     lm: list[list[list[float]] | None] = Field(max_length=2000)  # per frame: 21 [x, y] points, or null if no hand
+    wl: list[list[list[float]] | None] | None = Field(None, max_length=2000)  # same frames: 21 [x, y, z] 3D points (metres)
 
 
 class HandsIn(BaseModel):
