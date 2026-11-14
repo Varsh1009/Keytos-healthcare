@@ -9,6 +9,8 @@ from __future__ import annotations
 import os
 import shutil
 import threading
+import json
+import urllib.parse
 import urllib.request
 import sys
 from collections import Counter
@@ -667,5 +669,44 @@ def wearables_get(name: str) -> dict:
     return {"days": recent, "summary": wearables.summary(all_days), "player": snapshot(p)}
 
 
+# Live sync: the iPhone (Health Auto Export app or an iOS Shortcut) POSTs JSON here.
+@app.get("/api/player/{name}/wearables/sync")
+def sync_setup(name: str, request: Request, rotate: bool = False) -> dict:
+    p = get(name)
+    t = db.sync_token(p.name, rotate=rotate)
+    base = str(request.base_url).rstrip("/")
+    return {"url": f"{base}/api/player/{urllib.parse.quote(p.name)}/wearables/sync", "header": "X-Sync-Token",
+            "token": t["token"], "last_sync": t["last_sync"],
+            "reachable_from_phone": not any(h in base for h in ("127.0.0.1", "localhost")),
+            "fields": list(wearables.FIELDS)}
+
+
+@app.post("/api/player/{name}/wearables/sync")
+async def sync_push(name: str, request: Request) -> dict:
+    p = get(name)
+    tok = request.headers.get("x-sync-token") or request.query_params.get("token", "")
+    if not db.check_sync_token(p.name, tok):
+        raise HTTPException(401, "Wrong or missing sync token. Copy it again from My data → Live sync.")
+    body = await request.body()
+    if len(body) > 50 * 1024 * 1024:
+        raise HTTPException(413, "Too much at once: send at most a few months per sync")
+    try:
+        days = wearables.parse_json(json.loads(body))
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    if not days:
+        raise HTTPException(422, "No usable days in that JSON.")
+    n = db.put_days(p.name, days, "live sync")
+    return {"imported_days": n, "from": min(days), "to": max(days)}
+
+
+# ====================================================================== Progress (every source)
+@app.get("/api/player/{name}/overview")
+def overview(name: str) -> dict:
+    from neurotrail import progress as prog
+    return prog.build(get(name))
+
+
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=int(os.environ.get("PORT", "8600")), log_level="warning")
+    # HOST=0.0.0.0 lets a phone on the same Wi-Fi reach the live-sync endpoint
+    uvicorn.run(app, host=os.environ.get("HOST", "127.0.0.1"), port=int(os.environ.get("PORT", "8600")), log_level="warning")

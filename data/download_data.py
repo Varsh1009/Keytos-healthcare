@@ -13,6 +13,9 @@ Download every real dataset NeuroTrail uses. Nothing here is synthetic.
 3. OASIS-1 real T1 MRI volumes (via Kaggle: ninadaithal/oasis-1-shinohara): 436 skull-stripped,
    MNI 2 mm scans used to train the 3D CNN brain-age model.
 
+4. NHANES 2011-2014 wrist-tracker days (PAXDAY) and step counts from PhysioNet: used to train
+   the watch model (models/train_wearable.py).
+
 Run:  python data/download_data.py
 """
 from __future__ import annotations
@@ -44,6 +47,16 @@ NHANES_FILES = {
     "HDL": "HDL cholesterol lab",
     "AUQ": "audiometry / hearing questionnaire",
     "MCQ": "medical conditions (stroke, heart disease)",
+    "PAXDAY": "wrist accelerometer, one row per day (wear, sleep, MIMS)",
+    "PAXHD": "wrist accelerometer header (device, wear hand)",
+}
+# 4. Steps from the same NHANES wrist trackers (open, no login): PhysioNet, Koffman & Muschelli,
+#    doi:10.13026/d7sw-f662. Minute-level steps (stepcount SSL algorithm) + wake/sleep/non-wear.
+PHYSIONET = "https://physionet.org/files/minute-level-step-count-nhanes/1.0.2/"
+PHYSIONET_FILES = {  # path -> sha256 published in SHA256SUMS.txt
+    "csv/nhanes_1440_scsslsteps.csv.xz": "348d7be60203dbae4f3987358820282b192f596952223c51b1889198c2f7eb86",
+    "csv/nhanes_1440_PAXPREDM.csv.xz": "073f9df54185f411e86a062cabf55b497870e77d85b3d68c697d62491ae122cf",
+    "subject-info.csv": "f3b76a9b163ac5b55f3969c88ccf51fbd004b2c17216f2eebe3d398ad260564e",
 }
 CYCLES = {"G": "2011", "H": "2013"}
 BASE = "https://wwwn.cdc.gov/Nchs/Data/Nhanes/Public/{year}/DataFiles/{stem}_{sfx}.xpt"
@@ -73,6 +86,19 @@ def download_nhanes() -> None:
                 print(f"  MISSING {stem}_{sfx}: HTTP {e.code} (module not released this cycle)")
 
 
+def download_physionet_steps() -> None:
+    import hashlib
+    print("PhysioNet NHANES minute-level step counts (~41 MB)")
+    out = RAW / "physionet_steps"
+    out.mkdir(exist_ok=True)
+    for path, sha in PHYSIONET_FILES.items():
+        dest = out / path.rsplit("/", 1)[-1]
+        fetch(PHYSIONET + path, dest)
+        if hashlib.sha256(dest.read_bytes()).hexdigest() != sha:
+            dest.unlink()
+            raise RuntimeError(f"checksum mismatch for {dest.name}; deleted, run again")
+
+
 def download_oasis() -> None:
     print("OASIS-1 cross-sectional MRI table (Kaggle jboysen/mri-and-alzheimers)")
     out = RAW / "oasis"
@@ -100,6 +126,7 @@ def download_oasis_mri() -> None:
 
 if __name__ == "__main__":
     download_nhanes()
+    download_physionet_steps()
     try:
         download_oasis()
         download_oasis_mri()

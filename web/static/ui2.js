@@ -177,12 +177,20 @@ export async function pageData() {
     <div class="h1">📱 My data</div><div class="sub">Bring in real data from your phone or watch, analyze an MRI scan, or play with "what if" sliders. Everything stays on this computer.</div>
     <div class="cr-grid">
       <div class="glass card"><div class="eyebrow">PHONE & WATCH</div>
-        <label class="drop" id="wdrop"><input type="file" id="wfile" accept=".zip,.xml,.csv" hidden><div style="font-size:34px">⌚</div><b>Drop your Apple Health export.zip</b><span class="muted">or a CSV from Fitbit / Google Fit / Garmin</span></label>
-        <p class="muted"><b>iPhone:</b> Health app → your photo (top right) → <i>Export All Health Data</i> → save the zip, then drop it here.<br>
-        <b>Other apps:</b> a CSV with a <code>date</code> column and any of <code>steps</code>, <code>sleep_hours</code>, <code>resting_hr</code>, <code>hrv_ms</code>, <code>walking_speed</code>.</p>
+        <label class="drop" id="wdrop"><input type="file" id="wfile" accept=".zip,.xml,.csv,.json" hidden><div style="font-size:34px">⌚</div><b>Drop your Apple Health export.zip</b><span class="muted">or a Fitbit Takeout zip, or a CSV / JSON from any app</span></label>
+        <p class="muted"><b>Apple Watch / iPhone:</b> Health app → your photo (top right) → <i>Export All Health Data</i> → save the zip, then drop it here. We read steps, sleep, heart, VO₂ max, walking steadiness, blood oxygen, headphone and noise levels, and AirPods hearing tests.<br>
+        <b>Fitbit:</b> Google Takeout → Fitbit → drop the zip.<br>
+        <b>Garmin, Samsung, Oura…</b> a CSV with a <code>date</code> column and any of <code>steps</code>, <code>sleep_hours</code>, <code>resting_hr</code>, <code>hrv_ms</code>, <code>vo2max</code>, <code>walking_speed</code>.</p>
         <div id="wmsg"></div></div>
+      <div class="glass card"><div class="eyebrow">LIVE SYNC FROM YOUR IPHONE</div>
+        <p class="muted">An Apple Watch can't send data to a website by itself; Apple keeps Health data on your iPhone. To keep this page updated automatically, let the iPhone send it:</p>
+        <ol class="plain"><li>Install <b>Health Auto Export</b> (App Store) → <i>Automations</i> → <i>REST API</i>.</li>
+          <li>URL: <code id="syncUrl">…</code> · Format: JSON · Aggregate by day</li>
+          <li>Add header <code>X-Sync-Token</code> = <code id="syncTok">…</code> <button class="chip" id="syncCopy">Copy</button></li></ol>
+        <div id="syncNote" class="muted"></div>
+        <p class="muted">Or build an iOS Shortcut that POSTs <code>{"days": {"2026-11-14": {"steps": 8123, "sleep_hours": 7.2}}}</code> to the same URL with the same header. <button class="chip" id="syncRotate">New token</button></p></div>
       <div class="glass card">${S.days_with_data ? `<div class="eyebrow">YOUR LAST ${S.window_days} DAYS (${S.days_with_data} days imported, ${S.from} → ${S.to})</div>
-        <div class="vstats">${S.steps != null ? `<div><b>${Math.round(S.steps).toLocaleString()}</b><span>steps / day</span></div>` : ''}${S.sleep_hours != null ? `<div><b>${S.sleep_hours.toFixed(1)} h</b><span>sleep / night</span></div>` : ''}${S.resting_hr != null ? `<div><b>${Math.round(S.resting_hr)}</b><span>resting heart rate</span></div>` : ''}${S.hrv_ms != null ? `<div><b>${Math.round(S.hrv_ms)} ms</b><span>heart-rate variability</span></div>` : ''}</div>
+        <div class="vstats">${S.steps != null ? `<div><b>${Math.round(S.steps).toLocaleString()}</b><span>steps / day</span></div>` : ''}${S.sleep_hours != null ? `<div><b>${S.sleep_hours.toFixed(1)} h</b><span>sleep / night</span></div>` : ''}${S.resting_hr != null ? `<div><b>${Math.round(S.resting_hr)}</b><span>resting heart rate</span></div>` : ''}${S.hrv_ms != null ? `<div><b>${Math.round(S.hrv_ms)} ms</b><span>heart-rate variability</span></div>` : ''}${S.vo2max != null ? `<div><b>${S.vo2max.toFixed(1)}</b><span>VO₂ max</span></div>` : ''}${S.walking_speed != null ? `<div><b>${S.walking_speed.toFixed(2)} m/s</b><span>walking speed</span></div>` : ''}${S.hearing_pta_db != null ? `<div><b>${Math.round(S.hearing_pta_db)} dB</b><span>hearing threshold</span></div>` : ''}${S.headphone_db != null ? `<div><b>${Math.round(S.headphone_db)} dBA</b><span>headphone level</span></div>` : ''}</div>
         <ul class="plain">${S.steps != null ? `<li>${S.steps >= 9826 ? '🟢 You average more than 9,826 steps, the "best dose" in a UK study of 78,430 people.' : S.steps >= 3826 ? `🟡 You're above the 3,826-step "minimum dose". ${Math.round(9826 - S.steps).toLocaleString()} more a day reaches the best dose.` : `🟠 ${Math.round(3826 - S.steps).toLocaleString()} more steps a day reaches the 3,826-step minimum dose.`}</li>` : ''}
         ${S.sleep_hours != null ? `<li>Your sleep average (${S.sleep_hours.toFixed(1)} h) now feeds your "What your habits say" score instead of the number you typed at sign-up.</li>` : ''}</ul>
         <div style="height:200px"><canvas id="wch"></canvas></div>` : '<div class="empty">No device data yet. Drop a file on the left to see your real steps and sleep here.</div>'}</div>
@@ -197,5 +205,13 @@ export async function pageData() {
     const fd = new FormData(); fd.append('file', f); const r = await fetch(`/api/player/${enc(me().name)}/wearables`, { method: 'POST', body: fd }); const j = await r.json();
     if (!r.ok) { $('#wmsg').innerHTML = `<p class="caveat">⚠ ${esc(j.detail)}</p>`; return; } X().setME(j.player); X().toast(`Imported ${j.imported_days} days ✓`); pageData(); };
   $('#wfile').onchange = e => e.target.files[0] && up(e.target.files[0]);
+  const sync = async (rotate = false) => {
+    const t = await X().api(`/api/player/${enc(me().name)}/wearables/sync${rotate ? '?rotate=true' : ''}`);
+    $('#syncUrl').textContent = t.url; $('#syncTok').textContent = t.token;
+    $('#syncNote').innerHTML = (t.last_sync ? `✓ Last sync ${esc(t.last_sync.replace('T', ' '))}. ` : 'No sync yet. ') +
+      (t.reachable_from_phone ? '' : '<span class="caveat">⚠ This server is only on this computer (localhost), so your phone can\'t reach it. Restart it with <code>HOST=0.0.0.0 python web/server.py</code> and use this computer\'s Wi-Fi address instead of localhost, or deploy it.</span>');
+  };
+  sync(); $('#syncRotate').onclick = () => sync(true).then(() => X().toast('New token made. Update it on your phone.'));
+  $('#syncCopy').onclick = () => navigator.clipboard?.writeText($('#syncTok').textContent).then(() => X().toast('Token copied'));
   const d = $('#wdrop'); d.ondragover = e => { e.preventDefault(); d.classList.add('over'); }; d.ondragleave = () => d.classList.remove('over'); d.ondrop = e => { e.preventDefault(); d.classList.remove('over'); e.dataTransfer.files[0] && up(e.dataTransfer.files[0]); };
 }

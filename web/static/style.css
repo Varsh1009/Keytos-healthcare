@@ -515,3 +515,30 @@ ul.plain { padding-left: 18px; line-height: 1.6; color: #DDE2FA; font-size: 14px
 .wl-others summary::after { content: ' ▾'; }
 .wl-others #existing { justify-content: center; }
 @media (max-width: 520px) { .wl h1 { font-size: 32px; } .wl-row { flex-direction: column; } }
+
+/* progress: every source as its own variable */
+.pcov { display: flex; flex-wrap: wrap; gap: 8px; margin: 14px 0 16px; }
+.pchip { display: flex; flex-direction: column; gap: 2px; padding: 10px 14px; border-radius: 14px; border: 1px dashed var(--line); color: var(--mute); text-decoration: none; min-width: 120px; }
+.pchip span { font-size: 18px; } .pchip b { color: var(--ink); font-size: 13px; } .pchip small { font-size: 11px; }
+.pchip.on { border-style: solid; border-color: rgba(61,220,151,.4); background: rgba(61,220,151,.07); }
+.pchip.stale { border-style: solid; border-color: rgba(255,200,61,.4); background: rgba(255,200,61,.07); }
+.psum { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+.plinks p { margin: 8px 0 0; line-height: 1.5; }
+.pgroup { margin-top: 22px; }
+.pg-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+.pg-head h3 { margin: 0; font: 700 19px 'Space Grotesk'; } .pg-c { margin-left: auto; font-size: 13px; }
+.pgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.pvar { padding: 14px 16px; border-left: 3px solid var(--c); border-radius: 16px; display: flex; flex-direction: column; gap: 4px; }
+.pv-top { display: flex; justify-content: space-between; gap: 8px; align-items: flex-start; }
+.pv-top b { font-size: 14px; line-height: 1.3; } .pv-st { font-size: 11px; white-space: nowrap; color: var(--c); font-weight: 700; }
+.pv-src, .pv-sub { font-size: 11px; color: var(--mute); }
+.pv-val { font: 700 26px 'Space Grotesk'; color: var(--ink); } .pv-val small { font-size: 13px; color: var(--mute); font-weight: 500; }
+.pv-ch { font-size: 13px; color: var(--c); } .pv-ch .muted { font-size: 11px; }
+.pv-need { font-size: 12px; color: var(--gold); } .pv-pct { font-size: 12px; color: #C9D0EE; }
+.pv-go { margin-top: 6px; color: var(--cyan); font-weight: 700; text-decoration: none; }
+.pv-spark { height: 46px; margin-top: 4px; } .pv-spark canvas { height: 46px !important; }
+.pv-more { font-size: 12px; } .pv-more summary { cursor: pointer; color: var(--cyan); } .pv-more p { margin: 6px 0 0; line-height: 1.45; }
+.pmissing { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; font-size: 13px; }
+.prules { margin-top: 20px; } .prules summary { cursor: pointer; } .prules li { margin: 6px 0; line-height: 1.45; } .prules a { color: var(--cyan); }
+.pact { margin: 26px 0 10px; font: 700 19px 'Space Grotesk'; }
+@media (max-width: 700px) { .psum { grid-template-columns: 1fr 1fr; } .pchip { min-width: 0; flex: 1 1 40%; } }
