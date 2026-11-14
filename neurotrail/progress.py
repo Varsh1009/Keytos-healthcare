@@ -389,12 +389,29 @@ def build(p) -> dict:
             v["status"] = "snapshot"
         vars_.append(v)
     elif tried:
-        vars_.append({"id": "mri_gap", "group": "brain_scan", "label": "Brain age minus real age", "status": "none",
-                      "n": 0, "points": [], "link": "#/mri",
-                      "note": f"You tried {tried} sample scan{'s' if tried > 1 else ''}; those belong to OASIS volunteers, so they aren't counted here."})
+        # Samples are shown so the Brain scan area isn't empty, but marked "sample": each is a different
+        # research volunteer, so they never make a trend and never count toward your overall result.
+        smp = [m for m in all_mri if m["format_ok"] and m["gap"] is not None]
+        if smp:
+            last = smp[-1]
+            vars_.append({"id": "mri_gap", "group": "brain_scan", "label": "Brain age minus real age (sample scans)",
+                          "unit": "years", "source": "sample MRI", "sample": True, "status": "snapshot",
+                          "n": len(smp), "latest": float(last["gap"]), "latest_date": last["ts"][:10],
+                          "brain_age": last["brain_age"], "age": last["age"], "error": round(mae, 1), "link": "#/mri",
+                          "points": [{"date": m["ts"], "value": round(float(m["gap"]), 2)} for m in smp],
+                          "note": "Sample scans from OASIS research volunteers. Each is a different person, so they show "
+                                  "how the analysis works but don't count toward your result. Upload your own scan to track you."})
 
     # ---------------- EEG (own uploads only; samples belong to PhysioNet volunteers)
-    own_eeg = [e for e in db.eegs(p.name) if e["source"].startswith("upload")]
+    all_eeg = db.eegs(p.name)
+    own_eeg = [e for e in all_eeg if e["source"].startswith("upload")]
+    if not own_eeg and all_eeg:                   # samples only: shown, marked, not counted (see MRI above)
+        vars_.append({"id": "eeg_paf", "group": "brain_scan", "label": "Resting brain rhythm (sample EEGs)", "unit": "Hz",
+                      "source": "sample EEG", "sample": True, "status": "snapshot", "n": len(all_eeg),
+                      "latest": float(all_eeg[-1]["paf_hz"]), "latest_date": all_eeg[-1]["ts"][:10], "link": "#/eeg",
+                      "points": [{"date": e["ts"], "value": round(float(e["paf_hz"]), 2)} for e in all_eeg],
+                      "note": "Sample recordings from PhysioNet volunteers. They show how the analysis works but don't count "
+                              "toward your result. Upload your own .edf recording to track you."})
     if own_eeg:
         pts = [(e["ts"], float(e["paf_hz"])) for e in own_eeg]
         vars_.append(_var("eeg_paf", "brain_scan", "Resting brain rhythm (EEG alpha)", "Hz", "EEG upload", pts,
@@ -664,11 +681,11 @@ def updates(p, days: dict, limit: int = 30) -> list[dict]:
         own = str(m["source"]).startswith("upload")
         ba = f"brain age {m['brain_age']:.0f}" if m["brain_age"] is not None else "couldn't be read"
         ev.append({"ts": m["ts"], "icon": "🩻", "area": "brain_scan", "text": f"MRI analyzed: {ba}",
-                   "tags": [] if own else ["sample scan (a research volunteer's, not counted as yours)"]})
+                   "tags": [] if own else ["🧪 sample scan (shown in Progress, not counted as yours)"]})
     for e in db.eegs(p.name):
         own = e["source"].startswith("upload")
         ev.append({"ts": e["ts"], "icon": "〰️", "area": "brain_scan", "text": f"EEG analyzed: resting rhythm {e['paf_hz']:.1f} Hz",
-                   "tags": [] if own else ["sample recording (not counted as yours)"]})
+                   "tags": [] if own else ["🧪 sample recording (shown in Progress, not counted as yours)"]})
     for v in db.voices(p.name):
         ev.append({"ts": v["ts"], "icon": "🎙️", "area": "speech_hands",
                    "text": f"Voice check ({'read aloud' if v['task'] == 'reading' else 'story'}): {v['metrics'].get('speech_tempo')} syllables/sec", "tags": []})

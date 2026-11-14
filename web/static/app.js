@@ -354,7 +354,7 @@ function feedHTML(U) {
 }
 // ---------------- Progress v3: "brain orbit". Buddy in the middle, 6 areas as bubbles; tap one → live chart panel.
 const ST = { better: ['⬆', '#3DDC97', 'Better'], steady: ['➡', '#59F0FF', 'Steady'], lower: ['⬇', '#FFB86B', 'Lower'],
-  building: ['🌱', '#C9A7FF', 'Learning'], add: ['＋', '#6B7299', 'Add data'] };
+  building: ['🌱', '#C9A7FF', 'Learning'], add: ['＋', '#6B7299', 'Add data'], sample: ['🧪', '#9B7BFF', 'Sample'] };
 const TV = { better: 'better', usual: 'steady', lower: 'lower', first: 'building' };
 const AREA_LINK = { thinking: '#/gym', movement: '#/data', sleep_heart: '#/data', speech_hands: '#/hands', hearing: '#/data', brain_scan: '#/mri' };
 const AREA_CTA = { thinking: '🎮 Play a game', movement: '⌚ Connect a watch', sleep_heart: '⌚ Connect a watch', speech_hands: '✋ Do a hand check', hearing: '⌚ Connect a watch', brain_scan: '🧠 Add an MRI' };
@@ -362,6 +362,7 @@ const VAR_ST = { improving: 'better', steady: 'steady', slipping: 'lower', build
 function areaState(vs) {
   const has = vs.filter(v => v.n || v.points?.length);
   if (!has.length) return 'add';
+  if (has.every(v => v.sample)) return 'sample';           // only sample scans: shown, never "better/worse"
   const c = s => has.filter(v => v.status === s).length, up = c('improving'), dn = c('slipping');
   return up > dn ? 'better' : dn > up ? 'lower' : up || c('steady') ? 'steady' : 'building';
 }
@@ -400,13 +401,14 @@ async function pageProgress() {
       P.innerHTML = `<div class="pp-h"><b>${AREA_ICON[a.id]} ${esc(shortName(a.title))}</b><button class="chip" id="ppX">✕</button></div>
         <div class="pp-empty"><div>${AREA_ICON[a.id]}</div><p>No data here yet.</p><a class="h3-cta" href="${AREA_LINK[a.id]}">${AREA_CTA[a.id]}</a></div>`;
     } else {
-      const v = a.vs[Math.min(PO.metric, a.vs.length - 1)], [vr, vc, vw] = ST[VAR_ST[v.status] || 'building'];
+      const v = a.vs[Math.min(PO.metric, a.vs.length - 1)], [vr, vc, vw] = ST[v.sample ? 'sample' : VAR_ST[v.status] || 'building'];
       const unit = v.unit && v.unit !== 'level' ? ' ' + v.unit : v.unit === 'level' ? ' lvl' : '';
       const first = v.points?.[0]?.value, last = v.latest ?? v.points?.at(-1)?.value;
       P.innerHTML = `<div class="pp-h"><b>${AREA_ICON[a.id]} ${esc(shortName(a.title))}</b><span class="pv-pill" style="--c:${col}">${ar} ${w}</span><button class="chip" id="ppX">✕</button></div>
         <div class="pp-pills">${a.vs.map((x, i) => `<button class="chip ${i === Math.min(PO.metric, a.vs.length - 1) ? 'on' : ''}" data-m="${i}">${esc(x.label.replace(/ \(.*\)/, ''))}</button>`).join('')}</div>
         <div class="pp-big" style="--c:${vc}"><div><b>${last != null ? Math.round(last * 100) / 100 : '–'}</b><span>${esc(unit)}</span></div>
-          <em>${vr} ${vw}${first != null && v.points.length > 1 ? ` · started at ${Math.round(first * 100) / 100}` : ''}</em></div>
+          <em>${vr} ${vw}${!v.sample && first != null && v.points.length > 1 ? ` · started at ${Math.round(first * 100) / 100}` : v.sample ? ` · ${v.n} tried` : ''}</em></div>
+        ${v.sample ? `<p class="pp-sample">🧪 ${esc(v.note)}</p>` : ''}
         <div class="pp-chart"><canvas id="ppChart"></canvas></div>
         <a class="pp-go" href="${v.link || AREA_LINK[a.id]}">Open ${esc(shortName(a.title).toLowerCase())} →</a>`;
       $$('#poPanel [data-m]').forEach(b => b.onclick = () => { PO.metric = +b.dataset.m; show(); });
@@ -414,7 +416,7 @@ async function pageProgress() {
       g.addColorStop(0, vc + '66'); g.addColorStop(1, vc + '00');
       chart('ppChart', { type: 'line', data: { labels: pts.map(p => new Date(p.date.slice(0, 10) + 'T12:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })),
           datasets: [{ data: pts.map(p => p.value), borderColor: vc, backgroundColor: g, fill: true, tension: .35, borderWidth: 3, pointRadius: pts.length > 30 ? 0 : 4, pointHoverRadius: 7, pointBackgroundColor: vc },
-            ...(first != null ? [{ data: pts.map(() => first), borderColor: 'rgba(255,255,255,.3)', borderDash: [6, 6], pointRadius: 0, borderWidth: 1.5 }] : [])] },
+            ...(first != null && !v.sample ? [{ data: pts.map(() => first), borderColor: 'rgba(255,255,255,.3)', borderDash: [6, 6], pointRadius: 0, borderWidth: 1.5 }] : [])] },
         options: chartOpts({ animation: { duration: 900, easing: 'easeOutQuart' }, plugins: { legend: { display: false }, tooltip: { displayColors: false } },
           scales: { x: { ticks: { color: '#9AA3C7', maxTicksLimit: 6, maxRotation: 0 }, grid: { display: false } }, y: { ticks: { color: '#9AA3C7', maxTicksLimit: 5 }, grid: { color: 'rgba(255,255,255,.05)' } } } }) });
     }

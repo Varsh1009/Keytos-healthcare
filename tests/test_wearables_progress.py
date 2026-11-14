@@ -137,7 +137,8 @@ def test_overview_combines_sources_with_rules(client):
     assert g["practice_skipped"] == 1 and g["baseline"] == 30   # the practice play (10) never forms the baseline
     assert g["status"] == "improving"
     assert V["game_recall"]["status"] == "none"                  # never played: listed, no trend
-    assert V["mri_gap"]["status"] == "none" and "sample" in V["mri_gap"]["note"]
+    m = V["mri_gap"]                                              # sample: shown, marked, never a trend
+    assert m["sample"] and m["status"] == "snapshot" and m["latest"] == 5 and "_spec" not in m
     assert ov["summary"]["improving"] >= 2
     cov = {c["id"]: c for c in ov["coverage"]}
     assert cov["watch"]["ok"] and not cov["mri"]["ok"]
@@ -225,3 +226,21 @@ def test_eeg_samples_and_uploads(client):
     V = {v["id"]: v for v in client.get("/api/player/Hal/overview").json()["variables"]}
     assert V["eeg_paf"]["status"] == "snapshot"
     assert client.post("/api/player/Hal/eeg/upload", files={"file": ("x.edf", b"not an edf")}).status_code == 422
+
+
+
+def test_samples_show_but_never_change_the_verdict(client):
+    client.post("/api/players", json={"name": "Ivy"})
+    for sc in [300, 280, 270]:
+        client.post("/api/player/Ivy/game", json={"game": "reaction", "score": sc, "detail": {"classic": True}})
+    before = client.get("/api/player/Ivy/overview").json()["combined"]["overall"]
+    db.add_mri("Ivy", "OASIS sample OAS1_0001", 70, 90, 20, True)           # a scary-looking sample
+    smp = client.get("/api/eeg/samples").json()
+    if smp:
+        client.post("/api/player/Ivy/eeg/sample", data={"file": smp[0]["file"]})
+    ov = client.get("/api/player/Ivy/overview").json()
+    V = {v["id"]: v for v in ov["variables"]}
+    assert V["mri_gap"]["sample"] and V["mri_gap"]["latest"] == 20
+    if smp:
+        assert V["eeg_paf"]["sample"] and V["eeg_paf"]["status"] == "snapshot"
+    assert ov["combined"]["overall"] == before                     # other people's scans don't move YOUR line

@@ -983,3 +983,4 @@ body.r-gym #caption, body.r-play #caption { bottom: 120px; max-width: 340px; }
 .mx-truth { margin-top: 4px; }
 .rtabs a small { display: none; }
 @media (max-width: 860px) { .mx-grid { grid-template-columns: 1fr; } }
+.pp-sample { font-size: 13px; line-height: 1.45; color: #C9B8FF; background: rgba(155,123,255,.1); border: 1px solid rgba(155,123,255,.3); border-radius: 12px; padding: 8px 12px; margin: 8px 0; }
