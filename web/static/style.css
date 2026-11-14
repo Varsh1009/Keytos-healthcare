@@ -811,3 +811,38 @@ ul.plain { padding-left: 18px; line-height: 1.6; color: #DDE2FA; font-size: 14px
 .ins-fix:hover { border-color: var(--cyan); }
 .explore { grid-template-columns: repeat(4, 1fr); }
 @media (max-width: 560px) { .explore { grid-template-columns: repeat(2, 1fr); } }
+
+/* ---------------------------------------------------------------- games hub */
+.gh { display: flex; flex-direction: column; gap: 16px; }
+.gh-top { display: flex; justify-content: space-between; align-items: center; }
+.gh-top h1 { margin: 0; font: 700 30px 'Space Grotesk'; }
+.gh-top small { color: var(--mute); font-size: 14px; }
+.gh-ring { width: 64px; height: 64px; border-radius: 50%; display: grid; place-content: center; text-align: center;
+  background: radial-gradient(closest-side, #10143a 78%, transparent 80%), conic-gradient(var(--cyan) calc(var(--p) * 1%), rgba(255,255,255,.1) 0); }
+.gh-ring b { font: 700 17px 'Space Grotesk'; line-height: 1; } .gh-ring small { font-size: 10px; color: var(--mute); }
+.gh-next { display: flex; align-items: center; gap: 14px; padding: 16px 18px; border-radius: 20px; text-decoration: none; color: var(--ink);
+  background: linear-gradient(120deg, color-mix(in srgb, var(--c) 28%, transparent), rgba(255,255,255,.03)); border: 1.5px solid var(--c);
+  box-shadow: 0 0 30px color-mix(in srgb, var(--c) 30%, transparent); transition: transform .15s; }
+.gh-next:hover { transform: translateY(-2px); }
+.gh-next > div { flex: 1; display: flex; flex-direction: column; }
+.gh-next small { font: 700 11px 'Space Grotesk'; letter-spacing: .14em; color: var(--c); }
+.gh-next b { font: 700 22px 'Space Grotesk'; } .gh-next span { color: #C9D0EE; font-size: 14px; }
+.gh-play { padding: 12px 20px; border-radius: 14px; background: var(--c); color: #071022 !important; font: 800 16px 'Space Grotesk' !important; white-space: nowrap; }
+.gh-done { padding: 16px; border-radius: 18px; background: rgba(61,220,151,.1); border: 1px solid rgba(61,220,151,.4); font-weight: 600; }
+.gh-sec h3 { margin: 0 0 8px; font: 700 15px 'Space Grotesk'; color: #DDE2FA; }
+.gh-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.gc { position: relative; display: flex; flex-direction: column; gap: 2px; padding: 14px 12px 12px; border-radius: 18px; text-decoration: none; color: var(--ink);
+  background: rgba(255,255,255,.04); border: 1px solid var(--line); transition: transform .15s, border-color .15s, background .15s; }
+.gc:hover, .gc:focus-visible { transform: translateY(-3px); border-color: var(--c); background: color-mix(in srgb, var(--c) 12%, transparent); outline: none; }
+.gc.focus { border-color: color-mix(in srgb, var(--c) 70%, transparent); }
+.gc-ico { width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center; font-size: 24px; margin-bottom: 6px;
+  background: color-mix(in srgb, var(--c) 22%, transparent); }
+.gc-ico.big { width: 58px; height: 58px; font-size: 32px; margin: 0; flex: none; }
+.gc b { font: 700 15px 'Space Grotesk'; } .gc small { color: var(--mute); font-size: 12.5px; }
+.gc-meta { margin-top: 6px; font-size: 11px; color: var(--c); font-weight: 700; }
+.gc-badge { position: absolute; top: 10px; right: 10px; font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 999px; background: rgba(255,200,61,.14); color: #FFD66B; }
+.gc.done .gc-badge { background: rgba(61,220,151,.18); color: var(--green); }
+.gwhy-d { margin-top: 12px; text-align: left; }
+@media (max-width: 1100px) { .gh-grid { grid-template-columns: repeat(2, 1fr); } }
+/* keep the brain caption clear of the floating buddy */
+body.r-gym #caption, body.r-play #caption { bottom: 120px; max-width: 340px; }

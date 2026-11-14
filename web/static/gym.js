@@ -13,59 +13,52 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
 async function catalog() { if (!CAT) { const c = await X().api('/api/games'); CAT = c.games; BONUS = c.level_up_sparks ?? 10; } return CAT; }
 
-// ============================================================ GYM HUB (game card on the left, brain on the right)
+// ============================================================ GAMES HUB: one obvious "Up next", then big cards by skill
 const KIND_ICON = { Memory: '🧠', Speed: '⚡', Attention: '🎯', Language: '💬', 'Self-control': '🛑', Reflexes: '👆' };
-const EVIDENCE = g => g.id === 'speed' ? ['b-rct', 'Randomized trial'] : g.norm ? ['b-cohort', 'NHANES norms'] : ['b-weak', 'Tracking only'];
 const playHref = g => g.id === 'speed' ? '#/sprint' : '#/game/' + g.id;
+const TAG = { speed: 'Match symbols', recall: 'Remember words', fluency: 'Name animals', trails: 'Connect the dots', stroop: 'Tap the ink color',
+  corsi: 'Repeat the pattern', reaction: 'Tap on green', readaloud: 'Read out loud', voice: 'Just talk' };
+const GROUPS = [['⚡', 'Speed & reflexes', ['speed', 'reaction']], ['🧠', 'Memory', ['recall', 'corsi']], ['🎯', 'Focus', ['trails', 'stroop']],
+  ['💬', 'Language & voice', ['fluency', 'readaloud', 'voice']]];
+const CHECKS = [{ href: '#/hands', icon: '✋', title: 'Hand check', tag: 'Tremor & taps', color: '#FF8FB1', meta: 'camera · 30 s' },
+  { href: '#/voice', icon: '🎙️', title: 'Pace & pauses', tag: 'How you speak', color: '#8FD3FF', meta: 'mic · 1 min' }];
 
 export async function pageGym(id) {
   RUN++;
   const games = await catalog();
   STATS = await X().api(`/api/player/${encodeURIComponent(me().name)}/games`);
-  const g = games.find(x => x.id === id);
-  if (!g) { location.hash = '#/gym/' + (games.find(x => !STATS[x.id]?.played_today) || games[0]).id; return; }
-  const Q = X().QMAP(), area = Q[g.region], s = STATS[g.id] || {}, i = games.indexOf(g);
-  const prev = games[(i - 1 + games.length) % games.length], nxt = games[(i + 1) % games.length];
+  const byId = Object.fromEntries(games.map(g => [g.id, g]));
   const played = games.filter(x => STATS[x.id]?.played_today).length;
+  const next = games.find(x => !STATS[x.id]?.played_today);
+  const focus = byId[id] || next || games[0];
+  const Q = X().QMAP();
+  // the 3D brain: every game's area lit (brighter if played today), the focused one up front
+  const light = g => g && Q[g.region] && X().gameBrain(Object.fromEntries(games.map(x => [x.region, STATS[x.id]?.played_today ? 'done' : 'open'])),
+    Object.fromEntries(games.map(x => [x.region, x.color])), g.region, `<span style="color:${g.color}">●</span> ${g.title} · ${Q[g.region].region_name}`, g.region_why);
+  light(focus);
 
-  // light every game's brain area (brighter if played today), focus this one
-  X().gameBrain(Object.fromEntries(games.map(x => [x.region, STATS[x.id]?.played_today ? 'done' : 'open'])),
-    Object.fromEntries(games.map(x => [x.region, x.color])), g.region,
-    `<span style="color:${g.color}">●</span> ${g.title} · ${area.region_name}`, g.region_why);
-
-  const kinds = [...new Set(games.map(x => x.kind))].map(k => [k, games.filter(x => x.kind === k).reduce((n, x) => n + (STATS[x.id]?.plays || 0), 0)]);
-  const total = kinds.reduce((n, [, c]) => n + c, 0);
-  const mix = `<div class="gmix">${kinds.map(([k, c]) => `<div class="${k === g.kind ? 'on' : ''}" title="${c} plays of ${k.toLowerCase()} games"><span>${KIND_ICON[k]}</span><b>${c}</b><small>${k}</small><i style="width:${total ? c / total * 100 : 0}%"></i></div>`).join('')}</div>`;
-  const [ecls, elab] = EVIDENCE(g);
-  const picker = `<div class="gpicker">${games.map(x => `<a href="#/gym/${x.id}" class="${x.id === g.id ? 'on' : ''}" style="--c:${x.color}" title="${esc(x.title)} · ${x.kind}">
-    <span>${x.icon}</span><b>${esc(x.title)}</b>${STATS[x.id]?.played_today ? '<i class="ok">✓</i>' : ''}</a>`).join('')}
-    <a href="#/hands" style="--c:#FF8FB1" title="Hand check · tremor and finger tapping (camera)"><span>✋</span><b>Hand check</b></a>
-    <a href="#/voice" style="--c:#8FD3FF" title="Voice check · pace, pauses and pitch (microphone)"><span>🎙️</span><b>Pace &amp; pauses</b></a></div>`;
-
-  $('#p-gym').innerHTML = `<div class="play"><div class="left glass" style="--c:${g.color}">
-    <div class="eyebrow">CHOOSE A GAME · ${played}/${games.length} played today</div>${picker}
-    <div class="eyebrow" style="margin-top:14px">YOUR GAME MIX · ${total} plays</div>${mix}
-    <div class="q-top" style="margin-top:16px"><div class="q-icon">${g.icon}</div><div class="reward">${s.played_today ? '✓' : '+15 ⚡'}<small>${s.played_today ? 'PLAYED TODAY' : 'FIRST PLAY TODAY'}</small></div></div>
-    <div class="eyebrow" style="margin-top:8px">GAME ${i + 1} OF ${games.length}</div>
-    <div class="q-title">${g.title}</div>
-    <div class="gkind">${KIND_ICON[g.kind]} ${g.kind} game <span>· trains ${g.domain.toLowerCase()}</span></div>
-    <div class="q-region">Lights up: ${area.region_name} (${area.stop})</div>
-    <span class="badge ${ecls}">${elab}</span><span class="badge b-cohort">Based on: ${g.test}</span>
-    <div class="gwhy"><b>Why this brain area?</b> ${g.region_why}</div>
-    <div class="gwhy"><b>How to play:</b> ${g.how}</div>
-    ${s.levels ? levelDots(s.levels) : ''}
-    <div class="gstats"><div><b>${s.levels ? `${s.levels.level}/${s.levels.top}` : '–'}</b><span>level</span></div><div><b>${s.levels?.best_here ?? '–'}</b><span>best at this level</span></div><div><b>${s.plays ?? 0}</b><span>plays</span></div></div>
-    <div class="muted" style="font-size:11px;margin-top:4px">Next goal: ${s.levels ? cap(s.levels.rule.goal) : ''} · ${g.unit}, ${g.better} is better</div>
-    <div id="hubBoard"></div>
-    ${(s.history || []).length > 1 ? `<svg class="spark" viewBox="0 0 100 24" preserveAspectRatio="none" style="color:${g.color}">${spark(s.history, g.better)}</svg>` : '<div class="muted" style="font-size:12px;text-align:center;margin:8px 0">📈 play twice to see your trend</div>'}
-    <a class="fire" href="${playHref(g)}" style="display:block;text-align:center;text-decoration:none">▶ Play level ${s.levels?.level ?? 1}${s.played_today ? '' : ' · +15 ⚡'}</a>
-    <details class="ev"><summary>Why this game? The evidence</summary><div class="evb">
-      <p>• ${g.evidence} <a href="${g.url}" target="_blank" rel="noopener">source ↗</a></p>
-      ${g.id === 'speed' ? '' : '<p class="caveat">⚠ This is a measurement game. Brain-training reviews find gains on the trained task but little carry-over to everyday life (Simons 2016).</p>'}
-      <p class="caveat">⚠ Brain map is simplified: every skill uses a network of areas. We light the best-known hub on a template brain, not your brain.</p></div></details>
-    <div class="navrow"><a href="#/gym/${prev.id}">← ${prev.title}</a><a href="#/">Home</a><a href="#/gym/${nxt.id}">${nxt.title} →</a></div>
+  const lv = g => STATS[g.id]?.levels?.level ?? 1;
+  const card = g => { const s = STATS[g.id] || {}; return `<a class="gc ${s.played_today ? 'done' : ''} ${g.id === focus.id ? 'focus' : ''}" href="${playHref(g)}" data-id="${g.id}" style="--c:${g.color}">
+      <span class="gc-ico">${g.icon}</span><b>${esc(g.title)}</b><small>${TAG[g.id] || esc(g.domain)}</small>
+      <span class="gc-meta">Lv ${lv(g)}</span><span class="gc-badge">${s.played_today ? '✓' : '+15⚡'}</span></a>`; };
+  const pct = Math.round(played / games.length * 100);
+  $('#p-gym').innerHTML = `<div class="play"><div class="left glass gh">
+    <div class="gh-top"><div><h1>🎮 Games</h1><small>Tap a game · about 1 minute each</small></div>
+      <div class="gh-ring" style="--p:${pct}"><b>${played}/${games.length}</b><small>today</small></div></div>
+    ${next ? `<a class="gh-next" href="${playHref(next)}" style="--c:${next.color}" data-id="${next.id}">
+      <span class="gc-ico big">${next.icon}</span><div><small>UP NEXT</small><b>${esc(next.title)}</b><span>${TAG[next.id] || ''} · Level ${lv(next)}</span></div>
+      <span class="gh-play">▶ Play</span></a>`
+      : `<div class="gh-done">🎉 All ${games.length} played today. Replay any game to beat your best.</div>`}
+    ${GROUPS.map(([ic, name, ids]) => `<div class="gh-sec"><h3>${ic} ${name}</h3><div class="gh-grid">${ids.filter(i => byId[i]).map(i => card(byId[i])).join('')}</div></div>`).join('')}
+    <div class="gh-sec"><h3>🩺 Health checks</h3><div class="gh-grid">${CHECKS.map(c => `<a class="gc" href="${c.href}" style="--c:${c.color}">
+      <span class="gc-ico">${c.icon}</span><b>${c.title}</b><small>${c.tag}</small><span class="gc-meta">${c.meta}</span></a>`).join('')}</div></div>
   </div><div></div></div>`;
-  X().api(`/api/games/${g.id}/leaderboard?player=${encodeURIComponent(me().name)}`).then(lb => { const el = $('#hubBoard'); if (el) el.innerHTML = boardHTML(lb, 3); }).catch(() => {});
+  // hover or focus a card → the brain shows the area that game trains
+  let t = null, shown = focus.id;
+  $$('#p-gym [data-id]').forEach(a => {
+    const show = () => { clearTimeout(t); t = setTimeout(() => { if (shown !== a.dataset.id) { shown = a.dataset.id; light(byId[shown]); } }, 180); };
+    a.addEventListener('mouseenter', show); a.addEventListener('focus', show);
+  });
 }
 function spark(h, better) {
   if (h.length < 2) return '<text x="50" y="16" text-anchor="middle" font-size="8" fill="#9AA3C7">play twice to see a trend</text>';
@@ -148,6 +141,9 @@ function intro(g) {
     <div class="goalcard"><small>LEVEL ${S.level} GOAL</small><b>${cap(L.goal)}</b>${L.seconds ? `<span>${L.seconds}-second round</span>` : ''}</div>
     <div class="muted">your best at level ${S.level}: <b>${S.best_here ?? '–'}</b> ${g.unit}</div>
     <div class="row" style="justify-content:center" id="startRow"><button class="cta" id="go">▶ Start level ${S.level}</button></div>
+    <details class="ev gwhy-d"><summary>Why this game?</summary><div class="evb"><p>${g.region_why}</p>
+      <p>${g.evidence} <a href="${g.url}" target="_blank" rel="noopener">source ↗</a></p>
+      ${g.id === 'speed' ? '' : '<p class="caveat">This is a measurement game: brain-training reviews find gains on the trained task but little carry-over to everyday life (Simons 2016).</p>'}</div></details>
     ${classic ? `<button class="linkbtn" id="classic">🩺 Clinical version (${g.id === 'recall' ? '3 trials of 10 words' : '60 seconds'}, compare with NHANES adults)</button>` : ''}`;
   startDemo($('#demo'), g.id);
   $('#go').onclick = () => PLAY[g.id](g, L);
