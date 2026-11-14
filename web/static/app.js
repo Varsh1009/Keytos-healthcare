@@ -5,7 +5,8 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { pageGym, pageGame, pageMRI } from './gym.js?v=5';
+import { pageGym, pageGame, pageMRI } from './gym.js?v=6';
+import { pageHands } from './hands.js?v=2';
 import { pageHome as pageHome2, pageVoice, pageData, plainLever, plainAmount, buddy } from './ui2.js?v=1';
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -220,7 +221,7 @@ function caption(id) {
 
 // ================================================================ ROUTER
 const homeRoute = () => { SEL = null; paintRegions(); caption(null); goHomeCam(); return pageHome2(); };
-const routes = { home: homeRoute, play: pagePlay, gym: pageGym, game: pageGame, sprint: pageSprint, voice: pageVoice, data: pageData, mri: pageMRI, progress: pageProgress, coach: pageCoach, levers: pageLevers, science: pageScience };
+const routes = { home: homeRoute, play: pagePlay, gym: pageGym, game: pageGame, sprint: pageSprint, voice: pageVoice, hands: pageHands, data: pageData, mri: pageMRI, progress: pageProgress, coach: pageCoach, levers: pageLevers, science: pageScience };
 async function route() {
   if (!ME?.onboarded) return;
   const [, r = 'home', arg] = (location.hash || '#/').split('/');

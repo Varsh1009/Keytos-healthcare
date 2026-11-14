@@ -138,23 +138,32 @@ Audio is never stored.
 Only Speed Sprint has dementia-outcome trial evidence. The others are tracking tools: brain-training
 gains rarely transfer to everyday life (Simons et al. 2016, PubMed 27697851).
 
-## Camera movement tests (`web/static/move.js`, `web/static/movelogic.js`)
+## ✋ Hand check (`web/static/hands.js` → `neurotrail/handcheck.py`)
 
-Three 30–40 second tests in the **Brain Gym** (`#/gym`). Your body is tracked with MediaPipe Pose Landmarker (lite model) running
-**in the browser**: the video is never uploaded or saved. After GPU warm-up, a frame takes about 15 ms (90th percentile 18 ms),
-so tracking keeps up with a 30 fps camera.
+Three 10-second tasks from the neurologist's movement exam (MDS-UPDRS part III), about 40 seconds per hand:
 
-| Test | What it measures | Evidence |
+| Task | What the server measures | Why |
 |---|---|---|
-| **Chair Stand** (30 s) | Full sit-to-stands with arms crossed; flags if your hands leave your chest | CDC STEADI cut-offs by age and sex (fall risk) |
-| **One-Leg Balance** (up to 30 s) | Seconds on one leg, plus sideways sway | Under 20 s linked to silent small-vessel brain damage (Tabara 2015); failing 10 s linked to higher mortality (Araujo 2022) |
-| **Reach & Hold Back** (40 s) | Touch green targets, leave red ones (always 3 red in 10) | Cognitive-motor training: modest executive-function gains (Wollesen 2020). Here it's a measurement |
+| **Hold still** (arm out, fingers spread) | Tremor: frequency (Hz) and size (mm, peak to peak), graded on the MDS-UPDRS tremor-size scale (slight < 1 cm, mild 1–3, moderate 3–10, severe ≥ 10) | Tremor is a core sign doctors check; tremor starting after 65 went with ~2× dementia risk in one population study (Bermejo-Pareja 2007) |
+| **Open and close your fist** (UPDRS 3.5) | Count, rate, how many were a **full** fist and a **full** open, decrement (getting smaller), hesitations, rhythm | Slowing and fading are the signs of bradykinesia |
+| **Finger taps** (UPDRS 3.4) | Same, for index-to-thumb taps (did they touch? did they open wide?) | Webcam finger tapping rated Parkinson's severity about as well as trained non-specialists (Islam 2023, 250 people) |
 
-Every length is measured in torso lengths, so the distance from the camera doesn't matter. Chair Stand learns your own seated and
-standing positions (thresholds tuned on a real photo run through the model). If the camera didn't see the movement, the app asks
-you to retry and saves nothing. The result screen compares you with the published cut-off and says it's a flag, not a diagnosis.
-`tests/test_movelogic.mjs` checks the counting on synthetic movement: exact chair-stand counts at three camera heights and two
-body shapes, balance timing within 0.35 s, and reach timing within 80 ms.
+**How it works:** the browser tracks 21 hand points per frame with MediaPipe Hand Landmarker (on the device, GPU) and uploads
+only those points with their timestamps. The **server** analyzes them with numpy/scipy:
+- **Tremor:** a 2 Hz high-pass removes arm drift. A Welch spectrum then finds the strongest rhythm between 3.5 and 12 Hz (capped below the camera's Nyquist limit). Its size comes from a sine fit straight to the real frame timestamps. It counts as tremor only if it is at least 2 mm and stands well out of the spectrum.
+- **Fist and taps:** sizes are in palm lengths (wrist to middle knuckle), so the distance from the camera doesn't matter. Each dip in the signal is one movement.
+- **Calibration:** the "full fist" (≤ 1.2) and "fingers touched" (≤ 0.35) lines were set from real photos run through the same model. Open hands read 1.64–2.10, fists 0.80–0.86, and a thumb-index touch 0.16.
+- **Comparisons:** results are compared with your last check of the same hand and with your other hand (a clear one-sided difference is flagged).
+
+**Tested:**
+- **Synthetic hands** (`tests/test_handcheck.py`, at uneven webcam frame rates with tracker jitter):
+  - tremor frequency within 0.3 Hz and size within 25%, from 4.5 to 9.5 Hz;
+  - no false tremor on a still hand;
+  - exact tap and fist counts;
+  - detects incomplete fists and taps that never touch, fading of more than 30%, and pauses.
+- **End to end in the browser with the real model:** a still real hand read 0.1 mm (no tremor), and alternating real open-hand and fist photos gave 11 of 11 full fists.
+
+It's a check, not a diagnosis. mm values assume a 95 mm palm.
 
 ## Database
 

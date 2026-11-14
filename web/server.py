@@ -21,6 +21,8 @@ import random
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -353,13 +355,58 @@ def play_game(name: str, body: GameIn) -> dict:
     sparks = gym.GAME_SPARKS if first_today else 0
     db.add_game(p.name, g["id"], today(), body.score, body.detail, sparks)
     out = {"sparks_gained": sparks, "stats": game_stats(p, g["id"]), "player": snapshot(p)}
-    ref = gym.movement_reference(g["id"], body.score, p.age, p.female)
-    if ref:
-        out["reference"] = ref
     norm_col = body.detail.get("norm_col") or g["norm"]
     if norm_col and body.detail.get("comparable", False):
         out["nhanes"] = gym.nhanes_percentile(norm_col, body.score, p.age, p.female)
     return out
+
+
+# ====================================================================== Hand check (camera)
+class HandTask(BaseModel):
+    t: list[float] = Field(max_length=2000)                     # ms timestamps
+    lm: list[list[list[float]] | None] = Field(max_length=2000)  # per frame: 21 [x, y] points, or null if no hand
+
+
+class HandsIn(BaseModel):
+    hand: Literal["left", "right"]
+    aspect: float = Field(4 / 3, gt=0.2, lt=5)
+    tasks: dict[Literal["steady", "fist", "tap"], HandTask]
+    fps: float | None = None
+
+
+def _hand_row(r: dict) -> dict:
+    d = r["detail"]
+    return {"date": r["date"], "ts": r["ts"], "hand": d.get("hand"), "tap_rate": r["score"],
+            "results": d.get("results", {}), "flags": d.get("flags", [])}
+
+
+@app.post("/api/player/{name}/hands")
+def hand_check(name: str, body: HandsIn) -> dict:
+    """The browser sends raw hand landmarks; all the analysis happens here (neurotrail/handcheck.py)."""
+    from neurotrail import handcheck
+    p = get(name)
+    out = handcheck.analyze(body.model_dump())
+    if not out["results"]:
+        raise HTTPException(422, next(iter(out["errors"].values()), "No hand data"))
+    # keep the numbers, not the raw signals
+    keep = {k: {kk: vv for kk, vv in v.items() if kk not in ("signal", "spectrum", "amplitudes")} for k, v in out["results"].items()}
+    first_today = not any(r["date"] == today() for r in db.games(p.name, "hands"))
+    sparks = gym.GAME_SPARKS if first_today else 0
+    tap_rate = out["results"].get("tap", {}).get("rate_hz", 0.0)
+    db.add_game(p.name, "hands", today(), tap_rate, {"hand": body.hand, "results": keep, "flags": out["flags"],
+                                                      "errors": out["errors"], "fps": body.fps}, sparks)
+    hist = [_hand_row(r) for r in db.games(p.name, "hands")]
+    same = [h for h in hist[:-1] if h["hand"] == body.hand]
+    other = [h for h in hist if h["hand"] != body.hand]
+    out |= {"sparks_gained": sparks, "player": snapshot(p),
+            "previous": same[-1] if same else None, "other_hand": other[-1] if other else None}
+    return out
+
+
+@app.get("/api/player/{name}/hands")
+def hand_history(name: str) -> dict:
+    p = get(name)
+    return {"history": [_hand_row(r) for r in db.games(p.name, "hands")]}
 
 
 # ====================================================================== MRI brain age (real 3D CNN)

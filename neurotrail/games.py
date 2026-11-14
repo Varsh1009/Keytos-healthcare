@@ -19,10 +19,6 @@ ART = Path(__file__).resolve().parents[1] / "models" / "artifacts"
 SIMONS = "https://pubmed.ncbi.nlm.nih.gov/27697851/"
 ACTIVE = "https://pubmed.ncbi.nlm.nih.gov/41669119/"
 GAME_SPARKS = 15
-STEADI_CHAIR_URL = "https://stacks.cdc.gov/view/cdc/157303/cdc_157303_DS1.pdf"   # CDC STEADI 30-Second Chair Stand form
-TABARA = "https://doi.org/10.1161/STROKEAHA.114.006704"
-ARAUJO = "https://doi.org/10.1136/bjsports-2021-105360"
-DUAL_TASK = "https://doi.org/10.1186/s11556-020-00240-y"
 
 GAMES = [
     {"id": "speed", "title": "Speed Sprint", "icon": "⚡", "color": "#FFC83D", "domain": "Processing speed",
@@ -61,26 +57,12 @@ GAMES = [
      "unit": "ms (median)", "better": "lower",
      "evidence": "Simple reaction time slows with age. Measurement only.",
      "url": SIMONS, "norm": None},
-    # ---- camera movement tests (pose tracking runs in the browser; video never leaves the device)
-    {"id": "chair", "title": "Chair Stand", "icon": "🪑", "color": "#2DD4BF", "domain": "Leg strength & falls", "camera": True,
-     "test": "30-Second Chair Stand (CDC STEADI)", "how": "Arms crossed, stand up fully and sit down as many times as you can in 30 seconds.",
-     "unit": "stands in 30 s", "better": "higher",
-     "evidence": "CDC's fall-risk test for older adults, with age and sex cut-offs. A low score flags fall risk; it isn't a diagnosis.",
-     "url": STEADI_CHAIR_URL, "norm": None},
-    {"id": "balance", "title": "One-Leg Balance", "icon": "🦩", "color": "#A78BFA", "domain": "Balance", "camera": True,
-     "test": "One-leg standing time (eyes open)", "how": "Lift one foot and hold as long as you can, up to 30 seconds.",
-     "unit": "seconds", "better": "higher",
-     "evidence": "Under 20 s was linked to silent small-vessel brain damage and lower thinking scores (Tabara 2015, ~1,400 adults). Failing 10 s was linked to higher mortality (Araujo 2022).",
-     "url": TABARA, "norm": None},
-    {"id": "reach", "title": "Reach & Hold Back", "icon": "🖐", "color": "#34D399", "domain": "Movement + self-control", "camera": True,
-     "test": "Go/no-go reaching (a dual task)", "how": "Touch green circles with either hand. Don't touch red. 40 seconds.",
-     "unit": "points", "better": "higher",
-     "evidence": "Combines a thinking rule with movement. Reviews of cognitive-motor training find modest gains in executive function; here it's a measurement.",
-     "url": DUAL_TASK, "norm": None},
 ]
 GAME_BY_ID = {g["id"]: g for g in GAMES}
 # The voice check stores its daily sparks in game_results under id "voice" (not shown as a game card).
 GAME_BY_ID["voice"] = {"id": "voice", "title": "Voice check", "better": "higher", "norm": None}
+# The hand check (✋ Hands tab) stores one row per hand per check; score = finger taps per second.
+GAME_BY_ID["hands"] = {"id": "hands", "title": "Hand check", "better": "higher", "norm": None}
 
 WORD_LISTS = [
     ["candle", "river", "garden", "ticket", "mirror", "button", "saddle", "forest", "pencil", "island"],
@@ -131,30 +113,3 @@ def score_fluency(entries: list[str]) -> dict:
                 invalid.append(raw.strip())
     return {"score": len(valid), "valid": valid, "unrecognized": invalid}
 
-
-# ---------------------------------------------------------------- movement references
-# CDC STEADI 30-Second Chair Stand: a score BELOW these numbers is below average (fall risk).
-STEADI_CHAIR = [((60, 64), 14, 12), ((65, 69), 12, 11), ((70, 74), 12, 10), ((75, 79), 11, 10),
-                ((80, 84), 10, 9), ((85, 89), 8, 8), ((90, 94), 7, 4)]
-
-
-def movement_reference(gid: str, score: float, age: float | None, female: bool | None) -> dict | None:
-    """A plain-language comparison with a published cut-off, or None. Never a diagnosis."""
-    if gid == "chair":
-        if age is None or age < 60:
-            return {"level": "info", "text": "CDC's chair-stand cut-offs start at age 60, so we only compare you with yourself."}
-        band = next((b for b in STEADI_CHAIR if b[0][0] <= age <= b[0][1]), STEADI_CHAIR[-1])
-        cut = band[2] if female else band[1]
-        who = f"{'women' if female else 'men'} {band[0][0]}–{band[0][1]}"
-        if score < cut:
-            return {"level": "warn", "text": f"Below the CDC's average for {who} (fewer than {cut} stands). It's a fall-risk flag, not a diagnosis: "
-                                             "worth mentioning to your doctor, and strength-and-balance exercise helps."}
-        return {"level": "ok", "text": f"At or above the CDC's mark for {who} ({cut} stands)."}
-    if gid == "balance":
-        if score >= 20:
-            return {"level": "ok", "text": "20 seconds or more: past the mark linked to silent small-vessel brain changes in a study of ~1,400 adults (Tabara 2015)."}
-        if score >= 10:
-            return {"level": "info", "text": "Past 10 s, under 20. Under 20 s went with more silent small-vessel brain changes in one study (Tabara 2015). Best of two tries counts."}
-        return {"level": "warn", "text": "Under 10 seconds. In 1,702 people aged 51–75, failing 10 s went with higher mortality (Araujo 2022). "
-                                         "One try isn't a diagnosis: retry, and tell your doctor if it keeps happening."}
-    return None
