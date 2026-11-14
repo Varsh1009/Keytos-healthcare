@@ -65,6 +65,8 @@ CREATE TABLE IF NOT EXISTS sync_tokens (
 CREATE TABLE IF NOT EXISTS plans (
   id INTEGER PRIMARY KEY AUTOINCREMENT, player TEXT NOT NULL, created_at TEXT NOT NULL,
   title TEXT NOT NULL, items TEXT NOT NULL, source TEXT);
+CREATE TABLE IF NOT EXISTS answers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, player TEXT NOT NULL, date TEXT NOT NULL, profile TEXT NOT NULL, ts TEXT NOT NULL);
 """
 
 
@@ -113,6 +115,21 @@ def get_player(name: str) -> dict | None:
 def list_players() -> list[str]:
     with conn() as c:
         return [r["name"] for r in c.execute("SELECT name FROM players ORDER BY created_at")]
+
+
+# ------------------------------------------------------------------ sign-up / "update my answers" history
+def add_answers(player: str, date: str, profile: dict) -> None:
+    """One dated snapshot each time the person answers the questions (BP, sleep, activity, mood...),
+    so Progress can show them over time. Kept apart from check-in logs: answering isn't a habit done."""
+    with conn() as c:
+        c.execute("DELETE FROM answers WHERE player=? AND date=?", (player, date))   # one per day: latest wins
+        c.execute("INSERT INTO answers(player,date,profile,ts) VALUES (?,?,?,?)", (player, date, json.dumps(profile), now()))
+
+
+def answers(player: str) -> list[dict]:
+    with conn() as c:
+        rows = c.execute("SELECT date,profile,ts FROM answers WHERE player=? ORDER BY date", (player,)).fetchall()
+    return [{"date": r["date"], "ts": r["ts"], **json.loads(r["profile"])} for r in rows]
 
 
 # ------------------------------------------------------------------ logs

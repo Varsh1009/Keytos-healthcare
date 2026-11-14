@@ -130,6 +130,7 @@ export function initDock() {
     <aside class="drawer glass" id="drawer" aria-label="Menu">
       <div class="drawer-head"><div class="dbuddy">${buddy('happy', 46)}</div><div><div class="tiny">SIGNED IN AS</div><b id="drawerName"></b></div>
         <button class="dclose" id="drawerClose" aria-label="Close menu">✕</button></div>
+      <button class="ditem" id="updAnswers">✏️ <span>Update my answers <small style="display:block;color:#9AA3C7;font-weight:500;font-size:12px">blood pressure, sleep, mood…</small></span></button>
       <a class="ditem" href="#/coach">🤖 <span>Coach chat &amp; saved plans</span></a>
       <a class="ditem" href="#/science">🔬 <span>The science</span></a>
       <div class="dsec">TEXT SIZE</div>
@@ -152,6 +153,7 @@ export function initDock() {
     </div>`);
 
   $('#menuBtn').onclick = () => toggleDrawer(true);
+  $('#updAnswers').onclick = () => { toggleDrawer(false); X().updateAnswers(); };
   $('#drawerClose').onclick = $('#scrim').onclick = () => toggleDrawer(false);
   document.querySelectorAll('#drawer [data-size]').forEach(b => b.onclick = () => applySize(+b.dataset.size));
   $('#talkToggle').onchange = e => { talk = e.target.checked; store.set('nt_talk', talk ? '1' : '0'); $('#bSpeak').textContent = talk ? '🔊' : '🔇'; };

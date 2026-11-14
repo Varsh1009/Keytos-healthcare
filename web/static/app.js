@@ -7,7 +7,7 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { pageGym, pageGame, pageMRI, railHTML, boardHTML, startDemo } from './gym.js?v=20';
 import { pageHands } from './hands.js?v=7';
-import { initDock } from './dock.js?v=3';
+import { initDock } from './dock.js?v=4';
 import { pageEEG } from './records.js?v=4';
 import { pageHome as pageHome2, pageVoice, pageData, plainLever, plainAmount, buddy } from './ui2.js?v=12';
 
@@ -579,17 +579,21 @@ async function pageScience() {
 // ================================================================ ONBOARDING
 const PHQ = ['Little interest or pleasure in doing things', 'Feeling down, depressed, or hopeless', 'Trouble falling or staying asleep, or sleeping too much', 'Feeling tired or having little energy', 'Poor appetite or overeating', 'Feeling bad about yourself, or that you are a failure', 'Trouble concentrating on things', 'Moving or speaking slowly, or being fidgety or restless', 'Thoughts that you would be better off dead, or of hurting yourself'];
 const PHQO = ['Not at all', 'Several days', 'Over half the days', 'Nearly every day'];
-const EDU = ['Less than 9th grade', '9–11th grade', 'High school / GED', 'Some college / AA', 'College graduate+'];
+// Schooling and income are not asked: the brain-age number uses habits only (neurotrail/scoring.py), so the
+// profile keeps neutral defaults (educ 4, income 2.5) that nothing the user sees depends on.
 let OB = null, obStep = 0;
-function openOnboard() { OB = { age: 65, female: true, educ: 4, income_pir: 2.5, sbp: 130, diabetes: false, current_smoker: false, active_min_week: 90, sedentary_min_day: 420, sleep_hours: 7, phq: Array(9).fill(0) }; obStep = 0; openOv('onboard'); renderOb(); }
+function openOnboard(prefill) { OB = { age: 65, female: true, educ: 4, income_pir: 2.5, sbp: 130, diabetes: false, current_smoker: false, active_min_week: 90, sedentary_min_day: 420, sleep_hours: 7, phq: Array(9).fill(0) };
+  if (prefill) for (const k of Object.keys(OB)) if (prefill[k] != null) OB[k] = Array.isArray(prefill[k]) ? [...prefill[k]] : prefill[k];
+  obStep = 0; openOv('onboard'); renderOb(); }
+// "Update my answers" (side menu): same questions, pre-filled; each update is saved with its date and shows in Progress
+async function updateAnswers() { openOnboard(await api(`/api/player/${enc(ME.name)}/answers`)); }
 function stepper(k, min, max, step, unit = '') { return `<div class="toggle" style="align-items:center"><button class="chip" data-dec="${k}" data-st="${step}" data-min="${min}">−</button><b style="font:700 22px 'Space Grotesk';min-width:90px;text-align:center" id="ob_${k}">${OB[k]}${unit}</b><button class="chip" data-inc="${k}" data-st="${step}" data-max="${max}">+</button></div>`; }
 function renderOb() {
   const pages = [
     () => `<div class="eyebrow">VIBE CHECK · 1/5</div><h2>About you 👋</h2><p class="muted">30 secs. Stays on this device.</p>
       <div class="q-grid ob"><div><label>Age</label>${stepper('age', 18, 100, 1)}</div>
       <div><label>Sex</label><div class="toggle"><button class="chip ${OB.female ? 'on' : ''}" data-b="female" data-v="1">Female</button><button class="chip ${!OB.female ? 'on' : ''}" data-b="female" data-v="0">Male</button></div></div>
-      <div><label>School</label><select data-k="educ">${EDU.map((e, i) => `<option value="${i + 1}" ${OB.educ === i + 1 ? 'selected' : ''}>${e}</option>`).join('')}</select></div>
-      <div><label>Income vs poverty line: <b>${OB.income_pir}×</b></label><input type="range" min="0" max="5" step=".1" data-k="income_pir" value="${OB.income_pir}"></div></div>`,
+      </div>`,
     () => `<div class="eyebrow">VIBE CHECK · 2/5</div><h2>Heart stuff ❤️</h2>
       <div class="q-grid ob"><div><label>Blood pressure (top number)</label>${stepper('sbp', 80, 220, 2, ' mmHg')}</div><div></div>
       <div><label>Diabetes?</label><div class="toggle"><button class="chip ${OB.diabetes ? 'on' : ''}" data-b="diabetes" data-v="1">Yes</button><button class="chip ${!OB.diabetes ? 'on' : ''}" data-b="diabetes" data-v="0">No</button></div></div>
@@ -606,8 +610,7 @@ function renderOb() {
   $('#obBody').innerHTML = pages[obStep]();
   $('#obBack').style.visibility = obStep ? 'visible' : 'hidden'; $('#obNext').textContent = obStep === 4 ? 'Let\'s go 🚀' : 'Next →';
   $$('#obBody [data-k]').forEach(el => el.oninput = () => { OB[el.dataset.k] = +el.value; if (el.type === 'range') el.previousElementSibling.querySelector('b').textContent = el.value + (el.dataset.k === 'income_pir' ? '×' : el.dataset.k === 'sleep_hours' ? ' h' : ''); });
-  $$('#obBody [data-b]').forEach(el => el.onclick = () => { OB[el.dataset.b] = el.dataset.v === '1'; renderOb(); });
-  $$('#obBody [data-inc],[data-dec]').forEach(el => el.onclick = () => { const k = el.dataset.inc || el.dataset.dec, st = +el.dataset.st;
+  $$('#obBody [data-b]').forEach(el => el.onclick = () => { OB[el.dataset.b] = el.dataset.v === '1'; renderOb(); });  $$('#obBody [data-inc],[data-dec]').forEach(el => el.onclick = () => { const k = el.dataset.inc || el.dataset.dec, st = +el.dataset.st;
     OB[k] = el.dataset.inc ? Math.min(+el.dataset.max, OB[k] + st) : Math.max(+el.dataset.min, OB[k] - st); $('#ob_' + k).textContent = OB[k] + (k === 'sbp' ? ' mmHg' : ''); });
   $$('#obBody [data-phq]').forEach(el => el.onclick = () => { OB.phq[+el.dataset.phq] = +el.dataset.v; el.parentElement.querySelectorAll('.chip').forEach(c => c.classList.toggle('on', c === el)); });
   if (obStep === 4) (async () => {
@@ -677,7 +680,7 @@ async function boot() {
   if (location.protocol === 'file:') { document.body.insertAdjacentHTML('beforeend', '<div class="overlay open"><div class="modal"><h2>Open the app through its server</h2><p>Run <code>python3 web/server.py</code>, then open <b>http://localhost:8600</b>.</p></div></div>'); return; }
   try { QUESTS = await api('/api/quests'); } catch { toast('NeuroTrail server not reachable. Start it with: python3 web/server.py', 10000); return; }
   QMAP = Object.fromEntries(QUESTS.map(q => [q.id, q]));
-  window.NTX = { api, toast, chart, chartOpts, renderHUD, fmt, gameBrain, QMAP: () => QMAP, getME: () => ME, setME: (m) => { ME = m; } };
+  window.NTX = { api, toast, chart, chartOpts, renderHUD, fmt, gameBrain, QMAP: () => QMAP, getME: () => ME, setME: (m) => { ME = m; }, updateAnswers };
   // Show the page first; build the 3D brain (2 MB, a few seconds of work) afterwards. It used to block every page.
   frame(); await showWelcome();
   (window.requestIdleCallback || (f => setTimeout(f, 50)))(() => loadBrain().catch(() => { }));

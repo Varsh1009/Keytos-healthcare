@@ -213,7 +213,23 @@ def onboard(name: str, body: Onboard) -> dict:
     p.phq_item9 = int(body.phq[8])
     p.onboarded = True
     p.save()
+    db.add_answers(p.name, today(), {"sbp": p.sbp, "sleep_hours": p.sleep_hours, "active_min_week": p.active_min_week,
+                                     "sedentary_min_day": p.sedentary_min_day, "phq9": p.phq9,
+                                     "diabetes": p.diabetes, "current_smoker": p.current_smoker, "phq": body.phq})
     return snapshot(p)
+
+
+@app.get("/api/player/{name}/answers")
+def last_answers(name: str) -> dict:
+    """The questions as last answered, to pre-fill "Update my answers"."""
+    p = get(name)
+    hist = db.answers(p.name)
+    last = hist[-1] if hist else {}
+    return {"age": p.age, "female": p.female, "educ": p.educ, "income_pir": p.income_pir, "sbp": p.sbp,
+            "diabetes": p.diabetes, "current_smoker": p.current_smoker, "active_min_week": p.active_min_week,
+            "sedentary_min_day": p.sedentary_min_day, "sleep_hours": p.sleep_hours,
+            "phq": last.get("phq") or [min(3, max(0, p.phq9 - 3 * i)) if i < 8 else p.phq_item9 for i in range(9)],
+            "history": hist}
 
 
 class Step(BaseModel):

@@ -72,3 +72,32 @@ def test_voice_check_game_feeds_speech_area(tmp_path):
         assert [i["id"] for i in o["today"]["items"]].count("voice") == 1          # one chip, not two
     finally:
         db.set_path(old)
+
+
+def test_signup_answers_show_in_progress_and_can_be_updated(tmp_path):
+    """Blood pressure, sleep and mood answered at sign-up must appear in Progress, and update later."""
+    from neurotrail import db
+    old = db.DB_PATH
+    db.set_path(tmp_path / "t.db")
+    try:
+        from fastapi.testclient import TestClient
+        import web.server as srv
+        c = TestClient(srv.app)
+        c.post("/api/players", json={"name": "Auntie"})
+        body = {"age": 65, "female": True, "educ": 4, "income_pir": 2.5, "sbp": 142, "diabetes": False,
+                "current_smoker": False, "active_min_week": 60, "sedentary_min_day": 480, "sleep_hours": 6,
+                "phq": [1, 1, 0, 1, 0, 0, 0, 0, 0]}
+        assert c.post("/api/player/Auntie/onboard", json=body).status_code == 200
+        o = c.get("/api/player/Auntie/overview").json()
+        v = {x["id"]: x for x in o["variables"]}
+        assert v["bp"]["latest"] == 142 and v["bp"]["source"] == "your answers"
+        assert v["mood_phq9"]["latest"] == 3
+        assert v["sleep_hours"]["latest"] == 6
+        a = c.get("/api/player/Auntie/answers").json()
+        assert a["sbp"] == 142 and a["phq"] == body["phq"]
+        body["sbp"] = 128
+        c.post("/api/player/Auntie/onboard", json=body)                  # update same day: latest wins
+        o = c.get("/api/player/Auntie/overview").json()
+        assert {x["id"]: x for x in o["variables"]}["bp"]["latest"] == 128
+    finally:
+        db.set_path(old)

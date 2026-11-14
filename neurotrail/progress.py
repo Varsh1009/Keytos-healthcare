@@ -257,6 +257,14 @@ def build(p) -> dict:
         for l in logs:
             if l["quest"] == q and l.get("value") is not None and l["date"] not in series[f]:
                 series[f][l["date"]] = float(l["value"])
+    # sign-up / "update my answers": the person's own answers are real data points too (watch and check-ins win a day)
+    answers = db.answers(p.name)
+    if not answers and p.onboarded:              # answered before answer history existed: use the saved profile once
+        created = (db.get_player(p.name) or {}).get("created_at", "")[:10] or date.today().isoformat()
+        answers = [{"date": created, "sbp": p.sbp, "sleep_hours": p.sleep_hours, "phq9": p.phq9}]
+    for a in answers:
+        if a.get("sleep_hours") is not None and a["date"] not in series["sleep_hours"]:
+            series["sleep_hours"][a["date"]] = float(a["sleep_hours"])
     series["sleep_sd"] = dict(_rolling_sleep_sd({d: {"sleep_hours": v} for d, v in series["sleep_hours"].items()}))
     for f, (group, better, floor, note) in WATCH_VARS.items():
         pts = list(series.get(f, {}).items())
@@ -283,9 +291,18 @@ def build(p) -> dict:
         vars_.append(v)
 
     bp = [(l["date"], float(l["value"])) for l in logs if l["quest"] == "bp" and l.get("value") is not None]
+    n_checkin = len(bp)
+    bp += [(a["date"], float(a["sbp"])) for a in answers if a.get("sbp") is not None and a["date"] not in {d for d, _ in bp}]
     if bp:
-        vars_.append(_var("bp", "sleep_heart", "Blood pressure (top number)", "mmHg", "check-ins", bp, "lower", 3,
-                          "game", note="SPRINT MIND: aiming for 120 lowered mild memory problems by 19%.", word="reading"))
+        vars_.append(_var("bp", "sleep_heart", "Blood pressure (top number)", "mmHg",
+                          "check-ins" if n_checkin == len(bp) else "your answers" if not n_checkin else "answers + check-ins",
+                          bp, "lower", 3, "game", note="SPRINT MIND: aiming for 120 lowered mild memory problems by 19%.",
+                          word="reading", link="#/levers"))
+    mood = [(a["date"], float(a["phq9"])) for a in answers if a.get("phq9") is not None]
+    if mood:
+        vars_.append(_var("mood_phq9", "sleep_heart", "Mood check (PHQ-9, lower is better)", "points", "your answers", mood,
+                          "lower", 5, "game", word="check",
+                          note="PHQ-9 is the standard 9-question mood check; a change of 5 points is meaningful."))
 
     # ---------------- games (every game; scores only compared within the same mode and level)
     for g in gym.GAMES:
