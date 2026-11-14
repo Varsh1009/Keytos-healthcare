@@ -352,71 +352,81 @@ function feedHTML(U) {
   }
   return `<div class="glass pfeed"><b>Latest updates</b><div class="muted">Everything you've done, newest first</div>${rows}</div>`;
 }
-const TODAY_LOOK = { better: ['⬆️', '#3DDC97', 'Above your usual'], usual: ['➡️', '#59F0FF', 'About your usual'], lower: ['⬇️', '#FFB86B', 'Below your usual'], first: ['🌱', '#C9A7FF', 'Starting point'] };
-function todayHTML(T) {
-  if (!T) return '';
-  const cards = T.items.map(i => { const [e, c, w] = TODAY_LOOK[i.verdict] || TODAY_LOOK.usual;
-    const lvl = i.levels_cleared?.length ? `<span class="tpill">🏅 cleared level ${i.levels_cleared.join(', ')}</span>` : i.level ? `<span class="tpill">level ${i.level}</span>` : '';
-    const bar = i.usual != null && i.today_value != null ? (() => { const mx = Math.max(i.usual, i.today_value) * 1.15 || 1;
-      return `<div class="tbars"><div><small>your usual</small><i style="width:${i.usual / mx * 100}%"></i><b>${i.usual.toFixed(1)}</b></div><div class="now"><small>today</small><i style="width:${i.today_value / mx * 100}%;background:${c}"></i><b>${i.today_value.toFixed(1)}</b></div></div>`; })() : '';
-    return `<a class="tcard glass" href="${i.link}" style="--c:${c}"><div class="thead"><span class="ticon">${i.icon}</span><div><b>${esc(i.title)}</b><small>${esc(i.domain || '')} · ${i.plays} play${i.plays > 1 ? 's' : ''} today</small></div><span class="tverd">${e} ${w}</span></div>
-      ${lvl}${bar}<p>${esc(i.text)}</p></a>`; }).join('');
-  return `<section class="ptoday"><div class="pt-head"><div><div class="eyebrow">TODAY · ${T.date}</div><h2>${esc(T.headline)}</h2>
-      ${T.areas.length ? `<p class="muted">Today counted toward: ${T.areas.map(esc).join(' · ')}</p>` : ''}</div><a class="cta" href="#/gym" style="text-decoration:none">🎮 Play a game</a></div>
-    ${cards ? `<div class="tgrid">${cards}</div>` : `<p class="muted">Play any game, even one level, and it shows up here straight away with how it compares with your usual.</p>`}
-    <p class="muted tnote">"Your usual" = the middle of your earlier plays of the same game (your very first practice play is skipped). Games are scored by level, so moving up a level counts as progress.</p></section>`;
+// ---------------- Progress v2: visual, few words. Today row → 6 area rings → trend → recent.
+const ST = { better: ['⬆', '#3DDC97', 'Better'], steady: ['➡', '#59F0FF', 'Steady'], lower: ['⬇', '#FFB86B', 'Lower'],
+  building: ['🌱', '#C9A7FF', 'Building'], add: ['＋', '#6B7299', 'Add'] };
+const TV = { better: 'better', usual: 'steady', lower: 'lower', first: 'building' };
+const AREA_LINK = { thinking: '#/gym', movement: '#/data', sleep_heart: '#/data', speech_hands: '#/hands', hearing: '#/data', brain_scan: '#/mri' };
+const VAR_ST = { improving: 'better', steady: 'steady', slipping: 'lower', building: 'building', snapshot: 'building', activity: 'building', stale: 'steady' };
+function areaState(vs) {
+  const has = vs.filter(v => v.n || v.points?.length);
+  if (!has.length) return 'add';
+  const c = s => has.filter(v => v.status === s).length, up = c('improving'), dn = c('slipping');
+  return up > dn ? 'better' : dn > up ? 'lower' : up || c('steady') ? 'steady' : 'building';
+}
+function sparkSVG(pts, better) {
+  const v = (pts || []).map(p => p.value);
+  if (v.length < 2) return '<span class="pv-spark"></span>';
+  const mn = Math.min(...v), mx = Math.max(...v), r = mx - mn || 1, up = better === 'lower' ? v.at(-1) <= v[0] : v.at(-1) >= v[0];
+  const d = v.map((x, i) => `${i ? 'L' : 'M'}${(i / (v.length - 1) * 100).toFixed(1)},${(22 - (x - mn) / r * 20).toFixed(1)}`).join('');
+  return `<svg viewBox="0 0 100 24" preserveAspectRatio="none" class="pv-spark"><path d="${d}" stroke="${up ? '#3DDC97' : '#FFB86B'}"/></svg>`;
+}
+function ringSVG(state, icon, frac) {
+  const [, col] = ST[state], C = 2 * Math.PI * 30;
+  return `<svg viewBox="0 0 72 72" class="pv-ring"><circle cx="36" cy="36" r="30" class="bg"/><circle cx="36" cy="36" r="30" class="fg" stroke="${col}" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - frac)}"/>
+    <text x="36" y="44" text-anchor="middle">${icon}</text></svg>`;
 }
 async function pageProgress() {
-  const O = await api(`/api/player/${enc(ME.name)}/overview`), C = O.combined;
-  const missing = O.coverage.filter(c => !c.ok);
-  const change = c => c.from != null && c.to != null && c.unit ? ` <span class="muted">(${pfmt(c.from, c.unit)} → ${pfmt(c.to, c.unit)}${c.unit === 'share' ? '' : ' ' + esc(c.unit)})</span>` : '';
-  let body;
-  if (C.overall == null) {
-    body = `<div class="glass pverdict"><div class="pv-emoji">🌱</div><div><h2>We're still learning your starting point</h2>
-      <p>Play any game 3 times, or add about a month of watch data, and this page draws one line showing how you're doing compared with when you started. Everything you do already shows in <b>Latest updates</b> below.</p>
-      ${C.collecting.length ? `<p class="muted">Collecting now: ${C.collecting.slice(0, 6).map(esc).join(', ')}${C.collecting.length > 6 ? '…' : ''}</p>` : ''}</div></div>`;
-  } else {
-    const [emo, col] = PWORD[C.word];
-    body = `<div class="glass pverdict" style="--c:${col}"><div class="pv-emoji">${emo}</div><div>
-        <h2>Overall, you're doing <span style="color:${col}">${C.word}</span>${C.word === 'about the same' ? ' as' : ' than'} when you started</h2>
-        <p class="muted">Based on ${C.n_measures} things we track from ${esc(C.sources)}.</p></div></div>
-      <div class="glass pchart"><div class="pc-head"><b>Your progress over time</b><label class="pc-tog"><input type="checkbox" id="pAreas"> show each area</label></div>
-        <div class="pc-box"><canvas id="pLine"></canvas></div></div>
-      <div class="pareas">${C.areas.map(a => { const [e, c] = PWORD[a.word] || ['⏳', '#9AA3C7']; return `<div class="parea glass" style="--c:${c}"><span>${AREA_ICON[a.id]}</span><b>${a.name}</b><em>${e} ${a.hint ? esc(a.hint) + ' to compare' : a.word}</em></div>`; }).join('')}</div>
-      ${C.gains.length || C.drops.length ? `<div class="glass pchanges"><b>What changed most</b>
-        ${C.gains.map(c => `<p>⬆️ <b>${esc(c.label)}</b> is better than when you started${change(c)}</p>`).join('')}
-        ${C.drops.map(c => `<p>⬇️ <b>${esc(c.label)}</b> is lower than when you started${change(c)}</p>`).join('')}</div>` : ''}`;
-  }
-  $('#p-progress').innerHTML = `<div class="scrollpage"><div class="wrap pwrap">
-    <div class="h1">Your progress</div>
-    <div class="sub">Everything you do in NeuroTrail, put together and compared with <b>your own</b> starting point.</div>
-    ${todayHTML(O.today)}
-    ${body}
-    ${(() => { const T = O.totals, k = [[T.plays, 'game plays', '🧩'], [T.games_tried, 'games tried', '🎮'], [T.levels, 'levels cleared', '🏅'], [T.watch_days, 'days of watch data', '⌚'], [T.voice + T.hands, 'voice & hand checks', '🎙️'], [T.scans, 'scans & recordings', '🧠'], [T.checkins, 'check-ins', '✅']].filter(x => x[0]);
-      return k.length ? `<div class="ptotals">${k.map(([n, l, i]) => `<div><b>${i} ${n}</b><span>${l}</span></div>`).join('')}</div>` : ''; })()}
-    ${feedHTML(O.updates)}
-    ${O.sample_watch ? `<p class="caveat">⌚ Your watch data here is <b>made-up sample data</b>. Remove it on <a href="#/data">My data</a> when you add your own.</p>` : ''}
-    ${missing.length ? `<p class="padd">Add more for a fuller picture: ${missing.map(c => `<a href="${c.link}">${c.icon} ${c.label}</a>`).join(' · ')}</p>` : ''}
-    <details class="phow"><summary>How is this worked out?</summary><ul>
-      <li>Each thing we track (steps, sleep, each game, voice, hands, hearing, MRI) is compared with <b>your own</b> first weeks or first plays, never with other people.</li>
-      <li>Your normal ups and downs are taken into account, so one good or bad day doesn't swing the line.</li>
-      <li>Each area counts equally, so having many games doesn't outweigh your watch.</li>
-      <li>The first plays of each game are skipped: everyone gets better at first just from learning the game.</li>
-      <li>Game levels are never mixed, so moving to a harder level doesn't look like getting worse.</li>
-      <li>This shows change, not a diagnosis. Talk to a doctor about any health worry.</li></ul></details>
+  const O = await api(`/api/player/${enc(ME.name)}/overview`), C = O.combined, T = O.today || { items: [] };
+  const todayAreas = new Set(T.items.map(i => i.id.startsWith('voice') || i.id === 'hands' ? 'speech_hands' : 'thinking'));
+  const areas = O.groups.map(g => { const vs = O.variables.filter(v => v.group === g.id), st = areaState(vs);
+    return { ...g, vs, st, frac: st === 'add' ? 0 : st === 'building' ? 0.35 : 1, today: todayAreas.has(g.id) }; });
+  const chips = T.items.map(i => { const [a, c] = ST[TV[i.verdict]] || ST.steady;
+    return `<a class="t2chip" href="${i.link}" style="--c:${c}" title="${esc(i.title)}: ${esc(i.text)}"><span class="ic">${i.icon}</span><b>${a}</b><small>${esc(i.title.replace(/ \(.*\)/, ''))}</small></a>`; }).join('');
+  const days = [...Array(14)].map((_, k) => new Date(Date.now() - (13 - k) * 864e5).toISOString().slice(0, 10));
+  const per = Object.fromEntries(days.map(d => [d, 0]));
+  O.updates.forEach(u => { const d = u.ts.slice(0, 10); if (d in per) per[d]++; });
+  const top = Math.max(1, ...Object.values(per));
+  const trend = C.overall != null
+    ? `<div class="glass pv-card"><div class="pv-h"><b>Overall</b><span class="pv-pill" style="--c:${(PWORD[C.word] || [0, '#59F0FF'])[1]}">${(PWORD[C.word] || ['➡'])[0]} ${esc(C.word)}</span>
+        <label class="pc-tog"><input type="checkbox" id="pAreas"> areas</label></div><div class="pc-box"><canvas id="pLine"></canvas></div></div>`
+    : `<div class="glass pv-card"><div class="pv-h"><b>Last 14 days</b></div>
+        <div class="pv-bars">${days.map(d => `<div title="${d}: ${per[d]}"><i style="height:${Math.max(per[d] ? 8 : 2, per[d] / top * 100)}%"></i><small>${d.slice(8)}</small></div>`).join('')}</div></div>`;
+  const recent = O.updates.slice(0, 5).map(u => `<div class="pv-row"><span>${u.icon}</span><p>${esc(u.text)}${u.tags.slice(0, 1).map(t => ` <em>${esc(t)}</em>`).join('')}</p><small>${u.ts.slice(11, 16)}</small></div>`).join('');
+  $('#p-progress').innerHTML = `<div class="scrollpage"><div class="wrap pv2">
+    <div class="pv-top"><div class="h1">Your progress</div><button class="chip" id="pvInfo" title="How it works">ⓘ</button></div>
+    <div class="pv-info glass" id="pvInfoBox" hidden>Compared with <b>your own</b> start. ⬆ better · ➡ steady · ⬇ lower · 🌱 building. Not a diagnosis.</div>
+    <div class="glass t2"><span class="t2-l">TODAY</span>${chips}<a class="t2chip t2add" href="#/gym"><span class="ic">＋</span><small>Play</small></a></div>
+    <div class="pv-areas">${areas.map(a => { const [ar, col, w] = ST[a.st];
+      return `<button class="pv-area glass" data-a="${a.id}" style="--c:${col}">${a.today ? '<i class="pv-dot" title="played today"></i>' : ''}${ringSVG(a.st, AREA_ICON[a.id], a.frac)}
+        <b>${esc(a.title.replace(/^\S+\s/, ''))}</b><span>${ar} ${w}</span></button>`; }).join('')}</div>
+    <div id="pvDetail"></div>
+    ${trend}
+    ${recent ? `<div class="glass pv-card"><div class="pv-h"><b>Recent</b></div>${recent}</div>` : ''}
   </div></div>`;
+  $('#pvInfo').onclick = () => { $('#pvInfoBox').hidden = !$('#pvInfoBox').hidden; };
+  $$('#p-progress [data-a]').forEach(b => b.onclick = () => {
+    const a = areas.find(x => x.id === b.dataset.a), open = b.classList.contains('on');
+    $$('#p-progress [data-a]').forEach(x => x.classList.remove('on'));
+    if (open) { $('#pvDetail').innerHTML = ''; return; }
+    b.classList.add('on');
+    const rows = a.vs.filter(v => v.n || v.points?.length).map(v => { const [ar, col] = ST[VAR_ST[v.status] || 'building'];
+      const val = v.latest != null ? `${Math.round(v.latest * 100) / 100}${v.unit && v.unit !== 'level' ? ' ' + esc(v.unit) : ''}` : '';
+      return `<a class="pv-var" href="${v.link || AREA_LINK[a.id]}"><span>${v.icon || AREA_ICON[a.id]}</span><b>${esc(v.label)}</b>${sparkSVG(v.points, v.better)}<em>${val}</em><i style="color:${col}">${ar}</i></a>`; }).join('');
+    $('#pvDetail').innerHTML = `<div class="glass pv-card">${rows || `<a class="cta" href="${AREA_LINK[a.id]}" style="text-decoration:none;display:inline-block">＋ Add</a>`}</div>`;
+  });
   if (C.overall == null) return;
   const W = C.weeks.filter(w => w.overall != null), lab = W.map(w => new Date(w.week + 'T12:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }));
   const m = Math.max(1, ...W.map(w => Math.abs(w.overall)), ...W.flatMap(w => Object.values(w.areas).map(Math.abs))) * 1.15;
   const AREA_COL = { movement: '#3DDC97', sleep_heart: '#9B7BFF', thinking: '#FFC83D', speech_hands: '#FF7AC8', hearing: '#59F0FF', brain_scan: '#FF9F43' };
   const draw = showAreas => chart('pLine', { type: 'line', data: { labels: lab, datasets: [
-      { label: 'Overall', data: W.map(w => w.overall), borderColor: '#EEF1FF', backgroundColor: 'rgba(89,240,255,.12)', fill: { target: { value: 0 }, above: 'rgba(61,220,151,.18)', below: 'rgba(255,159,67,.18)' }, borderWidth: 4, tension: .35, pointRadius: W.length > 20 ? 0 : 3 },
+      { label: 'Overall', data: W.map(w => w.overall), borderColor: '#EEF1FF', backgroundColor: 'rgba(89,240,255,.12)', fill: { target: { value: 0 }, above: 'rgba(61,220,151,.15)', below: 'rgba(255,184,107,.15)' }, tension: .35, borderWidth: 3, pointRadius: 3 },
       { label: 'Your start', data: W.map(() => 0), borderColor: 'rgba(255,255,255,.35)', borderDash: [6, 6], pointRadius: 0, borderWidth: 1.5 },
       ...(showAreas ? C.areas.map(a => ({ label: a.name, data: W.map(w => w.areas[a.id] ?? null), borderColor: AREA_COL[a.id], borderWidth: 1.5, tension: .35, pointRadius: 0, spanGaps: true })) : [])] },
-    options: chartOpts({ plugins: { legend: { display: showAreas, labels: { color: '#C9D0EE', boxWidth: 12 } }, tooltip: { callbacks: { label: c => c.dataset.label === 'Your start' ? 'Your start' : `${c.dataset.label}: ${c.parsed.y >= 0.15 ? 'better' : c.parsed.y <= -0.15 ? 'lower' : 'about the same'}` } } },
+    options: chartOpts({ plugins: { legend: { display: showAreas, labels: { color: '#C9D0EE', boxWidth: 12 } } },
       scales: { x: { ticks: { color: '#9AA3C7', maxRotation: 0, autoSkip: true }, grid: { display: false } },
-        y: { min: -m, max: m, grid: { color: c => c.tick.value === 0 ? 'rgba(255,255,255,.15)' : 'transparent' }, afterBuildTicks: ax => { ax.ticks = [{ value: -m * .8 }, { value: 0 }, { value: m * .8 }]; },
-          ticks: { color: '#C9D0EE', font: { weight: 600 }, callback: v => v > 0 ? 'Better ↑' : v < 0 ? 'Worse ↓' : 'Your start' } } } }) });
+        y: { min: -m, max: m, grid: { color: c => c.tick.value === 0 ? 'rgba(255,255,255,.15)' : 'transparent' },
+          ticks: { color: '#C9D0EE', callback: v => v > 0 ? '↑' : v < 0 ? '↓' : 'start' } } } }) });
   draw(false); $('#pAreas').onchange = e => draw(e.target.checked);
 }
 
