@@ -1,4 +1,4 @@
-// ✋ Hand check: hold still (tremor), fists, finger taps: 10 seconds each.
+// Hand check: hold still (tremor), fists, finger taps: 10 seconds each.
 // The browser tracks 21 points on the hand (MediaPipe Hand Landmarker, on this device) and sends only
 // those points to the server, which does the analysis (neurotrail/handcheck.py). Video never leaves the device.
 const X = () => window.NTX;
@@ -6,6 +6,7 @@ const $ = (s, r = document) => r.querySelector(s);
 const me = () => X().getME();
 const enc = encodeURIComponent;
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+import { icon } from './icons.js?v=1';   // shared line icons (no emoji)
 
 // Model files are served by our own server (cached on disk, see web/server.py /mp/); the CDN is the fallback.
 const SRC = [{ base: '/mp', model: '/mp/hand_landmarker.task' },
@@ -14,9 +15,9 @@ const SECS = 10;
 // Same lines the server uses (3D, palm lengths), for live coaching only. The server's analysis is what's saved.
 const LINES = { fist: { closed: 1.3, open: 1.5 }, tap: { closed: 0.4, open: 0.6 } };
 const STEPS = [
-  { id: 'steady', label: 'Hold still', say: 'Hold your hand up, fingers spread. Keep it still.', a: '🖐', b: '🖐', still: true },
-  { id: 'fist', label: 'Make fists', say: 'Tight fist, then wide open. Fast!', a: '🖐', b: '✊' },
-  { id: 'tap', label: 'Tap fingers', say: 'Tap index finger on thumb. Fast and wide!', a: '🖐', b: '👌' },
+  { id: 'steady', label: 'Hold still', say: 'Hold your hand up, fingers spread. Keep it still.', a: 'hand', b: 'hand', still: true },
+  { id: 'fist', label: 'Make fists', say: 'Tight fist, then wide open. Fast!', a: 'hand', b: 'fist' },
+  { id: 'tap', label: 'Tap fingers', say: 'Tap index finger on thumb. Fast and wide!', a: 'hand', b: 'tap' },
 ];
 const BONES = [[0, 1], [1, 2], [2, 3], [3, 4], [0, 5], [5, 6], [6, 7], [7, 8], [5, 9], [9, 10], [10, 11], [11, 12], [9, 13], [13, 14], [14, 15], [15, 16], [13, 17], [17, 18], [18, 19], [19, 20], [0, 17]];
 
@@ -59,7 +60,8 @@ function beep(freq = 880, ms = 90, vol = 0.07) {
     o.start(); g.gain.exponentialRampToValueAtTime(0.0001, AUDIO.currentTime + ms / 1000); o.stop(AUDIO.currentTime + ms / 1000);
   } catch { }
 }
-const demo = s => `<span class="hx-demo${s.still ? ' still' : ''}"><i>${s.a}</i><i>${s.b}</i></span>`;
+const fill = n => icon(n).replace('<svg ', '<svg style="width:100%;height:100%;vertical-align:top" ');   // icon sized to its box
+const demo = s => `<span class="hx-demo${s.still ? ' still' : ''}"><i>${fill(s.a)}</i><i>${fill(s.b)}</i></span>`;
 // rows carry a local date (YYYY-MM-DD)
 const ago = date => { const [y, m, d] = String(date).split('-').map(Number), t = new Date(), days = Math.round((new Date(t.getFullYear(), t.getMonth(), t.getDate()) - new Date(y, m - 1, d)) / 864e5);
   return !(days >= 0) ? String(date) : days === 0 ? 'today' : days === 1 ? 'yesterday' : `${days} days ago`; };
@@ -71,11 +73,11 @@ export async function pageHands() {
   const P = $('#p-hands');
   P.innerHTML = `<div class="scrollpage"><div class="wrap hx">
     <a href="#/gym" class="ghost" style="text-decoration:none;display:inline-block;margin-bottom:10px">← Back to Games</a>
-    <h1 class="hx-title">✋ Hand check</h1>
+    <h1 class="hx-title">Hand check</h1>
     <p class="hx-lead">3 moves · 10 seconds each</p>
     <div class="hx-moves">${STEPS.map((s, i) => `<div class="hx-move">${demo(s)}<b>${i + 1}. ${s.label}</b></div>`).join('')}</div>
     <div class="hx-go"><button class="cta big" data-hand="right">Start · right hand</button><button class="ghost" data-hand="left">Left hand</button></div>
-    <p class="hx-lock">🔒 Your video stays on this device</p>
+    <p class="hx-lock">${icon('lock')} Your video stays on this device</p>
     <div id="hxLast"></div>
     <details class="hx-more"><summary>Why these 3 moves?</summary>
       <p>They're the hand checks in the standard movement exam neurologists use (MDS-UPDRS). Shaking, slowing and movements
@@ -97,7 +99,7 @@ export async function pageHands() {
 function historyTable(h) {
   return `<table class="hc-table"><tr><th>When</th><th>Hand</th><th>Shaking</th><th>Fists</th><th>Taps</th></tr>${h.slice(-10).reverse().map(r => {
     const st = r.results.steady, fs = r.results.fist, tp = r.results.tap;
-    return `<tr><td>${ago(r.date)}</td><td>${esc(r.hand)}</td><td>${st ? (st.tremor ? `⚠ ${st.frequency_hz} Hz` : '✓ none') : '–'}</td>
+    return `<tr><td>${ago(r.date)}</td><td>${esc(r.hand)}</td><td>${st ? (st.tremor ? `${icon('alert')} ${st.frequency_hz} Hz` : `${icon('check')} none`) : '–'}</td>
       <td>${fs ? `${fs.complete}/${fs.count} full` : '–'}</td><td>${tp ? `${tp.rate_hz}/s` : '–'}</td></tr>`; }).join('')}</table>`;
 }
 
@@ -108,9 +110,9 @@ async function runCheck(hand) {
   beep(1, 1, 0.0001);                                // unlock audio inside the click
   const P = $('#p-hands');
   P.innerHTML = `<div class="scrollpage"><div class="wrap hx"><div class="hx-run">
-    <div class="hx-steps">${STEPS.map((s, i) => `<span data-step="${i}">${s.b} ${s.label}</span>`).join('')}</div>
+    <div class="hx-steps">${STEPS.map((s, i) => `<span data-step="${i}">${icon(s.b)} ${s.label}</span>`).join('')}</div>
     <div class="mv-stage hx-stage"><video playsinline muted></video><canvas></canvas>
-      <button class="hx-x" id="hxStop" aria-label="Stop">✕</button>
+      <button class="hx-x" id="hxStop" aria-label="Stop">${icon('x')}</button>
       <div class="hx-count" id="hxCount"></div><div class="hx-time" id="hxTime"></div>
       <div class="hx-card" id="hxCard"><div class="spinner"></div><b>Starting camera…</b></div>
       <div class="hx-coach" id="hxCoach"></div>
@@ -127,7 +129,7 @@ async function runCheck(hand) {
   } catch (e) {
     stream?.getTracks().forEach(t => t.stop());
     const denied = e?.name === 'NotAllowedError' || e?.name === 'SecurityError';
-    ui.card.innerHTML = `<b>${denied ? '📷 Camera blocked' : '📷 Camera didn\'t start'}</b><span>${denied ? 'Click the camera icon in the address bar, allow it, then try again.' : 'Check your camera is connected.'}</span><button class="cta" id="hxRetry">Try again</button>`;
+    ui.card.innerHTML = `<b>${icon('camera')} ${denied ? 'Camera blocked' : 'Camera didn\'t start'}</b><span>${denied ? 'Click the camera icon in the address bar, allow it, then try again.' : 'Check your camera is connected.'}</span><button class="cta" id="hxRetry">Try again</button>`;
     $('#hxRetry').onclick = () => runCheck(hand);
     return;
   }
@@ -145,7 +147,7 @@ async function runCheck(hand) {
   const showStep = () => {
     const S = STEPS[k];
     P.querySelectorAll('[data-step]').forEach(s => s.className = +s.dataset.step < k ? 'done' : +s.dataset.step === k ? 'on' : '');
-    ui.card.innerHTML = `${demo(S)}<b>${S.label}</b><span>${S.say}</span><div class="hx-ring" id="hxRing">✋</div>`;
+    ui.card.innerHTML = `${demo(S)}<b>${S.label}</b><span>${S.say}</span><div class="hx-ring" id="hxRing">${icon('hand')}</div>`;
     ui.card.hidden = false; set(ui.count, ''); set(ui.time, ''); ui.coach.className = 'hx-coach'; ui.bar.style.width = '0%';
     phase = 'show'; since = null;
   };
@@ -187,7 +189,7 @@ async function runCheck(hand) {
           phase = 'rec'; t0 = wall; rec[S.id] = { t: [], lm: [], wl: [] }; coach = coachFor(S.id);
           ui.card.hidden = true; beep(1200, 150);
         }
-      } else { since = null; ui._c = null; if (ring) { ring.textContent = `Show your ${hand} hand ✋`; ring.className = 'hx-ring'; } }
+      } else { since = null; ui._c = null; if (ring) { ring.textContent = `Show your ${hand} hand`; ring.className = 'hx-ring'; } }
     } else if (phase === 'rec') {
       const R = rec[S.id];
       R.t.push(Math.round(t * 10) / 10);
@@ -195,7 +197,7 @@ async function runCheck(hand) {
       R.wl.push(pts && w3 ? w3.map(p => [+p.x.toFixed(4), +p.y.toFixed(4), +p.z.toFixed(4)]) : null);
       const left = Math.max(0, SECS * 1000 - (wall - t0));
       if (pts && w3) { const ev = coach.push(w3); if (ev) { say(ev.text, ev.cls); if (ev.cls === 'good') beep(1050, 40, 0.05); } }
-      else if (!pts) say('Show your hand ✋', 'warn');
+      else if (!pts) say('Show your hand', 'warn');
       if (S.id === 'steady' && pts && !coachAt) { ui.coach.className = 'hx-coach show'; ui.coach.innerHTML = 'Hold still…'; }
       set(ui.count, S.id === 'steady' ? '' : `${coach.n}<small>${S.id === 'fist' ? 'fists' : 'taps'}</small>`);
       set(ui.time, `${Math.ceil(left / 1000)}`);
@@ -223,12 +225,12 @@ function coachFor(id) {
       const v = id === 'fist' ? [8, 12, 16, 20].reduce((s, i) => s + d(w[i], w[0]), 0) / 4 / palm : d(w[4], w[8]) / palm;
       if (state === 'open') {
         lo = Math.min(lo, v);
-        if (v <= L.closed) { state = 'closed'; hi = v; n++; return { text: '✓', cls: 'good' }; }
-        if (lo < L.open - 0.15 && v > lo + 0.2) { lo = v; return { text: id === 'fist' ? 'Close tighter ✊' : 'Touch your thumb 👌', cls: 'warn' }; }
+        if (v <= L.closed) { state = 'closed'; hi = v; n++; return { text: icon('check'), cls: 'good' }; }
+        if (lo < L.open - 0.15 && v > lo + 0.2) { lo = v; return { text: id === 'fist' ? 'Close tighter' : 'Touch your thumb', cls: 'warn' }; }
       } else {
         hi = Math.max(hi, v);
         if (v >= L.open) { state = 'open'; lo = v; return null; }
-        if (hi > L.closed + 0.1 && v < hi - 0.2) { hi = v; return { text: 'Open wider 🖐', cls: 'warn' }; }
+        if (hi > L.closed + 0.1 && v < hi - 0.2) { hi = v; return { text: 'Open wider', cls: 'warn' }; }
       }
       return null;
     },
@@ -263,19 +265,19 @@ async function analyze(hand, aspect, tasks) {
   const good = x => x && x.count >= 3 && x.complete >= 0.7 * x.count && (x.decrement_pct ?? 0) < 30 && (x.hesitations ?? 0) < 3;
   const note = x => !x ? 'not measured' : x.count < 3 ? 'too few seen' : x.complete < 0.7 * x.count ? `${x.count - x.complete} not full` :
     (x.decrement_pct ?? 0) >= 30 ? `got ${Math.round(x.decrement_pct)}% smaller` : (x.hesitations ?? 0) >= 3 ? `${x.hesitations} pauses` : 'all full, steady';
-  const tile = (icon, label, big, sub, ok) => `<div class="hx-tile ${ok ? 'ok' : 'watch'}"><div class="hx-ti">${icon}</div><span>${label}</span><b>${big}</b><em>${ok ? '✓' : '⚠'} ${sub}</em></div>`;
+  const tile = (ic, label, big, sub, ok) => `<div class="hx-tile ${ok ? 'ok' : 'watch'}"><div class="hx-ti">${icon(ic)}</div><span>${label}</span><b>${big}</b><em>${icon(ok ? 'check' : 'alert')} ${sub}</em></div>`;
   P.innerHTML = `<div class="scrollpage"><div class="wrap hx">
-    <div class="hx-verdict ${watch.length ? 'watch' : 'ok'}"><span>${watch.length ? '⚠' : '✓'}</span><div><b>${watch.length ? 'Worth a second look' : 'All good'}</b><small>${hand} hand${r.sparks_gained ? ` · +${r.sparks_gained} ⚡` : ''}</small></div></div>
+    <div class="hx-verdict ${watch.length ? 'watch' : 'ok'}"><span>${icon(watch.length ? 'alert' : 'check')}</span><div><b>${watch.length ? 'Worth a second look' : 'All good'}</b><small>${hand} hand${r.sparks_gained ? ` · +${r.sparks_gained} sparks` : ''}</small></div></div>
     <div class="hx-tiles">
-      ${tile('🖐', 'Shaking', st ? (st.tremor ? `${st.frequency_hz}<small> Hz</small>` : 'None') : '–', st ? (st.tremor ? `about ${Math.round(st.amplitude_mm)} mm` : 'steady hand') : 'not measured', st && !st.tremor)}
-      ${tile('✊', 'Fists', fs ? fs.count : '–', note(fs), good(fs))}
-      ${tile('👌', 'Taps', tp ? `${tp.rate_hz}<small>/s</small>` : '–', note(tp), good(tp))}
+      ${tile('hand', 'Shaking', st ? (st.tremor ? `${st.frequency_hz}<small> Hz</small>` : 'None') : '–', st ? (st.tremor ? `about ${Math.round(st.amplitude_mm)} mm` : 'steady hand') : 'not measured', st && !st.tremor)}
+      ${tile('fist', 'Fists', fs ? fs.count : '–', note(fs), good(fs))}
+      ${tile('tap', 'Taps', tp ? `${tp.rate_hz}<small>/s</small>` : '–', note(tp), good(tp))}
     </div>
     ${watch.length ? `<ul class="hx-flags">${watch.map(f => `<li>${esc(f.text)}</li>`).join('')}</ul>` : ''}
-    ${r.flags.filter(f => f.level === 'info').map(f => `<p class="hx-info">ℹ️ ${esc(f.text)}</p>`).join('')}
+    ${r.flags.filter(f => f.level === 'info').map(f => `<p class="hx-info">${icon('info')} ${esc(f.text)}</p>`).join('')}
     ${compare(r, hand)}
-    <div class="hx-go"><button class="cta big" id="hxOther">Now your ${other} hand ▶</button><button class="ghost" id="hxAgain">Redo</button></div>
-    <p class="hx-note">${watch.length ? 'Not a diagnosis. If ⚠ shows up again on another day, show your doctor.' : 'Not a diagnosis. Check both hands now and then to spot changes.'}</p>
+    <div class="hx-go"><button class="cta big" id="hxOther">Now your ${other} hand ${icon('arrow-right')}</button><button class="ghost" id="hxAgain">Redo</button></div>
+    <p class="hx-note">${watch.length ? 'Not a diagnosis. If this shows up again on another day, show your doctor.' : 'Not a diagnosis. Check both hands now and then to spot changes.'}</p>
     <details class="hx-more" id="hxDetails"><summary>See the measurements</summary>${details(st, fs, tp)}</details>
   </div></div>`;
   $('#hxOther').onclick = () => runCheck(other);
@@ -286,8 +288,8 @@ function compare(r, hand) {
   const now = r.results.tap?.rate_hz, rows = [];
   if (r.other_hand?.tap_rate && now) {
     const o = r.other_hand.tap_rate, diff = Math.abs(now - o) / Math.max(now, o);
-    rows.push(diff >= 0.25 ? `⚠ Your ${hand} hand taps ${Math.round(diff * 100)}% ${now < o ? 'slower' : 'faster'} than your ${esc(r.other_hand.hand)} hand (${now} vs ${o}/s).`
-      : `✓ Both hands tap at a similar speed (${now} and ${o}/s).`);
+    rows.push(diff >= 0.25 ? `${icon('alert')} Your ${hand} hand taps ${Math.round(diff * 100)}% ${now < o ? 'slower' : 'faster'} than your ${esc(r.other_hand.hand)} hand (${now} vs ${o}/s).`
+      : `${icon('check')} Both hands tap at a similar speed (${now} and ${o}/s).`);
   }
   if (r.previous?.tap_rate && now) rows.push(`Last time: ${r.previous.tap_rate} taps/s → now ${now}/s.`);
   return rows.length ? `<div class="hx-compare">${rows.map(x => `<p>${x}</p>`).join('')}</div>` : '';
@@ -295,11 +297,11 @@ function compare(r, hand) {
 const pct = v => `${v > 0 ? '−' : '+'}${Math.abs(Math.round(v))}%`;
 function details(st, fs, tp) {
   return `<div class="hx-detail">
-    ${st ? `<div><b>🖐 Shaking</b><p>${st.tremor ? `Rhythmic shaking ${st.frequency_hz} times a second, about ${st.amplitude_mm} mm (${st.updrs_amplitude} on the MDS-UPDRS scale).` : `No rhythm above camera noise (biggest: ${st.amplitude_mm} mm at ${st.peak_hz} Hz; we flag 2 mm and up).`}</p>
+    ${st ? `<div><b>${icon('hand')} Shaking</b><p>${st.tremor ? `Rhythmic shaking ${st.frequency_hz} times a second, about ${st.amplitude_mm} mm (${st.updrs_amplitude} on the MDS-UPDRS scale).` : `No rhythm above camera noise (biggest: ${st.amplitude_mm} mm at ${st.peak_hz} Hz; we flag 2 mm and up).`}</p>
       <div class="hc-chart"><canvas id="hxSpec"></canvas></div><small>Movement at each speed. A tall, narrow peak = tremor. Camera ${st.fps} fps (sees up to ${st.max_hz} Hz). Your palm: ${st.palm_mm} mm.</small></div>` : ''}
-    ${fs ? `<div><b>✊ Fists</b><p>${fs.count} in 10 s · ${fs.complete} full · ${fs.not_closed} not closed · ${fs.not_opened} not opened${fs.decrement_pct != null ? ` · size ${pct(fs.decrement_pct)} by the end · ${fs.hesitations} pauses` : ''}</p>
+    ${fs ? `<div><b>${icon('fist')} Fists</b><p>${fs.count} in 10 s · ${fs.complete} full · ${fs.not_closed} not closed · ${fs.not_opened} not opened${fs.decrement_pct != null ? ` · size ${pct(fs.decrement_pct)} by the end · ${fs.hesitations} pauses` : ''}</p>
       <div class="hc-chart"><canvas id="hxFist"></canvas></div><small>Fingertips to wrist, in palm lengths. Each dip below the dashed line = a full fist.</small></div>` : ''}
-    ${tp ? `<div><b>👌 Taps</b><p>${tp.count} taps · ${tp.complete} full${tp.opening_mm ? ` · opening ${tp.opening_mm} mm` : ''}${tp.decrement_pct != null ? ` · size ${pct(tp.decrement_pct)} by the end · ${tp.hesitations} pauses · rhythm varies ${tp.rhythm_cv_pct}%` : ''}</p>
+    ${tp ? `<div><b>${icon('tap')} Taps</b><p>${tp.count} taps · ${tp.complete} full${tp.opening_mm ? ` · opening ${tp.opening_mm} mm` : ''}${tp.decrement_pct != null ? ` · size ${pct(tp.decrement_pct)} by the end · ${tp.hesitations} pauses · rhythm varies ${tp.rhythm_cv_pct}%` : ''}</p>
       <div class="hc-chart"><canvas id="hxTap"></canvas></div><small>Thumb-to-index gap, in palm lengths. Each dip below the dashed line = they touched.</small></div>` : ''}
   </div>`;
 }

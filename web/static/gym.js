@@ -1,6 +1,6 @@
 // Brain Gym (8 games) + MRI page. Uses helpers exposed by app.js on window.NTX.
-import { recordsTabs } from './records.js?v=5';
 const X = () => window.NTX;
+import { icon, tile } from './icons.js?v=1';   // shared line icons (no emoji)
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -14,14 +14,14 @@ const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
 async function catalog() { if (!CAT) { const c = await X().api('/api/games'); CAT = c.games; BONUS = c.level_up_sparks ?? 10; } return CAT; }
 
 // ============================================================ GAMES HUB: live "Up next", a skills radar, big cards by skill
-const KIND_ICON = { Memory: '🧠', Speed: '⚡', Attention: '🎯', Language: '💬', 'Self-control': '🛑', Reflexes: '👆' };
+const KIND_ICON = { Memory: 'brain', Speed: 'zap', Attention: 'target', Language: 'message', 'Self-control': 'ban', Reflexes: 'tap' };
 const playHref = g => g.id === 'speed' ? '#/sprint' : '#/game/' + g.id;
 const TAG = { speed: 'Match symbols', recall: 'Remember words', fluency: 'Name animals', trails: 'Connect the dots', stroop: 'Tap the ink color',
   corsi: 'Repeat the pattern', reaction: 'Tap on green', readaloud: 'Read out loud', voice: 'Just talk' };
-const GROUPS = [['⚡', 'Speed', 'Speed & reflexes', ['speed', 'reaction'], '#FFC83D'], ['🧠', 'Memory', 'Memory', ['recall', 'corsi'], '#B388FF'],
-  ['🎯', 'Focus', 'Focus', ['trails', 'stroop'], '#59F0FF'], ['💬', 'Language', 'Language & voice', ['fluency', 'readaloud', 'voice'], '#3DDC97']];
-const CHECKS = [{ href: '#/hands', icon: '✋', title: 'Hand check', tag: 'Tremor & taps', color: '#FF8FB1', meta: 'camera · 30 s' },
-  { href: '#/voice', icon: '🎙️', title: 'Pace & pauses', tag: 'How you speak', color: '#8FD3FF', meta: 'mic · 1 min' }];
+const GROUPS = [['zap', 'Speed', 'Speed & reflexes', ['speed', 'reaction'], '#FFC83D'], ['brain', 'Memory', 'Memory', ['recall', 'corsi'], '#B388FF'],
+  ['target', 'Focus', 'Focus', ['trails', 'stroop'], '#59F0FF'], ['message', 'Language', 'Language & voice', ['fluency', 'readaloud', 'voice'], '#3DDC97']];
+const CHECKS = [{ href: '#/hands', icon: 'hand', title: 'Hand check', tag: 'Tremor & taps', color: '#FF8FB1', meta: 'camera · 30 s' },
+  { href: '#/voice', icon: 'mic', title: 'Pace & pauses', tag: 'How you speak', color: '#8FD3FF', meta: 'mic · 1 min' }];
 let SKILL_CHART = null;
 
 export async function pageGym(id) {
@@ -45,26 +45,26 @@ export async function pageGym(id) {
     return { ic, short, col, pct: gs.length ? Math.round(gs.reduce((n, g) => n + prog(g), 0) / gs.length) : 0, today: gs.filter(g => STATS[g.id]?.played_today).length, n: gs.length }; });
   let k = 0;
   const card = g => { const s = STATS[g.id] || {}, lv = L(g); return `<a class="gc ${s.played_today ? 'done' : ''} ${g.id === focus.id ? 'focus' : ''}" href="${playHref(g)}" data-id="${g.id}" style="--c:${g.color};--i:${k++}">
-      <span class="gc-ico">${g.icon}</span><b>${esc(g.title)}</b><small>${TAG[g.id] || esc(g.domain)}</small>
+      <span class="gc-ico">${icon(g.icon)}</span><b>${esc(g.title)}</b><small>${TAG[g.id] || esc(g.domain)}</small>
       <div class="gc-lv"><span>Lv ${lv.level}<i>/${lv.top}</i></span><div class="gc-bar"><i style="width:${prog(g)}%"></i></div></div>
-      <span class="gc-badge">${s.played_today ? '✓' : '+15⚡'}</span></a>`; };
+      <span class="gc-badge">${s.played_today ? icon('check') : `+15 ${icon('zap')}`}</span></a>`; };
   const pct = Math.round(played / games.length * 100);
   const anyProgress = skills.some(s => s.pct > 0);
   $('#p-gym').innerHTML = `<div class="play gh-wide"><div class="left glass gh">
-    <div class="gh-top"><div><h1>🎮 Games</h1><small>Tap a game · about 1 minute each</small></div>
+    <div class="gh-top"><div><h1>${icon('grid')} Games</h1><small>Tap a game · about 1 minute each</small></div>
       <div class="gh-ring" style="--p:${pct}"><b>${played}/${games.length}</b><small>today</small></div></div>
     ${next ? `<a class="gh-next" href="${playHref(next)}" style="--c:${next.color}" data-id="${next.id}">
-      <div class="gh-next-info"><small>UP NEXT</small><b>${next.icon} ${esc(next.title)}</b><span>${TAG[next.id] || ''} · Level ${L(next).level}</span>
-        <span class="gh-play">▶ Play</span></div>
+      <div class="gh-next-info"><small>UP NEXT</small><b>${icon(next.icon)} ${esc(next.title)}</b><span>${TAG[next.id] || ''} · Level ${L(next).level}</span>
+        <span class="gh-play">${icon('play')} Play</span></div>
       <div class="demo gh-demo" id="ghDemo"></div></a>`
-      : `<div class="gh-done">🎉 All ${games.length} played today. Replay any game to beat your best.</div>`}
+      : `<div class="gh-done">${icon('trophy')} All ${games.length} played today. Replay any game to beat your best.</div>`}
     <div class="gh-skills glass-in"><div class="gh-radar"><canvas id="skillRadar"></canvas>${anyProgress ? '' : '<span class="gh-radar-empty">Play to grow<br>your radar</span>'}</div>
-      <div class="gh-skill-list"><h3>Your brain skills</h3>${skills.map(s => `<div class="gh-skill" style="--c:${s.col}"><span>${s.ic} ${s.short}</span>
+      <div class="gh-skill-list"><h3>Your brain skills</h3>${skills.map(s => `<div class="gh-skill" style="--c:${s.col}"><span>${icon(s.ic)} ${s.short}</span>
         <div class="gc-bar"><i style="width:${s.pct}%"></i></div><b>${s.pct}%</b></div>`).join('')}<small>levels cleared in each skill</small></div></div>
-    ${GROUPS.map(([ic, , name, ids], gi) => `<div class="gh-sec"><h3>${ic} ${name}<span>${skills[gi].today}/${skills[gi].n} today</span></h3>
+    ${GROUPS.map(([ic, , name, ids], gi) => `<div class="gh-sec"><h3><em class="gh-h">${icon(ic)} ${name}</em><span>${skills[gi].today}/${skills[gi].n} today</span></h3>
       <div class="gh-grid">${ids.filter(i => byId[i]).map(i => card(byId[i])).join('')}</div></div>`).join('')}
-    <div class="gh-sec"><h3>🩺 Health checks</h3><div class="gh-grid">${CHECKS.map(c => `<a class="gc" href="${c.href}" style="--c:${c.color};--i:${k++}">
-      <span class="gc-ico">${c.icon}</span><b>${c.title}</b><small>${c.tag}</small><span class="gc-meta">${c.meta}</span></a>`).join('')}</div></div>
+    <div class="gh-sec"><h3><em class="gh-h">${icon('stethoscope')} Health checks</em></h3><div class="gh-grid">${CHECKS.map(c => `<a class="gc" href="${c.href}" style="--c:${c.color};--i:${k++}">
+      <span class="gc-ico">${icon(c.icon)}</span><b>${c.title}</b><small>${c.tag}</small><span class="gc-meta">${c.meta}</span></a>`).join('')}</div></div>
   </div><div></div></div>`;
   if (next) startDemo($('#ghDemo'), next.id);
   drawSkills(skills);
@@ -103,18 +103,18 @@ function spark(h, better) {
 // PASSED / NOT YET screen with rewards and a leaderboard. The server picks the level and judges the round.
 const lvState = (S, L) => L.level <= S.passed ? 'won' : L.level === S.level ? 'cur' : 'lock';
 export function levelDots(S) {
-  return `<div class="lvpath">${S.levels.map(L => { const st = lvState(S, L); return `<div class="${st}" title="Level ${L.level}: ${esc(L.goal)}">${st === 'won' ? '✓' : st === 'cur' ? L.level : '🔒'}</div>`; }).join('')}</div>`;
+  return `<div class="lvpath">${S.levels.map(L => { const st = lvState(S, L); return `<div class="${st}" title="Level ${L.level}: ${esc(L.goal)}">${st === 'won' ? icon('check') : st === 'cur' ? L.level : icon('lock')}</div>`; }).join('')}</div>`;
 }
 export function railHTML(S) {
   return `<aside class="lvrail"><div class="eyebrow">YOUR LEVELS</div>${S.levels.map(L => { const st = lvState(S, L);
-    return `<div class="lvrow ${st}"><span class="lvb">${st === 'won' ? '✓' : st === 'cur' ? '▶' : '🔒'}</span><div><b>Level ${L.level}${st === 'cur' ? ' · now' : ''}</b><small>${esc(L.goal)}</small></div></div>`; }).join('')}
-    <div class="lvfoot">${S.passed}/${S.top} cleared<br>+${BONUS} ⚡ for each new level</div></aside>`;
+    return `<div class="lvrow ${st}"><span class="lvb">${st === 'won' ? icon('check') : st === 'cur' ? icon('play') : icon('lock')}</span><div><b>Level ${L.level}${st === 'cur' ? ' · now' : ''}</b><small>${esc(L.goal)}</small></div></div>`; }).join('')}
+    <div class="lvfoot">${S.passed}/${S.top} cleared<br>+${BONUS} ${icon('zap')} for each new level</div></aside>`;
 }
 export function boardHTML(lb, limit = 10) {
-  if (!lb || !lb.n) return '<div class="lboard"><div class="eyebrow">🏆 LEADERBOARD</div><div class="muted">Play a round to get on the board.</div></div>';
+  if (!lb || !lb.n) return '<div class="lboard"><div class="eyebrow">' + icon('trophy') + ' LEADERBOARD</div><div class="muted">Play a round to get on the board.</div></div>';
   const rows = lb.rows.slice(0, limit), you = lb.you;
-  const row = r => `<div class="lbrow ${r.you ? 'you' : ''}"><span class="lbr">${['🥇', '🥈', '🥉'][r.rank - 1] || '#' + r.rank}</span><b>${esc(r.name)}${r.you ? ' (you)' : ''}</b><span>Lv ${r.level}</span><span title="best score at level ${r.best_level}">${r.best ?? '–'} <small class="muted">@${r.best_level}</small></span></div>`;
-  return `<div class="lboard"><div class="eyebrow">🏆 LEADERBOARD · players on this device</div>
+  const row = r => `<div class="lbrow ${r.you ? 'you' : ''}"><span class="lbr">${r.rank <= 3 ? `<span style="color:${['#FFC83D', '#C9D0EE', '#E0A070'][r.rank - 1]}">${icon('medal')}</span>` : '#' + r.rank}</span><b>${esc(r.name)}${r.you ? ' (you)' : ''}</b><span>Lv ${r.level}</span><span title="best score at level ${r.best_level}">${r.best ?? '–'} <small class="muted">@${r.best_level}</small></span></div>`;
+  return `<div class="lboard"><div class="eyebrow">${icon('trophy')} LEADERBOARD · players on this device</div>
     <div class="lbrow head"><span></span><span>player</span><span>level</span><span>best @lv</span></div>
     ${rows.map(row).join('')}${you && !rows.some(r => r.you) ? row(you) : ''}
     ${you ? `<div class="muted" style="margin-top:6px">You're <b>#${you.rank}</b> of ${lb.n}${you.rank > 1 ? ' · clear more levels to climb' : ' · top of the board!'}</div>` : ''}</div>`;
@@ -127,23 +127,23 @@ const BLK = on => `<div class="dm-grid">${[...Array(9).keys()].map(i => `<span c
 const STB = (word, ink, hit) => `<div class="dm-big" style="color:${ink}">${word}</div><div class="dm-pad">${[['RED', '#FF5A6E'], ['GREEN', '#3DDC97'], ['BLUE', '#4FC3F7'], ['YELLOW', '#FFC83D']].map(([n, c]) => `<b style="color:${c};border-color:${c}" class="${n === hit ? 'hit' : ''}">${n}</b>`).join('')}</div>`;
 const DEMOS = {
   speed: [[`${KEYS}<div class="dm-big">▲</div><div class="dm-cap">1 · find the symbol in the key</div>`, 1100], [`${KEYS}<div class="dm-big">▲</div><div class="dm-pad"><b>1</b><b class="hit">2</b><b>3</b></div><div class="dm-cap">2 · tap its number</div>`, 900],
-    [`${KEYS}<div class="dm-big ok">✓</div><div class="dm-cap">+1 correct · the next symbol comes right away</div>`, 800], [`${KEYS}<div class="dm-big">●</div><div class="dm-pad"><b>1</b><b>2</b><b class="hit">3</b></div><div class="dm-cap">as many as you can in 15 s</div>`, 1000]],
+    [`${KEYS}<div class="dm-big ok">${icon('check')}</div><div class="dm-cap">+1 correct · the next symbol comes right away</div>`, 800], [`${KEYS}<div class="dm-big">●</div><div class="dm-pad"><b>1</b><b>2</b><b class="hit">3</b></div><div class="dm-cap">as many as you can in 15 s</div>`, 1000]],
   recall: [[`<div class="dm-word">candle</div><div class="dm-cap">1 · words flash one by one: remember them</div>`, 900], [`<div class="dm-word">river</div><div class="dm-cap">1 · words flash one by one: remember them</div>`, 900], [`<div class="dm-word">garden</div><div class="dm-cap">1 · words flash one by one: remember them</div>`, 900],
-    [`<div class="dm-chips"><b>spoon</b><b>garden</b><b>valley</b><b>candle</b><b>jacket</b><b>river</b></div><div class="dm-cap">2 · then tap every word you saw</div>`, 1000], [`<div class="dm-chips"><b>spoon</b><b class="ok">garden ✓</b><b>valley</b><b class="ok">candle ✓</b><b>jacket</b><b class="ok">river ✓</b></div><div class="dm-cap">found all 3 → level passed!</div>`, 1300]],
-  fluency: [[`<div class="dm-big">🎤</div><div class="dm-cap">say animals out loud, one after another</div>`, 900], [`<div class="dm-big">🎤</div><div class="dm-chips"><b class="ok">dog</b></div><div class="dm-cap">"dog…"</div>`, 700], [`<div class="dm-big">🎤</div><div class="dm-chips"><b class="ok">dog</b><b class="ok">cat</b></div><div class="dm-cap">"…cat…"</div>`, 700],
-    [`<div class="dm-big">🎤</div><div class="dm-chips"><b class="ok">dog</b><b class="ok">cat</b><b class="ok">horse</b></div><div class="dm-cap">"…horse" · repeats don't count</div>`, 1300]],
+    [`<div class="dm-chips"><b>spoon</b><b>garden</b><b>valley</b><b>candle</b><b>jacket</b><b>river</b></div><div class="dm-cap">2 · then tap every word you saw</div>`, 1000], [`<div class="dm-chips"><b>spoon</b><b class="ok">garden ${icon('check')}</b><b>valley</b><b class="ok">candle ${icon('check')}</b><b>jacket</b><b class="ok">river ${icon('check')}</b></div><div class="dm-cap">found all 3 → level passed!</div>`, 1300]],
+  fluency: [[`<div class="dm-big">${icon('mic')}</div><div class="dm-cap">say animals out loud, one after another</div>`, 900], [`<div class="dm-big">${icon('mic')}</div><div class="dm-chips"><b class="ok">dog</b></div><div class="dm-cap">"dog…"</div>`, 700], [`<div class="dm-big">${icon('mic')}</div><div class="dm-chips"><b class="ok">dog</b><b class="ok">cat</b></div><div class="dm-cap">"…cat…"</div>`, 700],
+    [`<div class="dm-big">${icon('mic')}</div><div class="dm-chips"><b class="ok">dog</b><b class="ok">cat</b><b class="ok">horse</b></div><div class="dm-cap">"…horse" · repeats don't count</div>`, 1300]],
   trails: [[`${DOTS(0, ['pulse'])}<div class="dm-cap">1 · start at 1</div>`, 900], [`${DOTS(1, ['', 'pulse'])}<div class="dm-cap">2 · tap the next one: NEXT is always shown on top</div>`, 900], [`${DOTS(2, ['', '', 'pulse'])}<div class="dm-cap">harder levels switch: number → letter → number</div>`, 900],
     [`${DOTS(3, ['', '', '', 'pulse'])}<div class="dm-cap">1 → A → 2 → B …</div>`, 900], [`${DOTS(4)}<div class="dm-cap">finish before the timer runs out!</div>`, 1200]],
   stroop: [[`${STB('RED', '#4FC3F7', '')}<div class="dm-cap">the word says RED, but the ink is blue…</div>`, 1300], [`${STB('RED', '#4FC3F7', 'BLUE')}<div class="dm-cap">…so tap BLUE: always the INK color</div>`, 1000], [`${STB('GREEN', '#FFC83D', 'YELLOW')}<div class="dm-cap">GREEN in yellow ink → tap YELLOW</div>`, 1200]],
   corsi: [[`${BLK([1])}<div class="dm-cap">1 · watch the blocks light up</div>`, 650], [`${BLK([6])}<div class="dm-cap">1 · watch the blocks light up</div>`, 650], [`${BLK([5])}<div class="dm-cap">1 · watch the blocks light up</div>`, 650],
-    [`${BLK([])}<div class="dm-cap">2 · your turn: tap them in the same order</div>`, 700], [`${BLK([1, 6, 5])}<div class="dm-cap">✓ same order → that try counts</div>`, 1100]],
+    [`${BLK([])}<div class="dm-cap">2 · your turn: tap them in the same order</div>`, 700], [`${BLK([1, 6, 5])}<div class="dm-cap">${icon('check')} same order → that try counts</div>`, 1100]],
   reaction: [[`<div class="dm-circle">wait…</div><div class="dm-cap">wait for green…</div>`, 1100], [`<div class="dm-circle go">TAP!</div><div class="dm-cap">tap as fast as you can</div>`, 600], [`<div class="dm-circle">248 ms</div><div class="dm-cap">your reaction time</div>`, 900],
-    [`<div class="dm-circle red">✋</div><div class="dm-cap">from level 5: red means DON'T tap</div>`, 1200]],
+    [`<div class="dm-circle red">${icon('hand')}</div><div class="dm-cap">from level 5: red means DON'T tap</div>`, 1200]],
   readaloud: [0, 1, 2, 3, 4, 5, 6].map(n => [`<div class="dm-read">${'The sun came up over the hill.'.split(' ').map((w, i) => `<span class="rw ${i < n ? 'on' : i === n ? 'cur' : ''}">${w}</span>`).join(' ')}</div>
-    <div class="dm-cap">${n === 0 ? '🎤 read the words out loud' : n < 6 ? 'each word lights up as we hear it' : 'whole passage before the timer ends → passed!'}</div>`, n === 6 ? 1400 : 520]),
+    <div class="dm-cap">${n === 0 ? 'read the words out loud' : n < 6 ? 'each word lights up as we hear it' : 'whole passage before the timer ends → passed!'}</div>`, n === 6 ? 1400 : 520]),
   voice: [[`<div class="dm-word" style="font-size:22px">“Describe your perfect weekend”</div><div class="dm-cap">1 · a topic appears</div>`, 1300],
-    [`<div class="dm-big">🎙️</div><div class="miclvl" style="width:220px"><i style="width:70%"></i></div><div class="dm-cap">2 · talk about it 🟢 talking…</div>`, 1000],
-    [`<div class="dm-big">🎙️</div><div class="miclvl" style="width:220px"><i style="width:8%"></i></div><div class="dm-cap">⏸ long pauses lower your flow</div>`, 1000],
+    [`<div class="dm-big">${icon('mic')}</div><div class="miclvl" style="width:220px"><i style="width:70%"></i></div><div class="dm-cap">2 · talk about it · talking…</div>`, 1000],
+    [`<div class="dm-big">${icon('mic')}</div><div class="miclvl" style="width:220px"><i style="width:8%"></i></div><div class="dm-cap">long pauses lower your flow</div>`, 1000],
     [`<div class="dm-big ok">78%</div><div class="dm-cap">flow = time talking vs pausing · keep going until the timer ends</div>`, 1500]],
 };
 export function startDemo(el, id) {
@@ -158,7 +158,7 @@ export async function pageGame(id) {
   if (!g || id === 'speed') { location.hash = id === 'speed' ? '#/sprint' : '#/gym'; return; }
   STATS = await X().api(`/api/player/${encodeURIComponent(me().name)}/games`);
   $('#p-game').innerHTML = `<div class="sprint-wrap"><div class="arcade gamebox" style="--c:${g.color}">
-    <a class="close" href="#/gym/${g.id}" style="text-decoration:none;display:grid;place-items:center">✕</a>
+    <a class="close" href="#/gym/${g.id}" style="text-decoration:none;display:grid;place-items:center">${icon('x')}</a>
     <div class="gwrap"><div id="rail">${railHTML(STATS[g.id].levels)}</div><div id="gb"></div></div></div></div>`;
   intro(g);
 }
@@ -166,16 +166,16 @@ const PLAY = { recall: (g, L) => recall(g, L), fluency: (g, L) => fluency(g, L),
 function intro(g) {
   const S = STATS[g.id].levels, L = S.rule, classic = g.id === 'recall' || g.id === 'fluency';
   $('#gb').innerHTML = `<div class="eyebrow">${g.kind.toUpperCase()} GAME · LEVEL ${S.level} OF ${S.top}</div>
-    <h2 class="gh2">${g.icon} ${g.title}</h2>
+    <h2 class="gh2">${icon(g.icon)} ${g.title}</h2>
     <div class="demo" id="demo"></div>
     <p class="muted howto">${g.how}</p>
     <div class="goalcard"><small>LEVEL ${S.level} GOAL</small><b>${cap(L.goal)}</b>${L.seconds ? `<span>${L.seconds}-second round</span>` : ''}</div>
     <div class="muted">your best at level ${S.level}: <b>${S.best_here ?? '–'}</b> ${g.unit}</div>
-    <div class="row" style="justify-content:center" id="startRow"><button class="cta" id="go">▶ Start level ${S.level}</button></div>
+    <div class="row" style="justify-content:center" id="startRow"><button class="cta" id="go">${icon('play')} Start level ${S.level}</button></div>
     <details class="ev gwhy-d"><summary>Why this game?</summary><div class="evb"><p>${g.region_why}</p>
       <p>${g.evidence} <a href="${g.url}" target="_blank" rel="noopener">source ↗</a></p>
       ${g.id === 'speed' ? '' : '<p class="caveat">This is a measurement game: brain-training reviews find gains on the trained task but little carry-over to everyday life (Simons 2016).</p>'}</div></details>
-    ${classic ? `<button class="linkbtn" id="classic">🩺 Clinical version (${g.id === 'recall' ? '3 trials of 10 words' : '60 seconds'}, compare with NHANES adults)</button>` : ''}`;
+    ${classic ? `<button class="linkbtn" id="classic">${icon('stethoscope')} Clinical version (${g.id === 'recall' ? '3 trials of 10 words' : '60 seconds'}, compare with NHANES adults)</button>` : ''}`;
   startDemo($('#demo'), g.id);
   $('#go').onclick = () => PLAY[g.id](g, L);
   if (classic) $('#classic').onclick = () => (g.id === 'recall' ? recallClassic(g) : fluencyClassic(g));
@@ -188,7 +188,7 @@ const hudHTML = (L, timed = true) => `<div class="ghud"><div class="eyebrow">LEV
 function goal(n, target, word) {
   const b = $('#gBar'), t = $('#gTxt'); if (!b) return;
   b.style.width = Math.min(100, n / target * 100) + '%'; b.classList.toggle('full', n >= target);
-  t.textContent = n >= target ? `goal reached ✓ ${word === 'dots' ? '' : 'keep going'}` : `${n} / ${target} ${word}`;
+  t.textContent = n >= target ? `goal reached${word === 'dots' ? '' : ' · keep going'}` : `${n} / ${target} ${word}`;
 }
 function countdown(sec, run, stop) {
   return new Promise(res => { const t0 = performance.now();
@@ -212,21 +212,21 @@ async function finish(g, score, detail, lines = []) {
   X().setME(r.player); STATS[g.id] = r.stats; X().renderHUD();
   if (!r.round) return classicResult(g, score, r, lines);
   const R = r.round, S = r.stats.levels; $('#rail').innerHTML = railHTML(S);
-  const burst = R.new_clear ? `<div class="confetti">${'⚡✨🎉⭐'.repeat(5).split('').filter(c => c.trim()).map((c, i) => `<i style="--x:${(i * 37) % 100}%;--d:${(i % 5) * .08}s">${c}</i>`).join('')}</div>` : '';
-  $('#gb').innerHTML = `${burst}<div class="resbadge ${R.passed ? 'win' : 'lose'}">${R.passed ? `✓ LEVEL ${R.level} PASSED` : `✗ LEVEL ${R.level} · NOT YET`}</div>
+  const burst = R.new_clear ? `<div class="confetti">${Array.from({ length: 20 }, (_, i) => `<i style="--x:${(i * 37) % 100}%;--d:${(i % 5) * .08}s;color:${['#FFC83D', '#59F0FF', '#9B7BFF', '#3DDC97'][i % 4]}">${icon(i % 2 ? 'star' : 'sparkles')}</i>`).join('')}</div>` : '';
+  $('#gb').innerHTML = `${burst}<div class="resbadge ${R.passed ? 'win' : 'lose'}">${R.passed ? `${icon('check')} LEVEL ${R.level} PASSED` : `${icon('x')} LEVEL ${R.level} · NOT YET`}</div>
     <div class="a-big">${score}</div><div class="muted">${g.unit} · goal: ${esc(R.rule.goal)}</div>
-    ${R.unlocked ? `<div class="unlock">🔓 Level ${R.unlocked} unlocked! <b>+${r.level_bonus} ⚡</b></div>` : R.new_clear ? `<div class="unlock">🏆 You cleared the final level! <b>+${r.level_bonus} ⚡</b></div>` : ''}
+    ${R.unlocked ? `<div class="unlock">${icon('unlock')} Level ${R.unlocked} unlocked! <b>+${r.level_bonus} ${icon('zap')}</b></div>` : R.new_clear ? `<div class="unlock">${icon('trophy')} You cleared the final level! <b>+${r.level_bonus} ${icon('zap')}</b></div>` : ''}
     ${!R.passed ? `<p class="why">${whyNot(g, R, score, detail)}</p>` : ''}
-    <div class="muted">${r.sparks_gained ? `+${r.sparks_gained} ⚡ for your first play today` : 'Daily sparks for this game already earned · practice still counts'}</div>
+    <div class="muted">${r.sparks_gained ? `+${r.sparks_gained} ${icon('zap')} for your first play today` : 'Daily sparks for this game already earned · practice still counts'}</div>
     ${lines.filter(Boolean).map(l => `<p class="muted">${l}</p>`).join('')}
     ${boardHTML(r.leaderboard, 5)}
-    <div class="row" style="justify-content:center"><button class="cta" id="again">${R.unlocked ? `▶ Play level ${R.unlocked}` : '↻ Try again'}</button><a class="ghost" href="#/gym/${g.id}" style="text-decoration:none">Back to Games</a></div>`;
+    <div class="row" style="justify-content:center"><button class="cta" id="again">${R.unlocked ? `${icon('play')} Play level ${R.unlocked}` : `${icon('refresh')} Try again`}</button><a class="ghost" href="#/gym/${g.id}" style="text-decoration:none">Back to Games</a></div>`;
   $('#again').onclick = () => PLAY[g.id](g, S.rule);
 }
 function classicResult(g, score, r, lines) {   // clinical versions: NHANES percentile, no levels
   const nh = r.nhanes;
   $('#gb').innerHTML = `<div class="eyebrow">${g.title.toUpperCase()} · CLINICAL VERSION · RESULT</div><div class="a-big">${score}</div><div class="muted">${g.id === 'recall' ? 'words (of 30)' : 'animals in 60 s'}</div>
-    ${r.sparks_gained ? `<div class="reward" style="text-align:center;margin-top:8px">+${r.sparks_gained} ⚡</div>` : ''}
+    ${r.sparks_gained ? `<div class="reward" style="text-align:center;margin-top:8px">+${r.sparks_gained} ${icon('zap')}</div>` : ''}
     ${lines.filter(Boolean).map(l => `<p class="muted">${l}</p>`).join('')}
     ${nh ? `<div class="card" style="max-width:560px;margin:14px auto;text-align:left"><div class="eyebrow">VS REAL NHANES ADULTS (${me().profile.female ? 'women' : 'men'} ${nh.age_band[0]}–${nh.age_band[1]}, n=${nh.n})</div>
       <div style="font:700 30px 'Space Grotesk';margin:6px 0">${Math.round(nh.percentile)}th percentile</div>
@@ -252,8 +252,8 @@ async function recall(g, L) {
   goal(0, L.target, 'found');
   $$('[data-w]').forEach(b => b.onclick = () => {
     const w = b.dataset.w; b.disabled = true;
-    if (words.includes(w)) { found.add(w); b.classList.add('ok'); b.textContent = w + ' ✓'; goal(found.size, L.target, 'found'); if (found.size === words.length) stop.done = true; }
-    else { errors++; b.classList.add('bad'); b.textContent = w + ' ✗'; $('#rErr').textContent = errors; }
+    if (words.includes(w)) { found.add(w); b.classList.add('ok'); b.innerHTML = `${esc(w)} ${icon('check')}`; goal(found.size, L.target, 'found'); if (found.size === words.length) stop.done = true; }
+    else { errors++; b.classList.add('bad'); b.innerHTML = `${esc(w)} ${icon('x')}`; $('#rErr').textContent = errors; }
   });
   if (await countdown(L.seconds, run, stop) === 'quit') return;
   const missed = words.filter(w => !found.has(w));
@@ -263,9 +263,9 @@ async function recall(g, L) {
 // ============================================================ READ ALOUD (levels: read N words aloud before time runs out)
 async function readaloud(g, L) {
   const run = RUN, RA = await import('./readalong.js?v=1');
-  const back = `<div class="row" style="justify-content:center"><button class="cta" id="again">↻ Try again</button><a class="ghost" href="#/gym/${g.id}" style="text-decoration:none">Back to Games</a></div>`;
+  const back = `<div class="row" style="justify-content:center"><button class="cta" id="again">${icon('refresh')} Try again</button><a class="ghost" href="#/gym/${g.id}" style="text-decoration:none">Back to Games</a></div>`;
   if (!RA.supported()) {
-    $('#gb').innerHTML = `<div class="empty" style="margin-top:40px">📖 Live word tracking needs <b>Chrome</b> or <b>Edge</b>.<br>Open <b>http://localhost:8600/#/game/readaloud</b> there.</div>
+    $('#gb').innerHTML = `<div class="empty" style="margin-top:40px">${icon('book')} Live word tracking needs <b>Chrome</b> or <b>Edge</b>.<br>Open <b>http://localhost:8600/#/game/readaloud</b> there.</div>
       <div class="row" style="justify-content:center"><a class="ghost" href="#/gym/${g.id}" style="text-decoration:none">Back to Games</a></div>`;
     return;
   }
@@ -279,12 +279,12 @@ async function readaloud(g, L) {
     if (A.pos >= words.length && !stop.done) { stop.done = true; tDone = performance.now(); } };
   const mic = RA.listen(update, m => { err = m; stop.done = true; });
   RA.paint($('#rbox'), A);
-  $('#rmsg').textContent = '🎤 Go! Read out loud at your normal pace.';
+  $('#rmsg').textContent = 'Go! Read out loud at your normal pace.';
   const how = await countdown(L.seconds, run, stop);
   if (how !== 'quit') $('#rmsg').textContent = 'Catching your last words…';
   const heard = await mic.stop();
   if (how === 'quit' || run !== RUN) return;
-  if (err && !A.count) { $('#gb').innerHTML = `<div class="empty" style="margin-top:40px">⚠ ${esc(err)}</div>${back}`; $('#again').onclick = () => readaloud(g, L); return; }
+  if (err && !A.count) { $('#gb').innerHTML = `<div class="empty" style="margin-top:40px">${icon('alert')} ${esc(err)}</div>${back}`; $('#again').onclick = () => readaloud(g, L); return; }
   update(heard);
   const secs = Math.min(L.seconds, ((tDone ?? performance.now()) - t0) / 1000), wpm = Math.round(A.count / Math.max(1, secs) * 60);
   const missed = words.filter((_, i) => i < A.pos && !A.hit[i]).map(w => w.replace(/[^\w'’-]/g, ''));
@@ -299,20 +299,20 @@ const VOICE_TOPICS = ['Describe your perfect weekend.', 'Tell me about your favo
   'Tell me about a hobby and how you got into it.', 'Explain how you would plan a birthday party.', 'Describe a memorable trip.', 'Tell me about a friend and how you met.'];
 async function voiceGame(g, L) {
   const run = RUN, topic = VOICE_TOPICS[Math.floor(Math.random() * VOICE_TOPICS.length)];
-  const retry = msg => { $('#gb').innerHTML = `<div class="empty" style="margin-top:40px">⚠ ${esc(msg)}</div><div class="row" style="justify-content:center"><button class="cta" id="again">↻ Try again</button><a class="ghost" href="#/gym/${g.id}" style="text-decoration:none">Back to Games</a></div>`; $('#again').onclick = () => voiceGame(g, L); };
+  const retry = msg => { $('#gb').innerHTML = `<div class="empty" style="margin-top:40px">${icon('alert')} ${esc(msg)}</div><div class="row" style="justify-content:center"><button class="cta" id="again">${icon('refresh')} Try again</button><a class="ghost" href="#/gym/${g.id}" style="text-decoration:none">Back to Games</a></div>`; $('#again').onclick = () => voiceGame(g, L); };
   let rec, talking = 0, ticks = 0;
   const onLevel = v => { const el = $('#micLvl'), st = $('#vstate'); if (el) el.style.width = Math.min(100, v * 300) + '%';
-    const on = v > 0.06; if (st) { st.textContent = on ? '🟢 talking' : '⏸ pause'; st.classList.toggle('on', on); } if (live) { ticks++; if (on) talking++; } };
+    const on = v > 0.06; if (st) { st.textContent = on ? 'talking' : 'pause'; st.classList.toggle('on', on); } if (live) { ticks++; if (on) talking++; } };
   let live = false;
   try { const m = await import('./recorder.js?v=1'); rec = await m.startRecording({ onLevel }); }
   catch (e) { return retry(e.message); }
   if (run !== RUN) { rec.stop().catch(() => {}); return; }
   $('#gb').innerHTML = `${hudHTML(L)}<div class="eyebrow" style="margin-top:14px">YOUR TOPIC</div><div class="vtopic">“${esc(topic)}”</div>
-    <div class="micbox"><div class="miclvl"><i id="micLvl"></i></div><div class="vstate" id="vstate">⏸ pause</div></div>
+    <div class="micbox"><div class="miclvl"><i id="micLvl"></i></div><div class="vstate" id="vstate">pause</div></div>
     <div class="vwords" id="vwords"></div><div class="muted" id="rmsg"></div>`;
   goal(0, L.target, '% flow');
   for (const n of [3, 2, 1]) { $('#rmsg').textContent = `Think about it… start talking in ${n}`; await sleep(800); if (run !== RUN) { rec.stop().catch(() => {}); return; } }
-  $('#rmsg').textContent = '🎙️ Go! Keep talking until the timer ends.'; live = true;
+  $('#rmsg').textContent = 'Go! Keep talking until the timer ends.'; live = true;
   let RA = null, mic = null;
   try { RA = await import('./readalong.js?v=1'); if (RA.supported()) mic = RA.listen(t => { const w = RA.wordsOf(t), el = $('#vwords'); if (el) el.innerHTML = w.slice(-14).map(x => `<span>${esc(x)}</span>`).join(' ') + `<b>${w.length} words</b>`; }); } catch { mic = null; }
   const stop = {}, tick = setInterval(() => { if (ticks) goal(Math.round(talking / ticks * 100), L.target, '% talking (live estimate)'); }, 300);
@@ -334,7 +334,7 @@ async function voiceGame(g, L) {
 // ============================================================ ANIMAL NAMING (levels: 15 s, Whisper counts the words)
 async function fluency(g, L, classicSecs = 0) {
   const run = RUN, secs = classicSecs || L.seconds;
-  const mode = await chooseMode([['voice', '🎤 Say them out loud', 'We record you and count the animals with a speech-recognition model (Whisper).'], ['type', '⌨️ Type them', 'Type each animal and press Enter.']]);
+  const mode = await chooseMode([['voice', `${icon('mic')} Say them out loud`, 'We record you and count the animals with a speech-recognition model (Whisper).'], ['type', `${icon('keyboard')} Type them`, 'Type each animal and press Enter.']]);
   if (run !== RUN) return;
   const entries = [], stop = {}; let rec = null;
   if (mode === 'voice') {
@@ -343,7 +343,7 @@ async function fluency(g, L, classicSecs = 0) {
   }
   const voice = !!rec;
   $('#gb').innerHTML = `${classicSecs ? `<div class="ghud"><div class="eyebrow">CLINICAL VERSION · ${secs} SECONDS</div><div class="gtime"><i id="gTime"></i><b id="gSec">${secs}</b></div></div>` : hudHTML(L)}
-    ${voice ? `<div class="micbox"><div class="dm-big">🎤</div><div class="miclvl"><i id="micLvl"></i></div><div class="muted">Listening… say animals one after another, clearly, with a short pause between them.</div></div>`
+    ${voice ? `<div class="micbox"><div class="dm-big">${icon('mic')}</div><div class="miclvl"><i id="micLvl"></i></div><div class="muted">Listening… say animals one after another, clearly, with a short pause between them.</div></div>`
       : '<input id="fin" placeholder="type an animal + Enter" autocomplete="off" style="max-width:360px">'}
     <div class="chips" id="fgot" style="justify-content:center;margin-top:14px"></div>`;
   if (!classicSecs) goal(0, L.target, voice ? 'animals (counted at the end)' : 'animals');
@@ -384,12 +384,12 @@ async function trails(g, L) {
   hint();
   $$('.tdot', box).forEach(b => b.onclick = () => {
     const i = +b.dataset.i; if (i < next || stop.done) return;
-    if (i !== next) { errors++; b.classList.add('bad'); setTimeout(() => b.classList.remove('bad'), 300); $('#tmsg').textContent = `✗ that's ${labels[i]} · look for ${labels[next]}`; return; }
+    if (i !== next) { errors++; b.classList.add('bad'); setTimeout(() => b.classList.remove('bad'), 300); $('#tmsg').textContent = `That's ${labels[i]} · look for ${labels[next]}`; return; }
     b.classList.remove('hint', 'start'); b.classList.add('ok');
     if (i > 0) $('#tl').insertAdjacentHTML('beforeend', `<line x1="${pts[i - 1].x}" y1="${pts[i - 1].y}" x2="${pts[i].x}" y2="${pts[i].y}" stroke="var(--c)" stroke-width="3"/>`);
     next++; goal(next, labels.length, 'dots');
     if (next === labels.length) { stop.done = true; return; }
-    $('#tnext').textContent = labels[next]; $('#tmsg').textContent = `✓ ${labels[i]} · now find ${labels[next]}`; hint();
+    $('#tnext').textContent = labels[next]; $('#tmsg').textContent = `Got ${labels[i]} · now find ${labels[next]}`; hint();
   });
   const how = await countdown(L.seconds, run, stop); clearTimeout(idle);
   if (how === 'quit') return;
@@ -437,7 +437,7 @@ async function corsi(g, L) {
     $('#cinfo').textContent = 'Your turn: tap them in the same order'; $$('.cblk').forEach(b => b.disabled = false);
     const ok = await new Promise(res => { let k = 0; $$('.cblk').forEach(b => b.onclick = () => { const i = +b.dataset.i;
       if (i !== seq[k]) { b.classList.add('wrong'); return res(false); } b.classList.add('tap'); setTimeout(() => b.classList.remove('tap'), 200); k++; if (k === seq.length) res(true); }); });
-    if (ok) { right++; $('#cinfo').textContent = '✓ Correct!'; } else { wrong++; $('#cinfo').textContent = '✗ Wrong block'; }
+    if (ok) { right++; $('#cinfo').textContent = 'Correct!'; } else { wrong++; $('#cinfo').textContent = 'Wrong block'; }
     goal(right, L.target, 'right'); await sleep(800);
   }
   finish(g, right, { errors: wrong, length: L.length }, [`${right} of your tries at ${L.length} blocks were right.`]);
@@ -454,11 +454,11 @@ async function reaction(g, L) {
     c.className = 'rtc'; c.textContent = 'wait…';
     let armed = false, go = 0; const kind = plan[t];
     const res = await new Promise(resolve => {
-      const timer = setTimeout(() => { armed = true; go = performance.now(); c.className = 'rtc ' + (kind === 'go' ? 'go' : 'red'); c.textContent = kind === 'go' ? 'TAP!' : '✋ don\'t!';
-        if (kind === 'red') setTimeout(() => { if (c.onclick) { c.onclick = null; c.className = 'rtc'; c.textContent = '✓ held'; resolve('held'); } }, 1100); }, 800 + Math.random() * 1400);
+      const timer = setTimeout(() => { armed = true; go = performance.now(); c.className = 'rtc ' + (kind === 'go' ? 'go' : 'red'); c.textContent = kind === 'go' ? 'TAP!' : 'DON\'T TAP';
+        if (kind === 'red') setTimeout(() => { if (c.onclick) { c.onclick = null; c.className = 'rtc'; c.textContent = 'Held'; resolve('held'); } }, 1100); }, 800 + Math.random() * 1400);
       c.onclick = () => {
         if (!armed) { clearTimeout(timer); c.onclick = null; c.className = 'rtc early'; c.textContent = 'too early!'; setTimeout(() => resolve('early'), 600); }
-        else if (kind === 'red') { c.onclick = null; c.className = 'rtc early'; c.textContent = '✗ that was red'; setTimeout(() => resolve('redtap'), 600); }
+        else if (kind === 'red') { c.onclick = null; c.className = 'rtc early'; c.textContent = 'That was red'; setTimeout(() => resolve('redtap'), 600); }
         else { const ms = performance.now() - go; c.onclick = null; c.className = 'rtc'; c.textContent = `${Math.round(ms)} ms`; resolve(ms); }
       };
     });
@@ -475,7 +475,7 @@ async function reaction(g, L) {
 // ============================================================ CLINICAL WORD RECALL (CERAD-style, NHANES percentile)
 async function recallClassic(g) {
   const run = RUN, { words, distractors } = await X().api('/api/games/recall-words');
-  const mode = await chooseMode([['type', '⌨️ Free recall (type words)', 'Same as NHANES: recall without hints. Gets a NHANES percentile.'], ['tap', '👆 Tap mode (no keyboard)', 'Pick the words from a grid. Easier, so no NHANES comparison.']]);
+  const mode = await chooseMode([['type', `${icon('keyboard')} Free recall (type words)`, 'Same as NHANES: recall without hints. Gets a NHANES percentile.'], ['tap', `${icon('tap')} Tap mode (no keyboard)`, 'Pick the words from a grid. Easier, so no NHANES comparison.']]);
   if (run !== RUN) return;
   const trials = [];
   for (let t = 0; t < 3; t++) {
@@ -518,7 +518,7 @@ function recallDelayedButton(g) {
   const mins = (Date.now() - st.at) / 60000;
   const row = $('#startRow');
   if (mins < 5) { row.insertAdjacentHTML('beforeend', `<button class="ghost" disabled>⏳ Clinical delayed recall opens in ${Math.ceil(5 - mins)} min</button>`); return; }
-  row.insertAdjacentHTML('beforeend', `<button class="cta" id="delayed" style="background:linear-gradient(90deg,#9B7BFF,#59F0FF)">🧠 Clinical delayed recall now</button>`);
+  row.insertAdjacentHTML('beforeend', `<button class="cta" id="delayed" style="background:linear-gradient(90deg,#9B7BFF,#59F0FF)">${icon('brain')} Clinical delayed recall now</button>`);
   $('#delayed').onclick = async () => {
     const r = await collectRecall(st.words, st.distractors, st.mode, `DELAYED RECALL · ${Math.round(mins)} MIN LATER`);
     localStorage.removeItem('nt_recall');
@@ -533,63 +533,3 @@ function chooseMode(opts) {
   });
 }
 
-// ============================================================ MRI PAGE (real 3D CNN)
-export async function pageMRI() {
-  RUN++;
-  const [m, samples] = await Promise.all([X().api('/api/mri/metrics'), X().api('/api/mri/samples')]);
-  const ok = samples.some(s => s.available);
-  $('#p-mri').innerHTML = `<div class="scrollpage"><div class="wrap mx">${recordsTabs('mri')}
-    <div class="mx-grid">
-      <div class="mx-left">
-        <div class="mx-card glass"><div class="mx-ic">🧪</div><b>Try a real scan</b>
-          <select id="msel">${samples.map(s => `<option value="${s.file}">${s.Age} yrs · ${s.female ? 'woman' : 'man'} · ${s.status}</option>`).join('')}</select>
-          <button class="cta" id="mrun" ${ok ? '' : 'disabled'}>🧠 Analyze</button>${ok ? '' : '<small class="muted">Sample scans not downloaded on this computer.</small>'}</div>
-        <label class="mx-card glass mx-drop" id="drop"><input type="file" id="mfile" accept=".nii,.gz" hidden><div class="mx-ic">⬆️</div><b>Upload your MRI</b><small class="muted">.nii file · never saved</small></label>
-        <details class="mx-info"><summary>ⓘ How accurate?</summary><p>Trained on ${m.n_volumes} real brain scans. Usually within ±${m.mae.toFixed(0)} years.</p></details>
-      </div>
-      <div class="glass mx-out" id="mout"><div class="mx-wait"><div class="mx-brain">🧠</div><p>Pick a scan to see its brain age</p></div></div>
-    </div></div></div>`;
-  const show = async (promise) => { $('#mout').innerHTML = '<div class="mx-wait"><div class="mx-brain spin">🧠</div><p>Reading the scan…</p></div>';
-    try { renderMRI(await promise); } catch (e) { $('#mout').innerHTML = `<div class="mx-wait"><p>⚠ ${e.message}</p></div>`; } };
-  $('#mrun').onclick = () => { const fd = new FormData(); fd.append('file', $('#msel').value); show(fetchForm(`/api/player/${encodeURIComponent(me().name)}/mri/sample`, fd)); };
-  const up = f => { const fd = new FormData(); fd.append('file', f); fd.append('age', me().profile.age); show(fetchForm(`/api/player/${encodeURIComponent(me().name)}/mri/upload`, fd)); };
-  $('#mfile').onchange = e => e.target.files[0] && up(e.target.files[0]);
-  const d = $('#drop'); d.ondragover = e => { e.preventDefault(); d.classList.add('over'); }; d.ondragleave = () => d.classList.remove('over');
-  d.ondrop = e => { e.preventDefault(); d.classList.remove('over'); e.dataTransfer.files[0] && up(e.dataTransfer.files[0]); };
-}
-function mriConfidence(r) {
-  const col = { high: '#3DDC97', medium: '#FFC83D', low: '#FF8A7A' }[r.confidence];
-  const lo = Math.min(r.interval_low, r.age ?? r.interval_low) - 5, hi = Math.max(r.interval_high, r.age ?? r.interval_high) + 5;
-  const x = v => `${((v - lo) / (hi - lo) * 100).toFixed(1)}%`;
-  return `<div class="tiny" style="margin-top:14px">95% INTERVAL ${r.interval_low.toFixed(0)}–${r.interval_high.toFixed(0)} YRS${r.gap != null ? ` · GAP ${r.gap > 0 ? '+' : ''}${r.gap.toFixed(1)} (${r.gap_low.toFixed(0)} to ${r.gap_high > 0 ? '+' : ''}${r.gap_high.toFixed(0)})` : ''}</div>
-    <div style="position:relative;height:30px;margin:6px 0 4px;background:rgba(255,255,255,.06);border-radius:8px">
-      <div style="position:absolute;top:8px;height:14px;left:${x(r.interval_low)};width:calc(${x(r.interval_high)} - ${x(r.interval_low)});background:${col}55;border:1px solid ${col};border-radius:7px"></div>
-      <div title="brain age" style="position:absolute;top:2px;height:26px;width:3px;left:${x(r.brain_age)};background:${col}"></div>
-      ${r.age != null ? `<div title="actual age" style="position:absolute;top:2px;height:26px;width:3px;left:${x(r.age)};background:#9AA3C7"></div>` : ''}</div>
-    <div class="tiny" style="color:#9AA3C7">colored bar = brain age${r.age != null ? ' · grey bar = actual age' : ''}</div>
-    <p style="margin:12px 0 4px"><span style="display:inline-block;padding:3px 12px;border-radius:999px;border:1px solid ${col};color:${col};font-weight:700;text-transform:uppercase;letter-spacing:.06em">${r.confidence} confidence</span></p>
-    <ul class="muted" style="margin:4px 0 8px 18px">${r.confidence_reasons.map(s => `<li>${s}</li>`).join('')}</ul>
-    <div class="tiny">MODEL AGREEMENT (spread ${r.model_disagreement.toFixed(1)} yrs)</div>
-    <div class="chips" style="margin:6px 0">${r.per_model.map(p => `<span class="chip" title="${p.n_models} fold model(s)">${p.label}: <b>${p.brain_age.toFixed(0)}</b></span>`).join('')}</div>`;
-}
-async function fetchForm(url, fd) { const r = await fetch(url, { method: 'POST', body: fd }); const j = await r.json(); if (!r.ok) throw new Error(j.detail || r.statusText); return j; }
-function renderMRI(r) {
-  const f = r.format;
-  if (r.brain_age == null) { $('#mout').innerHTML = `<div class="mx-wait"><div class="mx-brain">🤔</div><p>This file can't be read as a brain scan.</p><small class="muted">${esc(f.issues[0] || '')}</small></div>`; return; }
-  // Show the bias-corrected brain age (real age + corrected gap) so the big number and the "years older" line agree.
-  const gap = r.gap, age = r.age != null ? Math.round(r.age) : null, t = r.truth;
-  const ba = gap != null && r.age != null ? Math.round(r.age + gap) : Math.round(r.brain_age);
-  const col = gap == null ? '#59F0FF' : gap > r.sdc ? '#FF8A7A' : gap < -r.sdc ? '#3DDC97' : '#59F0FF';
-  const word = gap == null ? '' : Math.abs(gap) < r.sdc ? 'About the same as real age' : gap > 0 ? `${gap.toFixed(0)} years older than real age` : `${(-gap).toFixed(0)} years younger than real age`;
-  const views = ['axial', 'coronal', 'sagittal'].filter(k => r.images[k]);
-  $('#mout').innerHTML = `<div class="mx-res">
-    <div class="mx-nums"><div><small>Brain age</small><b class="mx-count" style="color:${col}" data-to="${ba}">0</b></div>${age != null ? `<div><small>Real age</small><b>${age}</b></div>` : ''}</div>
-    ${word ? `<div class="mx-word" style="--c:${col}">${word}</div>` : ''}
-    ${views.length ? `<div class="mx-scan"><img id="mxImg" src="${r.images[views[0]]}" alt="brain scan heatmap"><div class="mx-views">${views.map((k, i) => `<button class="chip ${i ? '' : 'on'}" data-v="${k}">${{ axial: 'Top', coronal: 'Front', sagittal: 'Side' }[k]}</button>`).join('')}</div>
-      <small class="muted">🟠 Orange = areas that made it look older</small></div>` : ''}
-    ${t ? `<small class="muted mx-truth">This was a real ${t.age}-year-old · ${esc(t.status)}</small>` : ''}</div>`;
-  const el = $('#mout .mx-count'), t0 = performance.now();
-  const step = now => { const k = Math.min(1, (now - t0) / 900); el.textContent = Math.round(ba * (1 - Math.pow(1 - k, 3))); if (k < 1) requestAnimationFrame(step); };
-  requestAnimationFrame(step);
-  $$('#mout [data-v]').forEach(b => b.onclick = () => { $('#mxImg').src = r.images[b.dataset.v]; $$('#mout [data-v]').forEach(x => x.classList.toggle('on', x === b)); });
-}

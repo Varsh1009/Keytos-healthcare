@@ -21,18 +21,18 @@
 <header id="hud">
   <a class="brand" href="#/"><span class="logo">◉</span> Neuro<b>Trail</b></a>
   <nav class="tabs" id="tabs">
-    <a href="#/" data-r="home">🏠 Home</a>
-    <a href="#/gym" data-r="gym">🧩 Games</a>
-    <a href="#/data" data-r="data">📱 My data</a>
-    <a href="#/mri" data-r="records">🧠 Brain records</a>
-    <a href="#/progress" data-r="progress">📈 Progress</a>
+    <a href="#/" data-r="home"><span class="ic-slot" data-ic="home"></span> Home</a>
+    <a href="#/gym" data-r="gym"><span class="ic-slot" data-ic="grid"></span> Games</a>
+    <a href="#/data" data-r="data"><span class="ic-slot" data-ic="phone"></span> My data</a>
+    <a href="#/mri" data-r="records"><span class="ic-slot" data-ic="brain"></span> Brain records</a>
+    <a href="#/progress" data-r="progress"><span class="ic-slot" data-ic="chart"></span> Progress</a>
   </nav>
   <div class="hud-right">
     <div class="hud-chip" id="levelChip">
       <svg viewBox="0 0 40 40" class="ring"><circle cx="20" cy="20" r="16" class="ring-bg"/><circle cx="20" cy="20" r="16" class="ring-fg" id="levelRing"/></svg>
       <div><div class="tiny">LV <span id="levelNum">1</span></div><div class="strong" id="levelName">Neuron</div></div></div>
-    <div class="hud-chip"><span class="spark-ico">⚡</span><div><div class="tiny">SPARKS</div><div class="strong" id="sparks">0</div></div></div>
-    <div class="hud-chip"><span class="flame" id="flame">🔥</span><div><div class="tiny">STREAK</div><div class="strong"><span id="streak">0</span> <span id="days">days</span></div></div></div>
+    <div class="hud-chip"><span class="spark-ico" data-ic="zap" style="color:var(--gold)"></span><div><div class="tiny">SPARKS</div><div class="strong" id="sparks">0</div></div></div>
+    <div class="hud-chip"><span class="flame" id="flame" data-ic="flame" style="color:#FF7A2F"></span><div><div class="tiny">STREAK</div><div class="strong"><span id="streak">0</span> <span id="days">days</span></div></div></div>
     <div class="player" id="playerBtn"><span id="playerName">Player</span> ▾<div class="menu" id="playerMenu"></div></div>
   </div>
 </header>
@@ -60,7 +60,7 @@
 <div class="overlay" id="welcome"><div class="modal hero-modal wl">
   <div class="wl-logo"><span class="logo">◉</span> Neuro<b>Trail</b></div>
   <h1>No chip. No scan.<br><span class="grad">Just a sharper brain.</span></h1>
-  <p class="wl-sub">3 mins a day. Real science. 🧠⚡</p>
+  <p class="wl-sub">3 mins a day. Real science.</p>
   <div id="wlBack"></div>
   <div class="wl-row"><input id="newName" placeholder="Your name" maxlength="40" autocomplete="off" enterkeyhint="go"><button class="cta" id="startBtn">Let's go →</button></div>
   <button class="wl-link" id="guestBtn">or jump in as a guest</button>
@@ -73,7 +73,7 @@
 </div></div>
 
 <div class="overlay" id="levelup"><div class="modal levelup-modal">
-  <div class="burst">✦</div><div class="eyebrow">LEVEL UP</div><h1 id="luName"></h1>
+  <div class="burst" data-ic="sparkles"></div><div class="eyebrow">LEVEL UP</div><h1 id="luName"></h1>
   <p id="luText"></p><button class="cta" data-close="levelup">Keep going →</button>
 </div></div>
 

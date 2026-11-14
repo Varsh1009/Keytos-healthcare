@@ -41,12 +41,12 @@ ART = Path(__file__).resolve().parents[1] / "models" / "artifacts"
 RES = Path(__file__).resolve().parents[1] / "results"
 
 GROUPS = [
-    ("movement", "🚶 Movement", "Watch, phone and your check-ins"),
-    ("sleep_heart", "🌙 Sleep & heart", "Watch and your check-ins"),
-    ("thinking", "🧩 Thinking games", "Every game you've played"),
-    ("speech_hands", "🎙️ Speech & hands", "Voice check and camera hand check"),
-    ("hearing", "👂 Hearing", "Hearing tests, sound exposure and Sound Check"),
-    ("brain_scan", "🩻 Brain scan", "Your own uploaded MRI scans"),
+    ("movement", "Movement", "Watch, phone and your check-ins"),
+    ("sleep_heart", "Sleep & heart", "Watch and your check-ins"),
+    ("thinking", "Thinking games", "Every game you've played"),
+    ("speech_hands", "Speech & hands", "Voice check and camera hand check"),
+    ("hearing", "Hearing", "Hearing tests, sound exposure and Sound Check"),
+    ("brain_scan", "Brain scan", "Your own uploaded MRI scans"),
 ]
 # id -> (group, better, floor for a meaningful change, note)
 # better: "higher" | "lower" | ("band", lo, hi) for "in range is best"
@@ -70,6 +70,7 @@ WATCH_VARS = {
     "noise_db": ("hearing", "lower", 2, None),
 }
 GAME_PRACTICE = 1
+SPEECH_GAMES = ("voice", "readaloud")   # shown under "Speech & hands", not "Thinking games"
 DAY_BASE, DAY_RECENT, DAY_MIN = 28, 14, 7
 STALE_DAYS = 21
 
@@ -308,14 +309,15 @@ def build(p) -> dict:
     for g in gym.GAMES:
         link = "#/sprint" if g["id"] == "speed" else f"#/game/{g['id']}"
         rows = game_rows(p, g["id"])
-        base = {"id": "game_" + g["id"], "group": "thinking", "label": g["title"], "icon": g.get("icon", ""),
+        grp = "speech_hands" if g["id"] in SPEECH_GAMES else "thinking"
+        base = {"id": "game_" + g["id"], "group": grp, "label": g["title"], "icon": g.get("icon", ""),
                 "unit": g["unit"], "source": "game", "link": link, "domain": g.get("domain", "")}
         if not rows:
             vars_.append(base | {"status": "none", "n": 0, "points": []})
             continue
         fmt, pts, practice = pick_format(rows)
         lv = fmt == "levels"                    # difficulty-adjusted: higher is always better, half a level is meaningful
-        v = _var(base["id"], "thinking", g["title"], "level" if lv else g["unit"], "game", pts,
+        v = _var(base["id"], grp, g["title"], "level" if lv else g["unit"], "game", pts,
                  "higher" if lv else g["better"], 0.25 if lv else 0, "game",
                  practice=practice, icon=base["icon"], domain=base["domain"], link=link)
         v["format"] = FORMAT_LABEL.get(fmt, fmt)
@@ -340,8 +342,9 @@ def build(p) -> dict:
     voices.sort(key=lambda v: v["ts"])
     for key, label, unit, better, floor in (("speech_tempo", "Speech tempo", "syll/s", "higher", 0.15),
                                             ("silent_pause_ratio", "Time spent pausing", "share", "lower", 0.03)):
-        for task, tlabel in (("reading", "read aloud"), ("free", "telling a story")):
-            pts = [(x["ts"], float(x["metrics"][key])) for x in voices if x["task"] == task and x["metrics"].get(key) is not None]
+        for task, tlabel in (("reading", "read aloud"), ("free", "talking freely")):
+            src = [x for x in voices if x["task"] == task]   # includes Voice Check game rounds (added above as "free")
+            pts = sorted((x["ts"], float(x["metrics"][key])) for x in src if x["metrics"].get(key) is not None)
             if pts:
                 vars_.append(_var(f"voice_{key}_{task}", "speech_hands", f"{label} ({tlabel})", unit, "voice check", pts,
                                   better, floor, "game", practice=1, link="#/voice", word="recording",
@@ -450,16 +453,16 @@ def _coverage(p, days, voices, hands, scans) -> list[dict]:
     last = max(days) if days else None
     srcs = sorted({k for v in days.values() for k in v})
     return [
-        {"id": "watch", "label": "Watch / phone", "icon": "⌚", "ok": bool(days), "link": "#/data",
+        {"id": "watch", "label": "Watch / phone", "icon": "watch", "ok": bool(days), "link": "#/data",
          "detail": f"{len(days)} days · last {last}" if days else "Not connected",
          "stale": bool(last) and (date.today() - date.fromisoformat(last)).days > STALE_DAYS, "fields": srcs},
-        {"id": "games", "label": "Games", "icon": "🧩", "ok": plays > 0, "link": "#/gym", "detail": f"{plays} plays"},
-        {"id": "checkins", "label": "Check-ins", "icon": "✅", "ok": bool(p.logs), "link": "#/play", "detail": f"{len(p.logs)} logged"},
-        {"id": "voice", "label": "Voice", "icon": "🎙️", "ok": bool(voices), "link": "#/voice", "detail": f"{len(voices)} recordings"},
-        {"id": "hands", "label": "Hand check", "icon": "✋", "ok": bool(hands), "link": "#/hands", "detail": f"{len(hands)} checks"},
-        {"id": "hearing", "label": "Hearing", "icon": "👂", "ok": any("hearing_pta_db" in v or "headphone_db" in v for v in days.values()),
+        {"id": "games", "label": "Games", "icon": "grid", "ok": plays > 0, "link": "#/gym", "detail": f"{plays} plays"},
+        {"id": "checkins", "label": "Check-ins", "icon": "check-circle", "ok": bool(p.logs), "link": "#/play", "detail": f"{len(p.logs)} logged"},
+        {"id": "voice", "label": "Voice", "icon": "mic", "ok": bool(voices), "link": "#/voice", "detail": f"{len(voices)} recordings"},
+        {"id": "hands", "label": "Hand check", "icon": "hand", "ok": bool(hands), "link": "#/hands", "detail": f"{len(hands)} checks"},
+        {"id": "hearing", "label": "Hearing", "icon": "ear", "ok": any("hearing_pta_db" in v or "headphone_db" in v for v in days.values()),
          "link": "#/data", "detail": "Hearing test / headphone levels" if any("hearing_pta_db" in v or "headphone_db" in v for v in days.values()) else "Via Apple Health"},
-        {"id": "mri", "label": "MRI scan", "icon": "🩻", "ok": bool(scans), "link": "#/mri", "detail": f"{len(scans)} of your own" if scans else "None uploaded"},
+        {"id": "mri", "label": "MRI scan", "icon": "scan", "ok": bool(scans), "link": "#/mri", "detail": f"{len(scans)} of your own" if scans else "None uploaded"},
     ]
 
 
@@ -670,39 +673,39 @@ def updates(p, days: dict, limit: int = 30) -> list[dict]:
                    (" (classic test)" if r["classic"] else "")
             tags = []
             if r["passed"] and r["level"] not in cleared:
-                cleared.add(r["level"]); tags.append(f"🏅 cleared level {r['level']}")
+                cleared.add(r["level"]); tags.append(f"cleared level {r['level']}")
             key = r["fmt"] + str(r["level"] if r["fmt"] == "levels" else "")
             better = (r["raw"] < best[key]) if g["better"] == "lower" and key in best else (r["raw"] > best[key]) if key in best else False
             if better:
-                tags.append("⭐ new best")
+                tags.append("new best")
             best[key] = r["raw"] if key not in best or better else best[key]
             if i == 0:
                 tags.append("first play")
-            ev.append({"ts": r["ts"], "icon": g.get("icon", "🧩"), "area": "thinking", "text": text, "tags": tags})
+            ev.append({"ts": r["ts"], "icon": g.get("icon", "grid"), "area": "thinking", "text": text, "tags": tags})
     for m in db.mris(p.name):
         own = str(m["source"]).startswith("upload")
         ba = f"brain age {m['brain_age']:.0f}" if m["brain_age"] is not None else "couldn't be read"
-        ev.append({"ts": m["ts"], "icon": "🩻", "area": "brain_scan", "text": f"MRI analyzed: {ba}",
-                   "tags": [] if own else ["🧪 sample scan (shown in Progress, not counted as yours)"]})
+        ev.append({"ts": m["ts"], "icon": "scan", "area": "brain_scan", "text": f"MRI analyzed: {ba}",
+                   "tags": [] if own else ["sample scan (shown in Progress, not counted as yours)"]})
     for e in db.eegs(p.name):
         own = e["source"].startswith("upload")
-        ev.append({"ts": e["ts"], "icon": "〰️", "area": "brain_scan", "text": f"EEG analyzed: resting rhythm {e['paf_hz']:.1f} Hz",
-                   "tags": [] if own else ["🧪 sample recording (shown in Progress, not counted as yours)"]})
+        ev.append({"ts": e["ts"], "icon": "wave", "area": "brain_scan", "text": f"EEG analyzed: resting rhythm {e['paf_hz']:.1f} Hz",
+                   "tags": [] if own else ["sample recording (shown in Progress, not counted as yours)"]})
     for v in db.voices(p.name):
-        ev.append({"ts": v["ts"], "icon": "🎙️", "area": "speech_hands",
+        ev.append({"ts": v["ts"], "icon": "mic", "area": "speech_hands",
                    "text": f"Voice check ({'read aloud' if v['task'] == 'reading' else 'story'}): {v['metrics'].get('speech_tempo')} syllables/sec", "tags": []})
     for h in db.games(p.name, "hands"):
         tap = h["detail"].get("results", {}).get("tap", {}).get("rate_hz")
-        ev.append({"ts": h["ts"], "icon": "✋", "area": "speech_hands",
+        ev.append({"ts": h["ts"], "icon": "hand", "area": "speech_hands",
                    "text": f"Hand check ({h['detail'].get('hand', '?')} hand)" + (f": {tap} taps/sec" if tap else ""), "tags": []})
     for l in p.logs:
         q = QUEST_TITLES.get(l["quest"], l["quest"])
         val = f": {pfmt(l['value'])}" if l.get("value") is not None else ""
-        ev.append({"ts": l["ts"], "icon": "✅", "area": "checkins", "text": f"Check-in: {q}{val}", "tags": []})
+        ev.append({"ts": l["ts"], "icon": "check-circle", "area": "checkins", "text": f"Check-in: {q}{val}", "tags": []})
     with db.conn() as c:
         for r in c.execute("SELECT source, COUNT(*) n, MIN(date) a, MAX(date) b FROM wearable_days WHERE player=? GROUP BY source", (p.name,)):
             sample = r["source"].startswith("Sample")
-            ev.append({"ts": r["b"] + "T23:59:00", "icon": "⌚", "area": "movement",
+            ev.append({"ts": r["b"] + "T23:59:00", "icon": "watch", "area": "movement",
                        "text": f"Watch data: {r['n']} days ({r['a']} → {r['b']})",
                        "tags": ["made-up sample"] if sample else [r["source"]]})
     ev.sort(key=lambda e: e["ts"], reverse=True)
@@ -766,7 +769,7 @@ def today_section(p, rows_all: dict, voices: list, hands: list, today: date | No
             continue
         before = [v for v in voices if v["date"] < d0 and v["task"] == task and v["metrics"].get("speech_tempo")]
         m = now[-1]["metrics"]
-        it = {"id": "voice_" + task, "title": label, "icon": "🎙️", "domain": "Speech", "plays": len(now),
+        it = {"id": "voice_" + task, "title": label, "icon": "mic", "domain": "Speech", "plays": len(now),
               "link": "#/voice", "tempo": m.get("speech_tempo"), "pause": m.get("silent_pause_ratio")}
         if before:
             u = st.median(v["metrics"]["speech_tempo"] for v in before)
@@ -784,7 +787,7 @@ def today_section(p, rows_all: dict, voices: list, hands: list, today: date | No
         before = [h for h in hands if h["date"] < d0 and h["detail"].get("hand") == side
                   and h["detail"].get("results", {}).get("tap", {}).get("rate_hz")]
         parts = ([f"{tap:.1f} finger taps/s"] if tap else []) + ([f"hand shake {amp:.1f} mm"] if amp is not None else [])
-        it = {"id": "hands", "title": f"Hand check ({side} hand)" if side else "Hand check", "icon": "✋",
+        it = {"id": "hands", "title": f"Hand check ({side} hand)" if side else "Hand check", "icon": "hand",
               "domain": "Movement control", "plays": len(hnow), "link": "#/hands"}
         if before and tap:
             u = st.median(h["detail"]["results"]["tap"]["rate_hz"] for h in before)
