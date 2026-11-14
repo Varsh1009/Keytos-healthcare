@@ -5,11 +5,11 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { pageGym, pageGame, pageMRI, railHTML, boardHTML, startDemo } from './gym.js?v=20';
+import { pageGym, pageGame, pageMRI, railHTML, boardHTML, startDemo } from './gym.js?v=22';
 import { pageHands } from './hands.js?v=7';
 import { initDock } from './dock.js?v=4';
-import { pageEEG } from './records.js?v=4';
-import { pageHome as pageHome2, pageVoice, pageData, plainLever, plainAmount, buddy } from './ui2.js?v=12';
+import { pageEEG } from './records.js?v=5';
+import { pageHome as pageHome2, pageVoice, pageData, plainLever, plainAmount, buddy } from './ui2.js?v=13';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -352,11 +352,12 @@ function feedHTML(U) {
   }
   return `<div class="glass pfeed"><b>Latest updates</b><div class="muted">Everything you've done, newest first</div>${rows}</div>`;
 }
-// ---------------- Progress v2: visual, few words. Today row → 6 area rings → trend → recent.
+// ---------------- Progress v3: "brain orbit". Buddy in the middle, 6 areas as bubbles; tap one → live chart panel.
 const ST = { better: ['⬆', '#3DDC97', 'Better'], steady: ['➡', '#59F0FF', 'Steady'], lower: ['⬇', '#FFB86B', 'Lower'],
-  building: ['🌱', '#C9A7FF', 'Building'], add: ['＋', '#6B7299', 'Add'] };
+  building: ['🌱', '#C9A7FF', 'Learning'], add: ['＋', '#6B7299', 'Add data'] };
 const TV = { better: 'better', usual: 'steady', lower: 'lower', first: 'building' };
 const AREA_LINK = { thinking: '#/gym', movement: '#/data', sleep_heart: '#/data', speech_hands: '#/hands', hearing: '#/data', brain_scan: '#/mri' };
+const AREA_CTA = { thinking: '🎮 Play a game', movement: '⌚ Connect a watch', sleep_heart: '⌚ Connect a watch', speech_hands: '✋ Do a hand check', hearing: '⌚ Connect a watch', brain_scan: '🧠 Add an MRI' };
 const VAR_ST = { improving: 'better', steady: 'steady', slipping: 'lower', building: 'building', snapshot: 'building', activity: 'building', stale: 'steady' };
 function areaState(vs) {
   const has = vs.filter(v => v.n || v.points?.length);
@@ -364,70 +365,63 @@ function areaState(vs) {
   const c = s => has.filter(v => v.status === s).length, up = c('improving'), dn = c('slipping');
   return up > dn ? 'better' : dn > up ? 'lower' : up || c('steady') ? 'steady' : 'building';
 }
-function sparkSVG(pts, better) {
-  const v = (pts || []).map(p => p.value);
-  if (v.length < 2) return '<span class="pv-spark"></span>';
-  const mn = Math.min(...v), mx = Math.max(...v), r = mx - mn || 1, up = better === 'lower' ? v.at(-1) <= v[0] : v.at(-1) >= v[0];
-  const d = v.map((x, i) => `${i ? 'L' : 'M'}${(i / (v.length - 1) * 100).toFixed(1)},${(22 - (x - mn) / r * 20).toFixed(1)}`).join('');
-  return `<svg viewBox="0 0 100 24" preserveAspectRatio="none" class="pv-spark"><path d="${d}" stroke="${up ? '#3DDC97' : '#FFB86B'}"/></svg>`;
-}
-function ringSVG(state, icon, frac) {
-  const [, col] = ST[state], C = 2 * Math.PI * 30;
-  return `<svg viewBox="0 0 72 72" class="pv-ring"><circle cx="36" cy="36" r="30" class="bg"/><circle cx="36" cy="36" r="30" class="fg" stroke="${col}" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - frac)}"/>
-    <text x="36" y="44" text-anchor="middle">${icon}</text></svg>`;
-}
+const shortName = t => t.replace(/^\S+\s/, '');
+let PO = null;
 async function pageProgress() {
   const O = await api(`/api/player/${enc(ME.name)}/overview`), C = O.combined, T = O.today || { items: [] };
   const todayAreas = new Set(T.items.flatMap(i => i.id === 'voice' ? ['thinking', 'speech_hands'] : i.id.startsWith('voice') || i.id === 'hands' ? ['speech_hands'] : ['thinking']));
-  const areas = O.groups.map(g => { const vs = O.variables.filter(v => v.group === g.id), st = areaState(vs);
-    return { ...g, vs, st, frac: st === 'add' ? 0 : st === 'building' ? 0.35 : 1, today: todayAreas.has(g.id) }; });
+  const areas = O.groups.map(g => { const vs = O.variables.filter(v => v.group === g.id && (v.n || v.points?.length)); return { ...g, vs, st: areaState(vs), today: todayAreas.has(g.id) }; });
+  PO = { areas, sel: null, metric: 0 };
+  const head = C.overall != null ? [(PWORD[C.word] || ['🙂'])[0], `${C.word[0].toUpperCase() + C.word.slice(1)}`, 'than when you started']
+    : areas.some(a => a.st !== 'add') ? ['🌱', 'Getting to know you', 'keep going to see your trend'] : ['👋', 'Let\'s start', 'play a game or connect a watch'];
+  const R = 41;   // orbit radius, % of the box
+  const bubbles = areas.map((a, i) => { const ang = -90 + i * 60, x = 50 + R * Math.cos(ang * Math.PI / 180), y = 50 + R * Math.sin(ang * Math.PI / 180), [ar, col, w] = ST[a.st];
+    return `<button class="po-b ${a.st} ${a.today ? 'today' : ''}" data-a="${a.id}" style="left:${x}%;top:${y}%;--c:${col};--d:${i * 0.12}s">
+      <span class="po-ic">${AREA_ICON[a.id]}</span><b>${esc(shortName(a.title))}</b><em>${ar} ${w}</em>${a.today ? '<i class="po-now">today</i>' : ''}</button>`; }).join('');
+  const lines = areas.map((a, i) => { const ang = (-90 + i * 60) * Math.PI / 180;
+    return `<line x1="50" y1="50" x2="${50 + R * Math.cos(ang)}" y2="${50 + R * Math.sin(ang)}" class="${a.st === 'add' ? 'off' : 'on'}" style="--c:${ST[a.st][1]}"/>`; }).join('');
   const chips = T.items.map(i => { const [a, c] = ST[TV[i.verdict]] || ST.steady;
-    return `<a class="t2chip" href="${i.link}" style="--c:${c}" title="${esc(i.title)}: ${esc(i.text)}"><span class="ic">${i.icon}</span><b>${a}</b><small>${esc(i.title.replace(/ \(.*\)/, ''))}</small></a>`; }).join('');
-  const days = [...Array(14)].map((_, k) => new Date(Date.now() - (13 - k) * 864e5).toISOString().slice(0, 10));
-  const per = Object.fromEntries(days.map(d => [d, 0]));
-  O.updates.forEach(u => { const d = u.ts.slice(0, 10); if (d in per) per[d]++; });
-  const top = Math.max(1, ...Object.values(per));
-  const trend = C.overall != null
-    ? `<div class="glass pv-card"><div class="pv-h"><b>Overall</b><span class="pv-pill" style="--c:${(PWORD[C.word] || [0, '#59F0FF'])[1]}">${(PWORD[C.word] || ['➡'])[0]} ${esc(C.word)}</span>
-        <label class="pc-tog"><input type="checkbox" id="pAreas"> areas</label></div><div class="pc-box"><canvas id="pLine"></canvas></div></div>`
-    : `<div class="glass pv-card"><div class="pv-h"><b>Last 14 days</b></div>
-        <div class="pv-bars">${days.map(d => `<div title="${d}: ${per[d]}"><i style="height:${Math.max(per[d] ? 8 : 2, per[d] / top * 100)}%"></i><small>${d.slice(8)}</small></div>`).join('')}</div></div>`;
-  const recent = O.updates.slice(0, 5).map(u => `<div class="pv-row"><span>${u.icon}</span><p>${esc(u.text)}${u.tags.slice(0, 1).map(t => ` <em>${esc(t)}</em>`).join('')}</p><small>${u.ts.slice(11, 16)}</small></div>`).join('');
-  $('#p-progress').innerHTML = `<div class="scrollpage"><div class="wrap pv2">
-    <div class="pv-top"><div class="h1">Your progress</div><button class="chip" id="pvInfo" title="How it works">ⓘ</button></div>
-    <div class="pv-info glass" id="pvInfoBox" hidden>Compared with <b>your own</b> start. ⬆ better · ➡ steady · ⬇ lower · 🌱 building. Not a diagnosis.</div>
-    <div class="glass t2"><span class="t2-l">TODAY</span>${chips}<a class="t2chip t2add" href="#/gym"><span class="ic">＋</span><small>Play</small></a></div>
-    <div class="pv-areas">${areas.map(a => { const [ar, col, w] = ST[a.st];
-      return `<button class="pv-area glass" data-a="${a.id}" style="--c:${col}">${a.today ? '<i class="pv-dot" title="played today"></i>' : ''}${ringSVG(a.st, AREA_ICON[a.id], a.frac)}
-        <b>${esc(a.title.replace(/^\S+\s/, ''))}</b><span>${ar} ${w}</span></button>`; }).join('')}</div>
-    <div id="pvDetail"></div>
-    ${trend}
-    ${recent ? `<div class="glass pv-card"><div class="pv-h"><b>Recent</b></div>${recent}</div>` : ''}
+    return `<a class="t2chip" href="${i.link}" style="--c:${c}" title="${esc(i.text)}"><span class="ic">${i.icon}</span><b>${a}</b><small>${esc(i.title.replace(/ \(.*\)/, ''))}</small></a>`; }).join('');
+  $('#p-progress').innerHTML = `<div class="scrollpage"><div class="po">
+    <div class="po-orbit"><svg class="po-lines" viewBox="0 0 100 100" preserveAspectRatio="none">${lines}</svg>
+      <div class="po-core"><div class="po-buddy">${buddy(C.word && /better/.test(C.word) ? 'wow' : 'happy', 92)}</div><div class="po-word">${head[0]} ${esc(head[1])}</div><small>${esc(head[2])}</small></div>
+      ${bubbles}</div>
+    <div class="po-panel glass" id="poPanel"></div>
   </div></div>`;
-  $('#pvInfo').onclick = () => { $('#pvInfoBox').hidden = !$('#pvInfoBox').hidden; };
-  $$('#p-progress [data-a]').forEach(b => b.onclick = () => {
-    const a = areas.find(x => x.id === b.dataset.a), open = b.classList.contains('on');
-    $$('#p-progress [data-a]').forEach(x => x.classList.remove('on'));
-    if (open) { $('#pvDetail').innerHTML = ''; return; }
-    b.classList.add('on');
-    const rows = a.vs.filter(v => v.n || v.points?.length).map(v => { const [ar, col] = ST[VAR_ST[v.status] || 'building'];
-      const val = v.latest != null ? `${Math.round(v.latest * 100) / 100}${v.unit && v.unit !== 'level' ? ' ' + esc(v.unit) : ''}` : '';
-      return `<a class="pv-var" href="${v.link || AREA_LINK[a.id]}"><span>${v.icon || AREA_ICON[a.id]}</span><b>${esc(v.label)}</b>${sparkSVG(v.points, v.better)}<em>${val}</em><i style="color:${col}">${ar}</i></a>`; }).join('');
-    $('#pvDetail').innerHTML = `<div class="glass pv-card">${rows || `<a class="cta" href="${AREA_LINK[a.id]}" style="text-decoration:none;display:inline-block">＋ Add</a>`}</div>`;
-  });
-  if (C.overall == null) return;
-  const W = C.weeks.filter(w => w.overall != null), lab = W.map(w => new Date(w.week + 'T12:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }));
-  const m = Math.max(1, ...W.map(w => Math.abs(w.overall)), ...W.flatMap(w => Object.values(w.areas).map(Math.abs))) * 1.15;
-  const AREA_COL = { movement: '#3DDC97', sleep_heart: '#9B7BFF', thinking: '#FFC83D', speech_hands: '#FF7AC8', hearing: '#59F0FF', brain_scan: '#FF9F43' };
-  const draw = showAreas => chart('pLine', { type: 'line', data: { labels: lab, datasets: [
-      { label: 'Overall', data: W.map(w => w.overall), borderColor: '#EEF1FF', backgroundColor: 'rgba(89,240,255,.12)', fill: { target: { value: 0 }, above: 'rgba(61,220,151,.15)', below: 'rgba(255,184,107,.15)' }, tension: .35, borderWidth: 3, pointRadius: 3 },
-      { label: 'Your start', data: W.map(() => 0), borderColor: 'rgba(255,255,255,.35)', borderDash: [6, 6], pointRadius: 0, borderWidth: 1.5 },
-      ...(showAreas ? C.areas.map(a => ({ label: a.name, data: W.map(w => w.areas[a.id] ?? null), borderColor: AREA_COL[a.id], borderWidth: 1.5, tension: .35, pointRadius: 0, spanGaps: true })) : [])] },
-    options: chartOpts({ plugins: { legend: { display: showAreas, labels: { color: '#C9D0EE', boxWidth: 12 } } },
-      scales: { x: { ticks: { color: '#9AA3C7', maxRotation: 0, autoSkip: true }, grid: { display: false } },
-        y: { min: -m, max: m, grid: { color: c => c.tick.value === 0 ? 'rgba(255,255,255,.15)' : 'transparent' },
-          ticks: { color: '#C9D0EE', callback: v => v > 0 ? '↑' : v < 0 ? '↓' : 'start' } } } }) });
-  draw(false); $('#pAreas').onchange = e => draw(e.target.checked);
+  const today = () => `<div class="pp-h"><b>Today</b><span class="muted">${T.items.length ? `${T.items.length} done` : 'nothing yet'}</span></div>
+    <div class="t2">${chips}<a class="t2chip t2add" href="#/gym"><span class="ic">＋</span><small>Play</small></a></div>
+    <p class="pp-hint">👆 Tap a bubble to see how it's changing</p>`;
+  const show = () => {
+    const P = $('#poPanel'), a = areas.find(x => x.id === PO.sel);
+    $$('#p-progress .po-b').forEach(b => b.classList.toggle('on', b.dataset.a === PO.sel));
+    if (!a) { P.innerHTML = today(); return; }
+    const [ar, col, w] = ST[a.st];
+    if (!a.vs.length) {
+      P.innerHTML = `<div class="pp-h"><b>${AREA_ICON[a.id]} ${esc(shortName(a.title))}</b><button class="chip" id="ppX">✕</button></div>
+        <div class="pp-empty"><div>${AREA_ICON[a.id]}</div><p>No data here yet.</p><a class="h3-cta" href="${AREA_LINK[a.id]}">${AREA_CTA[a.id]}</a></div>`;
+    } else {
+      const v = a.vs[Math.min(PO.metric, a.vs.length - 1)], [vr, vc, vw] = ST[VAR_ST[v.status] || 'building'];
+      const unit = v.unit && v.unit !== 'level' ? ' ' + v.unit : v.unit === 'level' ? ' lvl' : '';
+      const first = v.points?.[0]?.value, last = v.latest ?? v.points?.at(-1)?.value;
+      P.innerHTML = `<div class="pp-h"><b>${AREA_ICON[a.id]} ${esc(shortName(a.title))}</b><span class="pv-pill" style="--c:${col}">${ar} ${w}</span><button class="chip" id="ppX">✕</button></div>
+        <div class="pp-pills">${a.vs.map((x, i) => `<button class="chip ${i === Math.min(PO.metric, a.vs.length - 1) ? 'on' : ''}" data-m="${i}">${esc(x.label.replace(/ \(.*\)/, ''))}</button>`).join('')}</div>
+        <div class="pp-big" style="--c:${vc}"><div><b>${last != null ? Math.round(last * 100) / 100 : '–'}</b><span>${esc(unit)}</span></div>
+          <em>${vr} ${vw}${first != null && v.points.length > 1 ? ` · started at ${Math.round(first * 100) / 100}` : ''}</em></div>
+        <div class="pp-chart"><canvas id="ppChart"></canvas></div>
+        <a class="pp-go" href="${v.link || AREA_LINK[a.id]}">Open ${esc(shortName(a.title).toLowerCase())} →</a>`;
+      $$('#poPanel [data-m]').forEach(b => b.onclick = () => { PO.metric = +b.dataset.m; show(); });
+      const pts = v.points || [], ctx = $('#ppChart').getContext('2d'), g = ctx.createLinearGradient(0, 0, 0, 220);
+      g.addColorStop(0, vc + '66'); g.addColorStop(1, vc + '00');
+      chart('ppChart', { type: 'line', data: { labels: pts.map(p => new Date(p.date.slice(0, 10) + 'T12:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' })),
+          datasets: [{ data: pts.map(p => p.value), borderColor: vc, backgroundColor: g, fill: true, tension: .35, borderWidth: 3, pointRadius: pts.length > 30 ? 0 : 4, pointHoverRadius: 7, pointBackgroundColor: vc },
+            ...(first != null ? [{ data: pts.map(() => first), borderColor: 'rgba(255,255,255,.3)', borderDash: [6, 6], pointRadius: 0, borderWidth: 1.5 }] : [])] },
+        options: chartOpts({ animation: { duration: 900, easing: 'easeOutQuart' }, plugins: { legend: { display: false }, tooltip: { displayColors: false } },
+          scales: { x: { ticks: { color: '#9AA3C7', maxTicksLimit: 6, maxRotation: 0 }, grid: { display: false } }, y: { ticks: { color: '#9AA3C7', maxTicksLimit: 5 }, grid: { color: 'rgba(255,255,255,.05)' } } } }) });
+    }
+    $('#ppX') && ($('#ppX').onclick = () => { PO.sel = null; show(); });
+  };
+  $$('#p-progress .po-b').forEach(b => b.onclick = () => { PO.sel = PO.sel === b.dataset.a ? null : b.dataset.a; PO.metric = 0; show(); });
+  show();
 }
 
 // ================================================================ COACH (AI agent)

@@ -1,5 +1,5 @@
 // Brain Gym (8 games) + MRI page. Uses helpers exposed by app.js on window.NTX.
-import { recordsTabs } from './records.js?v=4';
+import { recordsTabs } from './records.js?v=5';
 const X = () => window.NTX;
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -537,29 +537,20 @@ function chooseMode(opts) {
 export async function pageMRI() {
   RUN++;
   const [m, samples] = await Promise.all([X().api('/api/mri/metrics'), X().api('/api/mri/samples')]);
-  const cv = m.clinical_validity, tr = m.test_retest;
-  $('#p-mri').innerHTML = `<div class="scrollpage"><div class="wrap">${recordsTabs('mri')}
-    <div class="sub" style="margin-top:14px"><b>MRI brain age.</b> 3D convolutional neural networks trained on <b>${m.n_volumes} real MRI scans</b> from Kaggle (OASIS-1, ${m.data.split(':')[0]}), joined to each person's real age and dementia rating.${m.active_model ? ` Active model: <b>${m.active_model === 'ensemble' ? `ensemble of ${Object.entries(m.n_models).map(([k, n]) => `${n} × ${k}`).join(' + ')}` : m.active_model}</b>${m.interval_coverage_95 != null ? `; its 95% intervals contain the true age of ${(m.interval_coverage_95 * 100).toFixed(0)}% of cognitively normal people` : ''}.` : ''}</div>
-    <div class="kpis"><div class="kpi"><div class="v">${m.mae.toFixed(1)} yrs</div><div class="l">MAE on ${m.n_normal} cognitively normal people, 5-fold CV split by subject (r = ${m.r.toFixed(2)}). Volume-only model: ${m.nwbv_model_mae.toFixed(1)}.</div></div>
-      <div class="kpi"><div class="v">AUC ${cv.auc.toFixed(2)}</div><div class="l">brain-age gap separates dementia (n=${m.n_dementia}) from age-matched normals · 95% CI ${cv.auc_ci[0].toFixed(2)}–${cv.auc_ci[1].toFixed(2)}</div></div>
-      <div class="kpi"><div class="v">ICC ${tr.icc.toFixed(2)}</div><div class="l">${tr.n_pairs} people scanned twice: mean difference ${tr.mean_abs_diff.toFixed(1)} yrs</div></div>
-      <div class="kpi"><div class="v">±${tr.smallest_detectable_change.toFixed(1)} yrs</div><div class="l">smallest change detectable between two scans of one person</div></div></div>
-    <div class="cr-grid" style="margin-top:16px">
-      <div class="glass card">
-        <div class="eyebrow">1 · TRY A REAL OASIS SCAN</div>
-        <select id="msel" style="margin:10px 0">${samples.map(s => `<option value="${s.file}">${s.ID} · ${s.Age} y · ${s.female ? 'F' : 'M'} · ${s.status}${s.CDR != null ? ` (CDR ${s.CDR})` : ''}</option>`).join('')}</select>
-        <button class="cta" id="mrun" style="width:100%" ${samples.some(s => s.available) ? '' : 'disabled'}>🧠 Analyze this scan</button>
-        ${samples.some(s => s.available) ? '' : `<p class="caveat">⚠ The sample scans aren't downloaded on this computer yet (about 400 MB). To try them: make a free Kaggle account → Settings → <i>Create New API Token</i> → put the downloaded <code>kaggle.json</code> in <code>~/.kaggle/</code>, then run <code>python data/download_data.py</code> and restart. You can still upload your own scan below.</p>`}
-        <div class="eyebrow" style="margin-top:22px">2 · OR UPLOAD YOUR OWN</div>
-        <label class="drop" id="drop"><input type="file" id="mfile" accept=".nii,.gz" hidden>
-          <div style="font-size:34px">⬆</div><b>Drop a .nii / .nii.gz T1 scan</b><span class="muted">or click to choose a file</span></label>
-        <p class="muted"><b>What works:</b> a T1-weighted MRI that is <b>skull-stripped and registered to the 2 mm MNI grid (91×109×91)</b>, the format the model was trained on. Raw scanner files (DICOM, or scans with the skull still on) need preprocessing first, e.g. FSL <code>bet</code> + <code>flirt</code> to MNI152 2 mm. The app checks the format and tells you if it doesn't match, rather than guessing.</p>
-        <p class="muted">Your scan is analyzed in memory and never saved; only the result is stored in your local database.</p>
+  const ok = samples.some(s => s.available);
+  $('#p-mri').innerHTML = `<div class="scrollpage"><div class="wrap mx">${recordsTabs('mri')}
+    <div class="mx-grid">
+      <div class="mx-left">
+        <div class="mx-card glass"><div class="mx-ic">🧪</div><b>Try a real scan</b>
+          <select id="msel">${samples.map(s => `<option value="${s.file}">${s.Age} yrs · ${s.female ? 'woman' : 'man'} · ${s.status}</option>`).join('')}</select>
+          <button class="cta" id="mrun" ${ok ? '' : 'disabled'}>🧠 Analyze</button>${ok ? '' : '<small class="muted">Sample scans not downloaded on this computer.</small>'}</div>
+        <label class="mx-card glass mx-drop" id="drop"><input type="file" id="mfile" accept=".nii,.gz" hidden><div class="mx-ic">⬆️</div><b>Upload your MRI</b><small class="muted">.nii file · never saved</small></label>
+        <details class="mx-info"><summary>ⓘ How accurate?</summary><p>Trained on ${m.n_volumes} real brain scans. Usually within ±${m.mae.toFixed(0)} years.</p></details>
       </div>
-      <div class="glass card" id="mout"><div class="empty">Pick a scan or upload one to see its brain age and a heatmap of the regions that drove the prediction.</div></div>
+      <div class="glass mx-out" id="mout"><div class="mx-wait"><div class="mx-brain">🧠</div><p>Pick a scan to see its brain age</p></div></div>
     </div></div></div>`;
-  const show = async (promise) => { $('#mout').innerHTML = '<div class="empty"><div class="typing"><span></span><span></span><span></span></div> Running the 3D CNN brain-age models + Grad-CAM…</div>';
-    try { renderMRI(await promise); } catch (e) { $('#mout').innerHTML = `<div class="empty">⚠ ${e.message}</div>`; } };
+  const show = async (promise) => { $('#mout').innerHTML = '<div class="mx-wait"><div class="mx-brain spin">🧠</div><p>Reading the scan…</p></div>';
+    try { renderMRI(await promise); } catch (e) { $('#mout').innerHTML = `<div class="mx-wait"><p>⚠ ${e.message}</p></div>`; } };
   $('#mrun').onclick = () => { const fd = new FormData(); fd.append('file', $('#msel').value); show(fetchForm(`/api/player/${encodeURIComponent(me().name)}/mri/sample`, fd)); };
   const up = f => { const fd = new FormData(); fd.append('file', f); fd.append('age', me().profile.age); show(fetchForm(`/api/player/${encodeURIComponent(me().name)}/mri/upload`, fd)); };
   $('#mfile').onchange = e => e.target.files[0] && up(e.target.files[0]);
@@ -584,17 +575,21 @@ function mriConfidence(r) {
 async function fetchForm(url, fd) { const r = await fetch(url, { method: 'POST', body: fd }); const j = await r.json(); if (!r.ok) throw new Error(j.detail || r.statusText); return j; }
 function renderMRI(r) {
   const f = r.format;
-  if (r.brain_age == null) { $('#mout').innerHTML = `<div class="eyebrow">FORMAT CHECK</div><h2>This scan can't be scored</h2>${f.issues.map(i => `<p class="caveat">⚠ ${i}</p>`).join('')}<p class="muted">Preprocess it to skull-stripped MNI 2 mm space and try again.</p>`; return; }
-  const gap = r.gap, inside = gap != null && Math.abs(gap) < r.sdc, t = r.truth;
-  $('#mout').innerHTML = `<div class="eyebrow">RESULT</div>
-    ${f.ok ? '' : f.issues.map(i => `<p class="caveat">⚠ ${i}</p>`).join('')}
-    <div style="display:flex;gap:24px;align-items:flex-end;flex-wrap:wrap"><div><div class="tiny">MRI BRAIN AGE</div><div style="font:700 64px/1 'Space Grotesk'">${r.brain_age.toFixed(0)}</div></div>
-      ${r.age != null ? `<div><div class="tiny">ACTUAL AGE</div><div style="font:700 40px/1 'Space Grotesk';color:#9AA3C7">${Math.round(r.age)}</div></div>
-      <div><div class="tiny">BIAS-CORRECTED GAP</div><div style="font:700 40px/1 'Space Grotesk';color:${gap > 0 ? '#FF8A7A' : '#3DDC97'}">${gap > 0 ? '+' : ''}${gap.toFixed(1)}</div></div>` : ''}</div>
-    ${r.confidence ? mriConfidence(r) : `<p class="muted">5 models: ${r.fold_preds.map(p => p.toFixed(0)).join(' · ')} yrs.</p>`}
-    <p class="muted">Model error ±${r.mae.toFixed(1)} yrs (MAE). ${gap != null ? (inside ? `The gap is inside the ±${r.sdc.toFixed(1)}-yr scan-to-scan noise band.` : `The gap is larger than the ±${r.sdc.toFixed(1)}-yr scan-to-scan noise band.`) : ''} Template similarity r = ${f.similarity?.toFixed(2)}.</p>
-    ${t ? `<div class="ours"><b>Ground truth (OASIS):</b> ${t.id}, age ${t.age}, ${t.status}${t.cdr != null ? `, CDR ${t.cdr}` : ''}. Honest out-of-fold brain age: <b>${t.oof_brain_age.toFixed(1)}</b>. ${t.note}</div>` : ''}
-    <div class="eyebrow" style="margin-top:16px">WHERE THE MODEL LOOKED (Grad-CAM, orange = pushed the age estimate up)</div>
-    <div class="mslices">${['axial', 'coronal', 'sagittal'].map(k => `<figure><img src="${r.images[k]}" alt="${k} slice"><figcaption>${k}</figcaption></figure>`).join('')}</div>
-    <p class="muted">Heatmaps show which areas influenced this prediction, not a diagnosis. In aging brains models typically focus on enlarged ventricles and widened sulci (cerebrospinal fluid spaces).</p>`;
+  if (r.brain_age == null) { $('#mout').innerHTML = `<div class="mx-wait"><div class="mx-brain">🤔</div><p>This file can't be read as a brain scan.</p><small class="muted">${esc(f.issues[0] || '')}</small></div>`; return; }
+  // Show the bias-corrected brain age (real age + corrected gap) so the big number and the "years older" line agree.
+  const gap = r.gap, age = r.age != null ? Math.round(r.age) : null, t = r.truth;
+  const ba = gap != null && r.age != null ? Math.round(r.age + gap) : Math.round(r.brain_age);
+  const col = gap == null ? '#59F0FF' : gap > r.sdc ? '#FF8A7A' : gap < -r.sdc ? '#3DDC97' : '#59F0FF';
+  const word = gap == null ? '' : Math.abs(gap) < r.sdc ? 'About the same as real age' : gap > 0 ? `${gap.toFixed(0)} years older than real age` : `${(-gap).toFixed(0)} years younger than real age`;
+  const views = ['axial', 'coronal', 'sagittal'].filter(k => r.images[k]);
+  $('#mout').innerHTML = `<div class="mx-res">
+    <div class="mx-nums"><div><small>Brain age</small><b class="mx-count" style="color:${col}" data-to="${ba}">0</b></div>${age != null ? `<div><small>Real age</small><b>${age}</b></div>` : ''}</div>
+    ${word ? `<div class="mx-word" style="--c:${col}">${word}</div>` : ''}
+    ${views.length ? `<div class="mx-scan"><img id="mxImg" src="${r.images[views[0]]}" alt="brain scan heatmap"><div class="mx-views">${views.map((k, i) => `<button class="chip ${i ? '' : 'on'}" data-v="${k}">${{ axial: 'Top', coronal: 'Front', sagittal: 'Side' }[k]}</button>`).join('')}</div>
+      <small class="muted">🟠 Orange = areas that made it look older</small></div>` : ''}
+    ${t ? `<small class="muted mx-truth">This was a real ${t.age}-year-old · ${esc(t.status)}</small>` : ''}</div>`;
+  const el = $('#mout .mx-count'), t0 = performance.now();
+  const step = now => { const k = Math.min(1, (now - t0) / 900); el.textContent = Math.round(ba * (1 - Math.pow(1 - k, 3))); if (k < 1) requestAnimationFrame(step); };
+  requestAnimationFrame(step);
+  $$('#mout [data-v]').forEach(b => b.onclick = () => { $('#mxImg').src = r.images[b.dataset.v]; $$('#mout [data-v]').forEach(x => x.classList.toggle('on', x === b)); });
 }

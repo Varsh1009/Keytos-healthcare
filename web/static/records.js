@@ -6,11 +6,9 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
 
 // The strip at the top of every Brain records page
 export function recordsTabs(active) {
-  const t = [['mri', '🩻', 'MRI scan', 'Brain age from a 3D scan'], ['eeg', '〰️', 'EEG', 'Your resting brain rhythm']];
+  const t = [['mri', '🩻', 'MRI scan'], ['eeg', '〰️', 'EEG']];
   return `<div class="h1">🧠 Brain records</div>
-    <div class="sub">Scans and recordings of your brain. Upload your own, or try a real sample to see how it works. Your own results feed your Progress page.</div>
-    <nav class="rtabs">${t.map(([id, ic, name, sub]) => `<a href="#/${id}" class="${id === active ? 'on' : ''}"><span>${ic}</span><b>${name}</b><small>${sub}</small></a>`).join('')}
-      <span class="rtab-soon" title="Coming later">➕ More record types later (blood tests, sleep studies)</span></nav>`;
+    <nav class="rtabs">${t.map(([id, ic, name]) => `<a href="#/${id}" class="${id === active ? 'on' : ''}"><span>${ic}</span><b>${name}</b></a>`).join('')}</nav>`;
 }
 
 async function post(url, fd) {

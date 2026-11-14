@@ -25,15 +25,18 @@ export function plainLever(L) {
 }
 
 // ------------------------------------------------------------ cute brain buddy
-export const buddy = (mood = 'happy', size = 120) => `<svg class="buddy" width="${size}" height="${size}" viewBox="0 0 120 120">
-  <defs><radialGradient id="bg1" cx=".4" cy=".35"><stop offset="0" stop-color="#FFD9E0"/><stop offset="1" stop-color="#F59AB0"/></radialGradient></defs>
-  <path d="M60 14c-14 0-22 8-24 14-12 0-22 10-20 22-8 6-8 20 2 26 0 12 12 20 24 18 6 8 22 10 30 2 12 6 28-2 28-16 10-6 10-20 2-26 2-12-8-22-20-22-4-10-12-18-22-18z" fill="url(#bg1)" stroke="#E37A95" stroke-width="2.5"/>
+// Each buddy gets its own gradient id: with one shared id, a hidden buddy (e.g. on another page) breaks the
+// pink fill of every other buddy on screen and they render dark.
+let BUDDY_N = 0;
+export const buddy = (mood = 'happy', size = 120) => { const gid = 'bg' + (++BUDDY_N); return `<svg class="buddy" width="${size}" height="${size}" viewBox="0 0 120 120">
+  <defs><radialGradient id="${gid}" cx=".4" cy=".35"><stop offset="0" stop-color="#FFD9E0"/><stop offset="1" stop-color="#F59AB0"/></radialGradient></defs>
+  <path d="M60 14c-14 0-22 8-24 14-12 0-22 10-20 22-8 6-8 20 2 26 0 12 12 20 24 18 6 8 22 10 30 2 12 6 28-2 28-16 10-6 10-20 2-26 2-12-8-22-20-22-4-10-12-18-22-18z" fill="url(#${gid})" stroke="#E37A95" stroke-width="2.5"/>
   <path d="M46 34c4 4 4 10 0 14M74 32c-4 6-2 12 4 14M38 64c6-2 10 2 10 8M82 62c-6 0-8 6-6 10" stroke="#E37A95" stroke-width="2.5" fill="none" stroke-linecap="round" opacity=".7"/>
   <ellipse cx="46" cy="58" rx="6" ry="${mood === 'sleepy' ? 1.5 : 7}" fill="#2B1B3D"/><ellipse cx="76" cy="58" rx="6" ry="${mood === 'sleepy' ? 1.5 : 7}" fill="#2B1B3D"/>
   <circle cx="48" cy="55" r="2" fill="#fff"/><circle cx="78" cy="55" r="2" fill="#fff"/>
   <ellipse cx="38" cy="70" rx="6" ry="3.5" fill="#FF7FA0" opacity=".6"/><ellipse cx="84" cy="70" rx="6" ry="3.5" fill="#FF7FA0" opacity=".6"/>
   <path d="${mood === 'wow' ? 'M56 72 q5 8 10 0 q-5 -4 -10 0' : 'M52 70 q9 9 18 0'}" stroke="#2B1B3D" stroke-width="3" fill="${mood === 'wow' ? '#2B1B3D' : 'none'}" stroke-linecap="round"/>
-</svg>`;
+</svg>`; };
 
 function greeting() { const h = new Date().getHours(); return h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening'; }
 
