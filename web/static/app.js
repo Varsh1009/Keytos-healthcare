@@ -5,11 +5,14 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { pageGym, pageGame, pageMRI, railHTML, boardHTML, startDemo } from './gym.js?v=24';
-import { pageHands } from './hands.js?v=7';
-import { initDock } from './dock.js?v=5';
-import { pageEEG } from './records.js?v=5';
-import { pageHome as pageHome2, pageVoice, pageData, plainLever, plainAmount, buddy } from './ui2.js?v=14';
+import { pageGym, pageGame, railHTML, boardHTML, startDemo } from './gym.js?v=25';
+import { pageHands } from './hands.js?v=8';
+import { initDock } from './dock.js?v=7';
+import { pageEEG, pageMRI } from './records.js?v=11';
+import { pageHome as pageHome2, pageVoice, pageData, plainLever, plainAmount, buddy } from './ui2.js?v=15';
+import { icon, tile } from './icons.js?v=1';
+// index.html can't import modules: fill its icon placeholders (<span data-ic="home">) here.
+document.querySelectorAll('[data-ic]').forEach(el => { el.innerHTML = icon(el.dataset.ic); });
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -246,27 +249,27 @@ async function route() {
   catch (e) {   // never leave a blank page: say what broke
     console.error(e);
     const el = $('#p-' + ROUTE);
-    if (el) el.innerHTML = `<div class="scrollpage"><div class="wrap"><div class="glass card"><b>⚠ This page couldn't load.</b><p class="muted">${esc(e.message)}</p>
+    if (el) el.innerHTML = `<div class="scrollpage"><div class="wrap"><div class="glass card"><b>${icon('alert')} This page couldn't load.</b><p class="muted">${esc(e.message)}</p>
       <p class="muted">If the app was just updated, restart the server (<code>python web/server.py</code>) and refresh the page.</p></div></div></div>`;
   }
 }
 addEventListener('hashchange', route);
 
 // ================================================================ SPRINT
-const SYM = ['◆', '▲', '●', '■', '★', '✚', '⬟', '☾', '♥'];
+const SYM = ['◆', '▲', '●', '■', '⬢', '◐', '⬟', '◎', '▼'];
 let G = null;
 // 15-second rounds with levels. The server (neurotrail/games.py SPEED_LEVELS) decides the level and whether you passed.
 const ruleText = L => `${L.symbols} symbols${L.shuffle ? ' · key reshuffles every 4 correct' : ''} · goal ${L.target} correct`;
 function pageSprint() {
   const S = ME.speed, L = S.rule, top = S.passed >= S.top;
-  $('#p-sprint').innerHTML = `<div class="sprint-wrap"><div class="arcade gamebox" style="--c:#FFC83D"><a class="close" href="#/gym/speed" style="text-decoration:none;display:grid;place-items:center">✕</a>
+  $('#p-sprint').innerHTML = `<div class="sprint-wrap"><div class="arcade gamebox" style="--c:#FFC83D"><a class="close" href="#/gym/speed" style="text-decoration:none;display:grid;place-items:center">${icon('x')}</a>
     <div class="gwrap"><div id="rail">${railHTML(S)}</div><div id="arcadeBody"></div></div></div></div>`;
-  $('#arcadeBody').innerHTML = `<div class="eyebrow">SPEED GAME · LEVEL ${S.level} OF ${S.top}</div><h2 class="gh2">⚡ Speed Sprint</h2>
+  $('#arcadeBody').innerHTML = `<div class="eyebrow">SPEED GAME · LEVEL ${S.level} OF ${S.top}</div><h2 class="gh2">${icon('zap')} Speed Sprint</h2>
     <div class="demo" id="demo"></div>
     <p class="muted howto">Match each symbol to its number using the key, as many as you can in ${S.seconds} seconds. Tap the keypad (or keys 1–${L.symbols}).</p>
     <div class="goalcard"><small>LEVEL ${S.level} GOAL</small><b>${L.target} correct with ${Math.round(S.pass_accuracy * 100)}%+ right</b><span>${ruleText(L)} · ${top ? 'every level cleared, keep beating your best' : `unlocks level ${S.level + 1}`}</span></div>
-    <div class="muted">your best at level ${S.level}: <b>${S.best_here ?? '–'}</b> · ${ME.rounds_today} round${ME.rounds_today === 1 ? '' : 's'} today ${ME.rounds_today >= 2 ? '· booster done ✓' : ''}</div>
-    <div class="row" style="justify-content:center"><button class="cta" id="goBtn">▶ Start level ${S.level}${ME.rounds_today === 1 ? ' · booster round' : ''}</button></div>
+    <div class="muted">your best at level ${S.level}: <b>${S.best_here ?? '–'}</b> · ${ME.rounds_today} round${ME.rounds_today === 1 ? '' : 's'} today ${ME.rounds_today >= 2 ? `· booster done ${icon('check')}` : ''}</div>
+    <div class="row" style="justify-content:center"><button class="cta" id="goBtn">${icon('play')} Start level ${S.level}${ME.rounds_today === 1 ? ' · booster round' : ''}</button></div>
     <p class="muted" style="max-width:560px;margin:14px auto 0;font-size:12px">Modeled on the Digit Symbol Substitution Test. Speed training with boosters was the only ACTIVE-trial arm linked to fewer dementia diagnoses (HR 0.75).</p>`;
   startDemo($('#demo'), 'speed');
   $('#goBtn').onclick = startGame;
@@ -300,9 +303,9 @@ function answer(n, btn) {
   } else { G.bad++; G.combo = 0; sym.classList.add('bad'); }
   G.tgt = nextSym(); setTimeout(() => (sym.textContent = G.tgt), 90);
   $('#aOk').textContent = G.ok; $('#aBad').textContent = G.bad;
-  $('#combo').textContent = shuffled ? '🔀 KEY SHUFFLED' : G.combo >= 3 ? `×${G.combo} COMBO` : '';
+  $('#combo').textContent = shuffled ? 'KEY SHUFFLED' : G.combo >= 3 ? `×${G.combo} COMBO` : '';
   $('#gBar').style.width = Math.min(100, G.ok / G.L.target * 100) + '%'; $('#gBar').classList.toggle('full', G.ok >= G.L.target);
-  $('#gTxt').textContent = G.ok >= G.L.target ? 'goal reached ✓ keep going' : `${G.ok} / ${G.L.target} to pass`;
+  $('#gTxt').textContent = G.ok >= G.L.target ? 'goal reached · keep going' : `${G.ok} / ${G.L.target} to pass`;
 }
 addEventListener('keydown', e => { if (G && !G.over && /^[1-9]$/.test(e.key) && +e.key <= G.L.symbols) answer(+e.key); });
 function tick() {
@@ -316,15 +319,15 @@ async function endGame() {
   const r = await api(`/api/player/${enc(ME.name)}/speed`, { correct: G.ok, wrong: G.bad, best_combo: G.best });
   const R = r.round, acc = G.ok / Math.max(1, G.ok + G.bad), pct = Math.round(r.speed.pass_accuracy * 100); ME = r; renderHUD();
   const why = R.passed ? '' : G.ok < R.target ? `${R.target - G.ok} more correct needed to pass.` : `Goal reached, but accuracy was ${(acc * 100).toFixed(0)}% (needs ${pct}%+). Fewer wrong taps!`;
-  const msg = R.unlocked ? `<div class="unlock">🔓 Level ${R.unlocked} unlocked! <b>+${r.level_bonus} ⚡</b></div>` : R.new_clear ? `<div class="unlock">🏆 You cleared the final level! <b>+${r.level_bonus} ⚡</b></div>` : R.passed ? '' : `<p class="why">${why}</p>`;
-  const burst = R.new_clear ? `<div class="confetti">${'⚡✨🎉⭐'.repeat(5).split('').filter(c => c.trim()).map((c, i) => `<i style="--x:${(i * 37) % 100}%;--d:${(i % 5) * .08}s">${c}</i>`).join('')}</div>` : '';
+  const msg = R.unlocked ? `<div class="unlock">${icon('unlock')} Level ${R.unlocked} unlocked! <b>+${r.level_bonus} ${icon('zap')}</b></div>` : R.new_clear ? `<div class="unlock">${icon('trophy')} You cleared the final level! <b>+${r.level_bonus} ${icon('zap')}</b></div>` : R.passed ? '' : `<p class="why">${why}</p>`;
+  const burst = R.new_clear ? `<div class="confetti">${Array.from({ length: 20 }, (_, i) => `<i style="--x:${(i * 37) % 100}%;--d:${(i % 5) * .08}s;color:${['#FFC83D', '#59F0FF', '#FF7AC8', '#3DDC97'][i % 4]}">${icon(['zap', 'sparkles', 'star'][i % 3])}</i>`).join('')}</div>` : '';
   $('#rail').innerHTML = railHTML(r.speed);
-  $('#arcadeBody').innerHTML = `${burst}<div class="resbadge ${R.passed ? 'win' : 'lose'}">${R.passed ? `✓ LEVEL ${R.level} PASSED` : `✗ LEVEL ${R.level} · NOT YET`}</div>
+  $('#arcadeBody').innerHTML = `${burst}<div class="resbadge ${R.passed ? 'win' : 'lose'}">${R.passed ? `${icon('check')} LEVEL ${R.level} PASSED` : `${icon('x')} LEVEL ${R.level} · NOT YET`}</div>
     <div class="a-big">${G.ok}</div><div class="muted">correct in ${G.T} seconds · goal ${R.target} · ${(acc * 100).toFixed(0)}% accuracy · best combo ×${G.best} · round ${r.rounds_today} today</div>
     ${msg}${G.bestHere != null && G.ok > G.bestHere ? '<div style="margin-top:8px"><span class="pb">NEW BEST AT THIS LEVEL</span></div>' : ''}
     ${r.rounds_today === 1 ? '<p class="muted">Play one more round today as a booster: in the ACTIVE trial, only speed training with boosters was linked to fewer dementia diagnoses.</p>' : ''}
     ${boardHTML(r.leaderboard, 5)}
-    <div class="row" style="justify-content:center"><button class="cta" id="againBtn">${R.unlocked ? `▶ Play level ${R.unlocked}` : '↻ Play again'}</button>
+    <div class="row" style="justify-content:center"><button class="cta" id="againBtn">${R.unlocked ? `${icon('play')} Play level ${R.unlocked}` : `${icon('refresh')} Play again`}</button>
       <a class="ghost" href="#/gym/speed" style="text-decoration:none">Brain Gym</a></div>`;
   $('#againBtn').onclick = startGame; G = null;
 }
@@ -337,9 +340,9 @@ function pfmt(v, unit) {
   const a = Math.abs(v);
   return a >= 100 ? String(Math.round(v)) : a >= 10 ? v.toFixed(1) : v.toFixed(2).replace(/\.?0+$/, '');
 }
-const PWORD = { 'much better': ['🌟', '#3DDC97'], better: ['😊', '#3DDC97'], 'a little better': ['🙂', '#8BE3B5'],
-  'about the same': ['😐', '#59F0FF'], 'a little lower': ['😕', '#FFC83D'], lower: ['😟', '#FF9F43'], 'much lower': ['😟', '#FF7A6E'] };
-const AREA_ICON = { movement: '🚶', sleep_heart: '🌙', thinking: '🧩', speech_hands: '🎙️', hearing: '👂', brain_scan: '🩻' };
+const PWORD = { 'much better': ['trend-up', '#3DDC97'], better: ['trend-up', '#3DDC97'], 'a little better': ['up', '#8BE3B5'],
+  'about the same': ['arrow-right', '#59F0FF'], 'a little lower': ['down', '#FFC83D'], lower: ['trend-down', '#FF9F43'], 'much lower': ['trend-down', '#FF7A6E'] };
+const AREA_ICON = { movement: 'steps', sleep_heart: 'moon', thinking: 'grid', speech_hands: 'mic', hearing: 'ear', brain_scan: 'scan', checkins: 'check-circle' };
 function feedHTML(U) {
   if (!U?.length) return '';
   const day = ts => { const d = ts.slice(0, 10), t = new Date(), y = new Date(t - 864e5), iso = x => x.toISOString().slice(0, 10);
@@ -348,16 +351,16 @@ function feedHTML(U) {
   for (const u of U) {
     const d = day(u.ts);
     if (d !== last) { rows += `<div class="pf-day">${d}</div>`; last = d; }
-    rows += `<div class="pf-row"><span class="pf-ic">${u.icon}</span><span class="pf-tx">${esc(u.text)}${u.tags.map(t => `<em class="pf-tag ${/cleared|best/.test(t) ? 'win' : ''}">${esc(t)}</em>`).join('')}</span><span class="pf-tm">${u.ts.slice(11, 16) === '23:59' ? '' : u.ts.slice(11, 16)}</span></div>`;
+    rows += `<div class="pf-row"><span class="pf-ic">${icon(u.icon)}</span><span class="pf-tx">${esc(u.text)}${u.tags.map(t => `<em class="pf-tag ${/cleared|best/.test(t) ? 'win' : ''}">${esc(t)}</em>`).join('')}</span><span class="pf-tm">${u.ts.slice(11, 16) === '23:59' ? '' : u.ts.slice(11, 16)}</span></div>`;
   }
   return `<div class="glass pfeed"><b>Latest updates</b><div class="muted">Everything you've done, newest first</div>${rows}</div>`;
 }
 // ---------------- Progress v3: "brain orbit". Buddy in the middle, 6 areas as bubbles; tap one → live chart panel.
-const ST = { better: ['⬆', '#3DDC97', 'Better'], steady: ['➡', '#59F0FF', 'Steady'], lower: ['⬇', '#FFB86B', 'Lower'],
-  building: ['🌱', '#C9A7FF', 'Learning'], add: ['＋', '#6B7299', 'Add data'] };
+const ST = { better: [icon('up'), '#3DDC97', 'Better'], steady: [icon('arrow-right'), '#59F0FF', 'Steady'], lower: [icon('down'), '#FFB86B', 'Lower'],
+  building: [icon('sparkles'), '#C9A7FF', 'Learning'], add: [icon('plus'), '#6B7299', 'Add data'] };
 const TV = { better: 'better', usual: 'steady', lower: 'lower', first: 'building' };
 const AREA_LINK = { thinking: '#/gym', movement: '#/data', sleep_heart: '#/data', speech_hands: '#/hands', hearing: '#/data', brain_scan: '#/mri' };
-const AREA_CTA = { thinking: '🎮 Play a game', movement: '⌚ Connect a watch', sleep_heart: '⌚ Connect a watch', speech_hands: '✋ Do a hand check', hearing: '⌚ Connect a watch', brain_scan: '🧠 Add an MRI' };
+const AREA_CTA = { thinking: `${icon('grid')} Play a game`, movement: `${icon('watch')} Connect a watch`, sleep_heart: `${icon('watch')} Connect a watch`, speech_hands: `${icon('hand')} Do a hand check`, hearing: `${icon('watch')} Connect a watch`, brain_scan: `${icon('scan')} Add an MRI` };
 const VAR_ST = { improving: 'better', steady: 'steady', slipping: 'lower', building: 'building', snapshot: 'building', activity: 'building', stale: 'steady' };
 function areaState(vs) {
   const has = vs.filter(v => v.n || v.points?.length);
@@ -365,23 +368,33 @@ function areaState(vs) {
   const c = s => has.filter(v => v.status === s).length, up = c('improving'), dn = c('slipping');
   return up > dn ? 'better' : dn > up ? 'lower' : up || c('steady') ? 'steady' : 'building';
 }
-const shortName = t => t.replace(/^\S+\s/, '');
+const shortName = t => t;   // area names no longer start with an emoji
 let PO = null;
+// Draw the last Progress data instantly, then refresh quietly: redraw only if the data changed
+// (redrawing old content after a fetch looked like the page loading twice).
+let PCACHE = null;
 async function pageProgress() {
-  const O = await api(`/api/player/${enc(ME.name)}/overview`), C = O.combined, T = O.today || { items: [] };
+  const key = ME.name, url = `/api/player/${enc(key)}/overview`;
+  if (PCACHE?.key === key) renderProgress(PCACHE.O); else $('#p-progress').innerHTML = '';
+  const O = await api(url), json = JSON.stringify(O), same = PCACHE?.key === key && PCACHE.json === json;
+  PCACHE = { key, O, json };
+  if (!same && ROUTE === 'progress') renderProgress(O);
+}
+function renderProgress(O) {
+  const C = O.combined, T = O.today || { items: [] };
   const todayAreas = new Set(T.items.flatMap(i => i.id === 'voice' ? ['thinking', 'speech_hands'] : i.id.startsWith('voice') || i.id === 'hands' ? ['speech_hands'] : ['thinking']));
   const areas = O.groups.map(g => { const vs = O.variables.filter(v => v.group === g.id && (v.n || v.points?.length)); return { ...g, vs, st: areaState(vs), today: todayAreas.has(g.id) }; });
   PO = { areas, sel: null, metric: 0 };
-  const head = C.overall != null ? [(PWORD[C.word] || ['🙂'])[0], `${C.word[0].toUpperCase() + C.word.slice(1)}`, 'than when you started']
-    : areas.some(a => a.st !== 'add') ? ['🌱', 'Getting to know you', 'keep going to see your trend'] : ['👋', 'Let\'s start', 'play a game or connect a watch'];
+  const head = C.overall != null ? [icon((PWORD[C.word] || ['smile'])[0]), `${C.word[0].toUpperCase() + C.word.slice(1)}`, 'than when you started']
+    : areas.some(a => a.st !== 'add') ? [icon('sparkles'), 'Getting to know you', 'keep going to see your trend'] : [icon('smile'), 'Let\'s start', 'play a game or connect a watch'];
   const R = 41;   // orbit radius, % of the box
   const bubbles = areas.map((a, i) => { const ang = -90 + i * 60, x = 50 + R * Math.cos(ang * Math.PI / 180), y = 50 + R * Math.sin(ang * Math.PI / 180), [ar, col, w] = ST[a.st];
     return `<button class="po-b ${a.st} ${a.today ? 'today' : ''}" data-a="${a.id}" style="left:${x}%;top:${y}%;--c:${col};--d:${i * 0.12}s">
-      <span class="po-ic">${AREA_ICON[a.id]}</span><b>${esc(shortName(a.title))}</b><em>${ar} ${w}</em>${a.today ? '<i class="po-now">today</i>' : ''}</button>`; }).join('');
+      <span class="po-ic">${icon(AREA_ICON[a.id])}</span><b>${esc(shortName(a.title))}</b><em>${ar} ${w}</em>${a.today ? '<i class="po-now">today</i>' : ''}</button>`; }).join('');
   const lines = areas.map((a, i) => { const ang = (-90 + i * 60) * Math.PI / 180;
     return `<line x1="50" y1="50" x2="${50 + R * Math.cos(ang)}" y2="${50 + R * Math.sin(ang)}" class="${a.st === 'add' ? 'off' : 'on'}" style="--c:${ST[a.st][1]}"/>`; }).join('');
   const chips = T.items.map(i => { const [a, c] = ST[TV[i.verdict]] || ST.steady;
-    return `<a class="t2chip" href="${i.link}" style="--c:${c}" title="${esc(i.text)}"><span class="ic">${i.icon}</span><b>${a}</b><small>${esc(i.title.replace(/ \(.*\)/, ''))}</small></a>`; }).join('');
+    return `<a class="t2chip" href="${i.link}" style="--c:${c}" title="${esc(i.text)}">${icon(i.icon).replace('<svg ', '<svg style="color:var(--c)" ')}<b>${a}</b><small>${esc(i.title.replace(/ \(.*\)/, ''))}</small></a>`; }).join('');
   $('#p-progress').innerHTML = `<div class="scrollpage"><div class="po">
     <div class="po-orbit"><svg class="po-lines" viewBox="0 0 100 100" preserveAspectRatio="none">${lines}</svg>
       <div class="po-core"><div class="po-buddy">${buddy(C.word && /better/.test(C.word) ? 'wow' : 'happy', 92)}</div><div class="po-word">${head[0]} ${esc(head[1])}</div><small>${esc(head[2])}</small></div>
@@ -389,22 +402,22 @@ async function pageProgress() {
     <div class="po-panel glass" id="poPanel"></div>
   </div></div>`;
   const today = () => `<div class="pp-h"><b>Today</b><span class="muted">${T.items.length ? `${T.items.length} done` : 'nothing yet'}</span></div>
-    <div class="t2">${chips}<a class="t2chip t2add" href="#/gym"><span class="ic">＋</span><small>Play</small></a></div>
-    <p class="pp-hint">👆 Tap a bubble to see how it's changing</p>`;
+    <div class="t2">${chips}<a class="t2chip t2add" href="#/gym">${icon('plus')}<small>Play</small></a></div>
+    <p class="pp-hint">${icon('tap')} Tap a bubble to see how it's changing</p>`;
   const show = () => {
     const P = $('#poPanel'), a = areas.find(x => x.id === PO.sel);
     $$('#p-progress .po-b').forEach(b => b.classList.toggle('on', b.dataset.a === PO.sel));
     if (!a) { P.innerHTML = today(); return; }
     const [ar, col, w] = ST[a.st];
     if (!a.vs.length) {
-      P.innerHTML = `<div class="pp-h"><b>${AREA_ICON[a.id]} ${esc(shortName(a.title))}</b><button class="chip" id="ppX">✕</button></div>
-        <div class="pp-empty"><div>${AREA_ICON[a.id]}</div><p>No data here yet.</p><a class="h3-cta" href="${AREA_LINK[a.id]}">${AREA_CTA[a.id]}</a></div>`;
+      P.innerHTML = `<div class="pp-h"><b>${icon(AREA_ICON[a.id])} ${esc(shortName(a.title))}</b><button class="chip" id="ppX" aria-label="Close">${icon('x')}</button></div>
+        <div class="pp-empty"><div>${icon(AREA_ICON[a.id])}</div><p>No data here yet.</p><a class="h3-cta" href="${AREA_LINK[a.id]}">${AREA_CTA[a.id]}</a></div>`;
     } else {
       const v = a.vs[Math.min(PO.metric, a.vs.length - 1)], [vr, vc, vw] = ST[VAR_ST[v.status] || 'building'];
       const unit = v.unit && v.unit !== 'level' ? ' ' + v.unit : v.unit === 'level' ? ' lvl' : '';
       const first = v.points?.[0]?.value, last = v.latest ?? v.points?.at(-1)?.value;
-      P.innerHTML = `<div class="pp-h"><b>${AREA_ICON[a.id]} ${esc(shortName(a.title))}</b><span class="pv-pill" style="--c:${col}">${ar} ${w}</span><button class="chip" id="ppX">✕</button></div>
-        <div class="pp-pills">${a.vs.map((x, i) => `<button class="chip ${i === Math.min(PO.metric, a.vs.length - 1) ? 'on' : ''}" data-m="${i}">${esc(x.label.replace(/ \(.*\)/, ''))}</button>`).join('')}</div>
+      P.innerHTML = `<div class="pp-h"><b>${icon(AREA_ICON[a.id])} ${esc(shortName(a.title))}</b><span class="pv-pill" style="--c:${col}">${ar} ${w}</span><button class="chip" id="ppX" aria-label="Close">${icon('x')}</button></div>
+        <div class="pp-pills">${a.vs.map((x, i) => `<button class="chip ${i === Math.min(PO.metric, a.vs.length - 1) ? 'on' : ''}" data-m="${i}">${esc(x.label)}</button>`).join('')}</div>
         <div class="pp-big" style="--c:${vc}"><div><b>${last != null ? Math.round(last * 100) / 100 : '–'}</b><span>${esc(unit)}</span></div>
           <em>${vr} ${vw}${first != null && v.points.length > 1 ? ` · started at ${Math.round(first * 100) / 100}` : ''}</em></div>
         <div class="pp-chart"><canvas id="ppChart"></canvas></div>
@@ -421,6 +434,8 @@ async function pageProgress() {
     $('#ppX') && ($('#ppX').onclick = () => { PO.sel = null; show(); });
   };
   $$('#p-progress .po-b').forEach(b => b.onclick = () => { PO.sel = PO.sel === b.dataset.a ? null : b.dataset.a; PO.metric = 0; show(); });
+  const core = $('#p-progress .po-core');   // tap the buddy in the middle → back to "Today"
+  if (core) { core.title = 'Show today'; core.onclick = () => { PO.sel = null; PO.metric = 0; show(); }; }
   show();
 }
 
@@ -428,11 +443,11 @@ async function pageProgress() {
 const SUGGEST = ["What's my biggest lever right now?", 'Build my weekly plan', 'How did I do this week?', 'Why does blood pressure matter for my brain?', 'What if I walked 150 minutes a week?'];
 async function pageCoach() {
   $('#p-coach').innerHTML = `<div class="coach"><div class="glass chat">
-      <div class="chat-head"><div><div class="eyebrow">🤖 NEUROCOACH · AI AGENT</div><div class="muted">Runs on this computer (Ollama). Your data never leaves this device.</div></div></div>
+      <div class="chat-head"><div><div class="eyebrow">${icon('bot')} NEUROCOACH · AI AGENT</div><div class="muted">Runs on this computer (Ollama). Your data never leaves this device.</div></div></div>
       <div class="msgs" id="msgs"></div>
       <div class="suggest">${SUGGEST.map(s => `<button class="chip" data-s="${esc(s)}">${s}</button>`).join('')}</div>
       <div class="composer"><input id="ask" placeholder="Ask your coach…" autocomplete="off"><button class="cta" id="askBtn">Send</button></div></div>
-    <div class="glass panel" style="overflow-y:auto"><div class="eyebrow">📅 SAVED PLANS</div><div id="plans" style="margin-top:10px"></div></div></div>`;
+    <div class="glass panel" style="overflow-y:auto"><div class="eyebrow">${icon('calendar')} SAVED PLANS</div><div id="plans" style="margin-top:10px"></div></div></div>`;
   const [h, cs] = await Promise.all([api(`/api/player/${enc(ME.name)}/coach`), api('/api/coach/status')]);
   $('.chat-head').insertAdjacentHTML('beforeend', cs.local ? `<span class="dbnote">● On-device AI (${esc(cs.model)})</span>`
     : `<span class="dbnote" style="color:#FFC83D;border-color:rgba(255,200,61,.4);background:rgba(255,200,61,.1)" title="Start Ollama to turn on the on-device AI">● Simple built-in coach (on-device AI not running)</span>`);
@@ -442,7 +457,7 @@ async function pageCoach() {
   $('#ask').onkeydown = e => { if (e.key === 'Enter') $('#askBtn').click(); };
 }
 function bubble(m) {
-  return `<div class="msg ${m.role}">${esc(m.content)}${m.tools?.length ? `<div class="toolchips">${m.tools.map(t => `<span>🔧 ${esc(t.label)}</span>`).join('')}</div>` : ''}
+  return `<div class="msg ${m.role}">${esc(m.content)}${m.tools?.length ? `<div class="toolchips">${m.tools.map(t => `<span>${icon('settings')} ${esc(t.label)}</span>`).join('')}</div>` : ''}
     ${m.role === 'assistant' ? `<div class="src">${m.source === 'local' ? 'ON-DEVICE AI · nothing sent online' : m.source === 'claude' ? 'OLD CLOUD ANSWER' : 'BUILT-IN COACH (rules)'}</div>` : ''}</div>`;
 }
 function renderMsgs(ms) {
@@ -452,7 +467,7 @@ function renderMsgs(ms) {
 }
 function renderPlans(ps) {
   $('#plans').innerHTML = ps.length ? ps.map(p => `<div class="plan"><b>${esc(p.title)}</b><div class="muted">${p.created_at.replace('T', ' ')} · ${p.source === 'claude' ? 'by Claude agent' : 'offline coach'}</div>
-    ${p.items.map(i => `<div class="pi"><b>${esc(i.day)}</b><span>${QMAP[i.quest_id]?.icon || ''}</span><span style="color:#DDE2FA">${esc(i.action)}</span></div>`).join('')}</div>`).join('')
+    ${p.items.map(i => `<div class="pi"><b>${esc(i.day)}</b><span>${QMAP[i.quest_id] ? icon(QMAP[i.quest_id].icon) : ''}</span><span style="color:#DDE2FA">${esc(i.action)}</span></div>`).join('')}</div>`).join('')
     : '<div class="muted">No plans yet. Ask: "Build my weekly plan".</div>';
 }
 async function send(text) {
@@ -473,7 +488,7 @@ let simT, OASIS = null;
 async function pageLevers() {
   const p = ME.profile, L = ME.lever;
   $('#p-levers').innerHTML = `<div class="scrollpage"><div class="wrap">
-    <div class="h1">🎛 What if…</div><div class="sub"><b>Move a slider to see how a habit change would move your score.</b> Survey-weighted regression on real CDC NHANES 2011–2014 data (adults 60+, n=${L.n.toLocaleString()}), adjusted for age, sex, education and income. Outcome: Digit Symbol Substitution Test (processing speed). Years = DSST points ÷ ${Math.abs(L.age_coef).toFixed(2)} points lost per year of age. Associations, not guarantees.</div>
+    <div class="h1">${icon('sliders')} What if…</div><div class="sub"><b>Move a slider to see how a habit change would move your score.</b> Survey-weighted regression on real CDC NHANES 2011–2014 data (adults 60+, n=${L.n.toLocaleString()}), adjusted for age, sex, education and income. Outcome: Digit Symbol Substitution Test (processing speed). Years = DSST points ÷ ${Math.abs(L.age_coef).toFixed(2)} points lost per year of age. Associations, not guarantees.</div>
     <div class="cr-grid">
       <div class="glass card"><svg class="gauge" viewBox="0 0 300 170"><defs><linearGradient id="gg" x1="0" x2="1"><stop offset="0" stop-color="#3DDC97"/><stop offset=".5" stop-color="#FFC83D"/><stop offset="1" stop-color="#FF5A6E"/></linearGradient></defs>
         <path d="M30 150 A120 120 0 0 1 270 150" stroke="rgba(255,255,255,.08)" stroke-width="22" fill="none" stroke-linecap="round"/><path d="M30 150 A120 120 0 0 1 270 150" stroke="url(#gg)" stroke-width="22" fill="none" stroke-linecap="round" opacity=".9"/>
@@ -482,7 +497,7 @@ async function pageLevers() {
         <div class="yrs-big" id="lvY"></div><div class="muted" style="text-align:center" id="lvCI"></div><h3>What if…</h3><div id="sliders"></div></div>
       <div class="glass card"><div class="eyebrow">YEARS LINKED TO EACH FACTOR (vs healthy target, 95% CI)</div><div id="factors" style="margin-top:12px"></div>
         <p class="muted">Colored = significant in NHANES and counted in your total. Grey = can't be told apart from zero, shown but not counted.</p></div></div>
-    <h3>🩻 Optional: MRI brain age</h3><p class="muted">Model trained on real OASIS MRI summaries from cognitively normal adults. Try a real public OASIS participant, or enter nWBV and eTIV from a radiology volumetry report.</p>
+    <h3>${icon('scan')} Optional: MRI brain age</h3><p class="muted">Model trained on real OASIS MRI summaries from cognitively normal adults. Try a real public OASIS participant, or enter nWBV and eTIV from a radiology volumetry report.</p>
     <div class="cr-grid"><div class="glass card" id="mriIn"></div><div class="glass card" style="height:340px"><canvas id="mriChart"></canvas></div></div></div></div>`;
   const S = [['sbp', 'Systolic BP', 90, 200, 1, 'mmHg'], ['active_min_week', 'Active minutes / week', 0, 600, 10, 'min'], ['sleep_hours', 'Sleep', 4, 10, .5, 'h'], ['phq9', 'Mood score (PHQ-9, lower = better)', 0, 27, 1, ''], ['sedentary_min_day', 'Sitting / day', 0, 900, 10, 'min']];
   const sim = { sbp: Math.round(p.sbp), active_min_week: Math.min(600, p.active_min_week), sleep_hours: p.sleep_hours, phq9: p.phq9, sedentary_min_day: Math.min(900, p.sedentary_min_day), diabetes: p.diabetes, current_smoker: p.current_smoker };
@@ -494,7 +509,7 @@ async function pageLevers() {
   drawLever(L); mriUI();
 }
 function drawLever(r) {
-  const y = r.years, amt = plainAmount(y); $('#lvY').textContent = !amt ? 'On target 🎉' : y > 0 ? `≈ ${amt} older` : 'Better than target'; $('#lvY').style.color = y > 1 ? '#FF8A7A' : y > 0 ? '#FFC83D' : '#3DDC97';
+  const y = r.years, amt = plainAmount(y); $('#lvY').textContent = !amt ? 'On target' : y > 0 ? `≈ ${amt} older` : 'Better than target'; $('#lvY').style.color = y > 1 ? '#FF8A7A' : y > 0 ? '#FFC83D' : '#3DDC97';
   $('#lvCI').textContent = `how your thinking speed compares with you at every healthy target (range ${fmt(r.ci[0])} to ${fmt(r.ci[1])} yrs)`;
   $('#needle').style.transform = `rotate(${Math.max(-90, Math.min(90, y / 5 * 90))}deg)`;
   const max = Math.max(3, ...Object.values(r.per_factor).map(f => Math.abs(f.ci[1]))) * 1.1, X = v => 50 + v / max * 50;
@@ -550,7 +565,7 @@ async function pageScience() {
     <div class="glass card"><table class="t"><tr><th>Change</th><th>DSST points</th><th>95% CI</th><th>≈ years</th><th>p</th></tr>${a.contrasts.map(x => `<tr><td>${x.label}</td><td class="num">${fmt(x.dsst_points, 2)}</td><td class="num">${fmt(x.dsst_ci[0], 2)} to ${fmt(x.dsst_ci[1], 2)}</td><td class="num">${fmt(x.years)}</td><td class="num ${x.p_value < .05 ? 'sig' : 'nsig'}">${x.p_value.toPrecision(2)}</td></tr>`).join('')}</table>
     <p class="muted">n = ${a.n.toLocaleString()} · R² ${a.r2.toFixed(3)} · age effect ${a.age_coef.toFixed(3)} points/yr. Cross-sectional: reverse causation possible.</p></div>
     <h3>3 · Fairness audit (race was not a model input)</h3>
-    <div class="glass card"><table class="t"><tr><th>Group</th><th>n</th><th>MAE</th><th>Mean bias (pred − actual)</th></tr>${fair.map(([g, v]) => `<tr><td>${g}${v.low_n_warning ? ' ⚠ small n' : ''}</td><td class="num">${v.n}</td><td class="num">${v.mae.toFixed(2)}</td><td class="num" style="color:${Math.abs(v.mean_bias) > 2 ? '#FFC83D' : '#C9D0EE'}">${fmt(v.mean_bias, 2)}</td></tr>`).join('')}</table>
+    <div class="glass card"><table class="t"><tr><th>Group</th><th>n</th><th>MAE</th><th>Mean bias (pred − actual)</th></tr>${fair.map(([g, v]) => `<tr><td>${g}${v.low_n_warning ? ' (small n)' : ''}</td><td class="num">${v.n}</td><td class="num">${v.mae.toFixed(2)}</td><td class="num" style="color:${Math.abs(v.mean_bias) > 2 ? '#FFC83D' : '#C9D0EE'}">${fmt(v.mean_bias, 2)}</td></tr>`).join('')}</table>
     <p class="muted">Error is similar across groups, but predictions run too high for Non-Hispanic Black and Other Hispanic participants and too low for Non-Hispanic White participants. That's why NeuroTrail reports within-person change and factor associations, never a cognitive diagnosis.</p></div>
     <h3>4 · MRI brain-age model (OASIS)</h3>
     <div class="glass card"><p class="muted">Trained on ${b.n_normal} cognitively normal OASIS-1 adults aged 18–96 (normalized brain volume, intracranial volume, sex). MAE ${bm.mae_mean.toFixed(1)} yrs (r = ${bm.r_mean.toFixed(2)}) vs ${b.baseline_mae_predict_mean.toFixed(1)} predicting the mean. Gap ${fmt(cv.mean_gap_dementia)} yrs in dementia (n=${cv.n_dementia}) vs ${fmt(cv.mean_gap_normal)} in age-matched normals (Mann–Whitney p = ${cv.mannwhitney_p.toExponential(1)}). Longitudinal (OASIS-2, ${lo.n_subjects} people, ${lo.n_sessions} scans): brain volume falls ${Math.abs(lo.nondemented_nwbv_pts_per_year).toFixed(2)} nWBV-points/yr in nondemented vs ${Math.abs(lo.demented_nwbv_pts_per_year).toFixed(2)} in dementia (p = ${lo.demented_vs_nd_p.toExponential(1)}). Honest limit: image CNNs reach MAE ≈ 2–4 yrs.</p></div>
@@ -561,7 +576,7 @@ async function pageScience() {
       ${C.rules ? `<p class="muted"><b>Confidence labels.</b> High: 95% interval under ${C.rules.high_width} yrs, models within ${C.rules.max_disagreement} yrs of each other, template similarity ≥ ${C.rules.similarity_comfort.toFixed(2)}, age ${C.rules.age_range[0]}–${C.rules.age_range[1]}. Medium: interval ${C.rules.high_width}–${C.rules.low_width} yrs or similarity between ${C.rules.similarity_cutoff.toFixed(2)} and ${C.rules.similarity_comfort.toFixed(2)}. Low: interval over ${C.rules.low_width} yrs, models disagree by more than ${C.rules.max_disagreement} yrs, age outside the training range, or similarity below ${C.rules.similarity_cutoff.toFixed(2)}. ${C.rules.how}.</p>` : ''}
       <p class="muted"><b>Limits.</b> ${C.limits.join(' ')}</p></div>` : ''}
     <h3>5 · Quest weighting</h3>
-    <div class="glass card"><table class="t"><tr><th>Quest</th><th>Evidence tier</th><th>Lancet 2024 PAF</th><th>Sparks</th><th>Key source</th></tr>${QUESTS.map(q => `<tr><td>${q.icon} ${q.title}</td><td>${q.tier}</td><td class="num">${q.lancet_paf ? q.lancet_paf + '%' : '–'}</td><td class="num">${q.sparks}</td><td><a href="${q.evidence[0].url}" target="_blank" style="color:#59F0FF">link ↗</a></td></tr>`).join('')}</table>
+    <div class="glass card"><table class="t"><tr><th>Quest</th><th>Evidence tier</th><th>Lancet 2024 PAF</th><th>Sparks</th><th>Key source</th></tr>${QUESTS.map(q => `<tr><td>${icon(q.icon)} ${q.title}</td><td>${q.tier}</td><td class="num">${q.lancet_paf ? q.lancet_paf + '%' : '–'}</td><td class="num">${q.sparks}</td><td><a href="${q.evidence[0].url}" target="_blank" style="color:#59F0FF">link ↗</a></td></tr>`).join('')}</table>
     <p class="muted">sparks = 20 + tier bonus (RCT 30 · cohort 15 · mixed 5) + 5 × PAF%. ${S.lancet}</p></div>
     <h3>6 · Architecture</h3>
     <div class="glass card"><p class="muted"><b>Python backend</b> (FastAPI): NHANES/OASIS models (scikit-learn, statsmodels), evidence catalog, game logic, <b>SQLite</b> database (players, quest_logs, step_progress, speed_rounds, coach_messages, plans).
@@ -584,25 +599,25 @@ async function updateAnswers() { openOnboard(await api(`/api/player/${enc(ME.nam
 function stepper(k, min, max, step, unit = '') { return `<div class="toggle" style="align-items:center"><button class="chip" data-dec="${k}" data-st="${step}" data-min="${min}">−</button><b style="font:700 22px 'Space Grotesk';min-width:90px;text-align:center" id="ob_${k}">${OB[k]}${unit}</b><button class="chip" data-inc="${k}" data-st="${step}" data-max="${max}">+</button></div>`; }
 function renderOb() {
   const pages = [
-    () => `<div class="eyebrow">VIBE CHECK · 1/5</div><h2>About you 👋</h2><p class="muted">30 secs. Stays on this device.</p>
+    () => `<div class="eyebrow">VIBE CHECK · 1/5</div><h2>About you</h2><p class="muted">30 secs. Stays on this device.</p>
       <div class="q-grid ob"><div><label>Age</label>${stepper('age', 18, 100, 1)}</div>
       <div><label>Sex</label><div class="toggle"><button class="chip ${OB.female ? 'on' : ''}" data-b="female" data-v="1">Female</button><button class="chip ${!OB.female ? 'on' : ''}" data-b="female" data-v="0">Male</button></div></div>
       </div>`,
-    () => `<div class="eyebrow">VIBE CHECK · 2/5</div><h2>Heart stuff ❤️</h2>
+    () => `<div class="eyebrow">VIBE CHECK · 2/5</div><h2>Heart stuff</h2>
       <div class="q-grid ob"><div><label>Blood pressure (top number)</label>${stepper('sbp', 80, 220, 2, ' mmHg')}</div><div></div>
       <div><label>Diabetes?</label><div class="toggle"><button class="chip ${OB.diabetes ? 'on' : ''}" data-b="diabetes" data-v="1">Yes</button><button class="chip ${!OB.diabetes ? 'on' : ''}" data-b="diabetes" data-v="0">No</button></div></div>
       <div><label>Smoke?</label><div class="toggle"><button class="chip ${OB.current_smoker ? 'on' : ''}" data-b="current_smoker" data-v="1">Yes</button><button class="chip ${!OB.current_smoker ? 'on' : ''}" data-b="current_smoker" data-v="0">No</button></div></div></div>`,
-    () => `<div class="eyebrow">VIBE CHECK · 3/5</div><h2>Your days ☀️</h2>
+    () => `<div class="eyebrow">VIBE CHECK · 3/5</div><h2>Your days</h2>
       <div class="q-grid ob"><div><label>Workout mins / week: <b>${OB.active_min_week}</b></label><input type="range" min="0" max="900" step="10" data-k="active_min_week" value="${OB.active_min_week}"></div>
       <div><label>Sitting mins / day: <b>${OB.sedentary_min_day}</b></label><input type="range" min="0" max="1140" step="10" data-k="sedentary_min_day" value="${OB.sedentary_min_day}"></div>
       <div><label>Sleep / night: <b>${OB.sleep_hours} h</b></label><input type="range" min="2" max="12" step=".5" data-k="sleep_hours" value="${OB.sleep_hours}"></div></div>`,
-    () => `<div class="eyebrow">VIBE CHECK · 4/5</div><h2>Mood 🫶</h2><p class="muted">Last 2 weeks, how often…</p>
+    () => `<div class="eyebrow">VIBE CHECK · 4/5</div><h2>Mood</h2><p class="muted">Last 2 weeks, how often…</p>
       <div class="phq">${PHQ.map((q, i) => `<div class="pq"><div>${i + 1}. ${q}</div><div class="chips">${PHQO.map((o, j) => `<button class="chip ${OB.phq[i] === j ? 'on' : ''}" data-phq="${i}" data-v="${j}">${o}</button>`).join('')}</div></div>`).join('')}</div>`,
-    () => `<div class="reveal"><div class="eyebrow">VIBE CHECK · 5/5</div><h2>Your brain age gap 🧠</h2><div id="revealBody"><p class="muted">Crunching…</p></div></div>`,
+    () => `<div class="reveal"><div class="eyebrow">VIBE CHECK · 5/5</div><h2>Your brain age gap</h2><div id="revealBody"><p class="muted">Crunching…</p></div></div>`,
   ];
   $('#obDots').innerHTML = pages.map((_, i) => `<i class="${i <= obStep ? 'on' : ''}"></i>`).join('');
   $('#obBody').innerHTML = pages[obStep]();
-  $('#obBack').style.visibility = obStep ? 'visible' : 'hidden'; $('#obNext').textContent = obStep === 4 ? 'Let\'s go 🚀' : 'Next →';
+  $('#obBack').style.visibility = obStep ? 'visible' : 'hidden'; $('#obNext').textContent = obStep === 4 ? 'Let\'s go' : 'Next →';
   $$('#obBody [data-k]').forEach(el => el.oninput = () => { OB[el.dataset.k] = +el.value; if (el.type === 'range') el.previousElementSibling.querySelector('b').textContent = el.value + (el.dataset.k === 'income_pir' ? '×' : el.dataset.k === 'sleep_hours' ? ' h' : ''); });
   $$('#obBody [data-b]').forEach(el => el.onclick = () => { OB[el.dataset.b] = el.dataset.v === '1'; renderOb(); });  $$('#obBody [data-inc],[data-dec]').forEach(el => el.onclick = () => { const k = el.dataset.inc || el.dataset.dec, st = +el.dataset.st;
     OB[k] = el.dataset.inc ? Math.min(+el.dataset.max, OB[k] + st) : Math.max(+el.dataset.min, OB[k] - st); $('#ob_' + k).textContent = OB[k] + (k === 'sbp' ? ' mmHg' : ''); });
@@ -611,7 +626,7 @@ function renderOb() {
     const r = await api('/api/lever', { ...OB, phq9: OB.phq.reduce((a, b) => a + b, 0) });
     const top = Object.values(r.per_factor).filter(f => f.years > .05 && f.significant).slice(0, 3);
     $('#revealBody').innerHTML = `<div class="yrs grad">${Math.abs(r.years).toFixed(1)} yrs ${r.years >= 0 ? 'older' : 'younger'}</div>
-      <p>That's how your habits make your brain speed look. ${r.years > 0.05 ? 'Fixable 💪' : 'Keep it up 🔥'}</p>
+      <p>That's how your habits make your brain speed look. ${r.years > 0.05 ? 'Fixable.' : 'Keep it up.'}</p>
       ${top.length ? `<p>Biggest wins: ${top.map(f => `<b style="color:#FFC83D">${f.label}</b>`).join(', ')}</p>` : ''}
       <p class="muted tiny-note">CDC data on ${r.n.toLocaleString()} people. A link, not a diagnosis.</p>`;
   })();
@@ -626,7 +641,7 @@ $$('[data-close]').forEach(b => b.onclick = () => closeOv(b.dataset.close));
 $('#playerBtn').onclick = async (e) => {
   if (e.target.closest('.menu')) return;
   const ps = await api('/api/players');
-  $('#playerMenu').innerHTML = `<div class="tiny" style="padding:4px 10px">TEAM BOARD · SPARKS THIS WEEK</div>` + ps.map((p, i) => `<div class="mi" data-p="${esc(p.name)}"><span>${['🥇', '🥈', '🥉'][i] || '·'} ${esc(p.name)}</span><b>${p.week_sparks} ⚡</b></div>`).join('')
+  $('#playerMenu').innerHTML = `<div class="tiny" style="padding:4px 10px">TEAM BOARD · SPARKS THIS WEEK</div>` + ps.map((p, i) => `<div class="mi" data-p="${esc(p.name)}"><span>${i + 1}. ${esc(p.name)}</span><b>${p.week_sparks} ${icon('zap')}</b></div>`).join('')
     + `<div class="mi" id="addP">+ Add a player</div><p class="muted" style="padding:0 6px">Competition was the only gamified arm in STEP UP whose effect outlasted the game.</p>`;
   $('#playerBtn').classList.toggle('open');
   $$('#playerMenu [data-p]').forEach(m => m.onclick = () => { localStorage.setItem('nt_player', m.dataset.p); $('#playerBtn').classList.remove('open'); boot(); });
@@ -643,7 +658,7 @@ async function startAs(n) {
   if (p.name !== n.trim()) toast(`You're in as ${p.name}`);
   await boot();
 }
-$('#startBtn').onclick = () => { const n = $('#newName').value.trim(); if (!n) { $('#newName').focus(); return toast('Drop a name first 👆 (or go guest)'); } startAs(n); };
+$('#startBtn').onclick = () => { const n = $('#newName').value.trim(); if (!n) { $('#newName').focus(); return toast('Type a name first (or go guest)'); } startAs(n); };
 // Braces matter: a handler that returns false cancels the key press, which blocked typing.
 $('#newName').onkeydown = e => { if (e.key === 'Enter') $('#startBtn').click(); };
 $('#guestBtn').onclick = async () => { const ps = await api('/api/players').catch(() => []); let i = 1; while (ps.some(p => p.name === `Guest ${i}`)) i++; startAs(`Guest ${i}`); };
@@ -658,7 +673,7 @@ async function showWelcome() {
   else setTimeout(() => $('#newName').focus(), 50);
   const others = ps.filter(p => p.name !== last);
   $('#wlOthers').hidden = !others.length;
-  $('#existing').innerHTML = others.map(p => `<button class="chip" data-p="${esc(p.name)}">${esc(p.name)} · ${p.sparks} ⚡</button>`).join('');
+  $('#existing').innerHTML = others.map(p => `<button class="chip" data-p="${esc(p.name)}">${esc(p.name)} · ${p.sparks} ${icon('zap')}</button>`).join('');
   $$('#existing [data-p]').forEach(b => b.onclick = () => { localStorage.setItem('nt_player', b.dataset.p); closeOv('welcome'); boot(); });
 }
 function enter() { renderHUD(); paintRegions(); initDock(); if (!location.hash || location.hash === '#') location.hash = '#/'; route(); }

@@ -51,7 +51,7 @@ class Quest:
 
 QUESTS: list[Quest] = [
     Quest(
-        id="speed", title="Speed Sprint", stop="Prefrontal Peak", icon="⚡", color="#FFC83D",
+        id="speed", title="Speed Sprint", stop="Prefrontal Peak", icon="zap", color="#FFC83D",
         regions=["G_front_middle", "S_front_middle", "S_front_sup"],
         region_name="Dorsolateral prefrontal cortex",
         region_fact="The middle frontal gyrus supports working memory and attention, abilities a "
@@ -69,7 +69,7 @@ QUESTS: list[Quest] = [
                "shorter than the trial's hour-long sessions.",
     ),
     Quest(
-        id="bp", title="Pressure Point", stop="Cingulate Crossing", icon="🩺", color="#FF5A6E",
+        id="bp", title="Pressure Point", stop="Cingulate Crossing", icon="stethoscope", color="#FF5A6E",
         regions=["G_and_S_cingul-Ant", "G_and_S_cingul-Mid-Ant"],
         region_name="Anterior cingulate cortex",
         region_fact="The anterior cingulate helps regulate the body's autonomic responses, "
@@ -89,7 +89,7 @@ QUESTS: list[Quest] = [
         caveat="Measuring doesn't lower BP. Treatment targets are a decision for you and your clinician.",
     ),
     Quest(
-        id="steps", title="Step Street", stop="Motor Mile", icon="👟", color="#3DDC97",
+        id="steps", title="Step Street", stop="Motor Mile", icon="steps", color="#3DDC97",
         regions=["G_precentral", "S_precentral-sup-part", "S_precentral-inf-part", "G_and_S_paracentral"],
         region_name="Primary motor cortex",
         region_fact="The precentral gyrus is the primary motor cortex: it sends the commands that "
@@ -109,7 +109,7 @@ QUESTS: list[Quest] = [
                "processing speed. Device-measured steps (UK Biobank) did. We show both.",
     ),
     Quest(
-        id="connect", title="Connection Call", stop="Social Junction", icon="💬", color="#4FC3F7",
+        id="connect", title="Connection Call", stop="Social Junction", icon="message", color="#4FC3F7",
         regions=["G_pariet_inf-Supramar", "G_pariet_inf-Angular"],
         region_name="Temporoparietal junction",
         region_fact="The temporoparietal junction helps you understand other people's thoughts and "
@@ -125,7 +125,7 @@ QUESTS: list[Quest] = [
                             "(0.008–0.050).", "url": "https://pubmed.ncbi.nlm.nih.gov/40720610/"}],
     ),
     Quest(
-        id="hearing", title="Sound Check", stop="Auditory Avenue", icon="👂", color="#B388FF",
+        id="hearing", title="Sound Check", stop="Auditory Avenue", icon="ear", color="#B388FF",
         regions=["G_temp_sup-Lateral", "G_temp_sup-G_T_transv", "G_temp_sup-Plan_tempo",
                  "S_temporal_transverse"],
         region_name="Superior temporal gyrus (auditory cortex)",
@@ -144,7 +144,7 @@ QUESTS: list[Quest] = [
                "self-reported hearing trouble was not associated with processing speed.",
     ),
     Quest(
-        id="joy", title="Joy Plan", stop="Reward Ridge", icon="🎯", color="#FF9F43",
+        id="joy", title="Joy Plan", stop="Reward Ridge", icon="target", color="#FF9F43",
         regions=["G_orbital", "G_rectus", "S_orbital-H_Shaped", "S_orbital_lateral"],
         region_name="Orbitofrontal cortex",
         region_fact="The orbitofrontal cortex is involved in reward and in regulating emotion.",
@@ -164,7 +164,7 @@ QUESTS: list[Quest] = [
         caveat="A self-help step, not treatment. If you're struggling, call or text 988 (US).",
     ),
     Quest(
-        id="smoke", title="Smoke-Free Day", stop="Stop-Signal Summit", icon="🚭", color="#26C6DA",
+        id="smoke", title="Smoke-Free Day", stop="Stop-Signal Summit", icon="ban", color="#26C6DA",
         regions=["G_front_inf-Opercular", "G_front_inf-Triangul", "S_front_inf"],
         region_name="Inferior frontal gyrus",
         region_fact="The inferior frontal gyrus supports response inhibition: stopping an action "
@@ -181,7 +181,7 @@ QUESTS: list[Quest] = [
         smokers_only=True,
     ),
     Quest(
-        id="sleep", title="Sleep Station", stop="Memory Meadow", icon="🌙", color="#7C8CFF",
+        id="sleep", title="Sleep Station", stop="Memory Meadow", icon="moon", color="#7C8CFF",
         regions=["G_oc-temp_med-Parahip", "Pole_temporal", "G_temporal_inf"],
         region_name="Medial and inferior temporal lobe",
         region_fact="The parahippocampal gyrus is part of the medial temporal memory system.",
@@ -195,7 +195,7 @@ QUESTS: list[Quest] = [
                "sleep associated with slower processing speed.",
     ),
     Quest(
-        id="labs", title="Know Your Numbers", stop="Metabolic Mesa", icon="🧪", color="#F06292",
+        id="labs", title="Know Your Numbers", stop="Metabolic Mesa", icon="flask", color="#F06292",
         regions=["G_precuneus", "G_cingul-Post-dorsal", "G_cingul-Post-ventral"],
         region_name="Precuneus and posterior cingulate",
         region_fact="The posterior cingulate and precuneus are hubs of the default-mode network, "

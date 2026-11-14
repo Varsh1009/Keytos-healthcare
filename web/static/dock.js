@@ -1,9 +1,13 @@
-// Side menu (☰) and the floating brain-buddy coach.
+// Side menu (menu button) and the floating brain-buddy coach.
 // Side menu: Science, full coach page, text size, log out — kept out of the main tabs.
 // Buddy: bottom-right, opens a small chat with the same AI coach (/api/player/{name}/coach).
 // It can talk: replies are read aloud (browser speech synthesis) and you can speak your question
 // (browser speech recognition, Chrome/Edge/Safari). Both are optional and can be switched off.
-import { buddy } from './ui2.js?v=14';
+import { buddy } from './ui2.js?v=15';
+import { icon } from './icons.js?v=1';
+// speaker with a cross: read-aloud switched off
+const MUTED = '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M11 5 6 9H3v6h3l5 4z"/><path d="M16 9l5 6M21 9l-5 6"/></svg>';
+const spk = on => on ? icon('speaker') : MUTED;
 
 const X = () => window.NTX;
 const $ = s => document.querySelector(s);
@@ -107,7 +111,7 @@ function onRoute() {
 }
 
 // Camera / mic blocked? Say so up front with the fix, instead of a check that silently never records.
-const NEEDS = { hands: ['camera', '📷 Camera'], voice: ['microphone', '🎙️ Microphone'] };
+const NEEDS = { hands: ['camera', 'Camera', 'camera'], voice: ['microphone', 'Microphone', 'mic'] };
 async function mediaCheck(r) {
   document.getElementById('mediaBanner')?.remove();
   const voiceGame = r === 'game' && /#\/game\/(voice|readaloud|fluency)/.test(location.hash);
@@ -126,8 +130,8 @@ async function mediaCheck(r) {
   if (state !== 'denied') return;
   const url = location.href;
   document.body.insertAdjacentHTML('beforeend', `<div class="media-banner glass" id="mediaBanner" role="alert">
-    <b>${need[1]} is blocked in this window</b><span>Nothing can be recorded here. Allow it in the browser, or open the app in Chrome.</span>
-    <button class="chip" id="mbCopy">Copy link for Chrome</button><button class="chip" id="mbClose" aria-label="Close">✕</button></div>`);
+    <b>${icon(need[2])} ${need[1]} is blocked in this window</b><span>Nothing can be recorded here. Allow it in the browser, or open the app in Chrome.</span>
+    <button class="chip" id="mbCopy">Copy link for Chrome</button><button class="chip" id="mbClose" aria-label="Close">${icon('x')}</button></div>`);
   $('#mbCopy').onclick = () => navigator.clipboard?.writeText(url).then(() => X().toast('Link copied. Paste it into Chrome.'));
   $('#mbClose').onclick = () => document.getElementById('mediaBanner')?.remove();
 }
@@ -135,32 +139,32 @@ async function mediaCheck(r) {
 export function initDock() {
   if (ready) { loaded = false; onRoute(); return; }      // new player: reload chat on next open
   ready = true;
-  $('#hud .brand').insertAdjacentHTML('beforebegin', '<button class="menu-btn" id="menuBtn" aria-label="Open menu">☰</button>');
+  $('#hud .brand').insertAdjacentHTML('beforebegin', '<button class="menu-btn" id="menuBtn" aria-label="Open menu">' + icon('menu') + '</button>');
   document.body.insertAdjacentHTML('beforeend', `
     <div class="scrim" id="scrim"></div>
     <aside class="drawer glass" id="drawer" aria-label="Menu">
       <div class="drawer-head"><div class="dbuddy">${buddy('happy', 46)}</div><div><div class="tiny">SIGNED IN AS</div><b id="drawerName"></b></div>
-        <button class="dclose" id="drawerClose" aria-label="Close menu">✕</button></div>
-      <button class="ditem" id="updAnswers">✏️ <span>Update my answers <small style="display:block;color:#9AA3C7;font-weight:500;font-size:12px">blood pressure, sleep, mood…</small></span></button>
-      <a class="ditem" href="#/coach">🤖 <span>Coach chat &amp; saved plans</span></a>
-      <a class="ditem" href="#/science">🔬 <span>The science</span></a>
-      <button class="ditem" id="privBtn">🔒 <span>Privacy <small style="display:block;color:#9AA3C7;font-weight:500;font-size:12px">what's saved, what's allowed</small></span></button>
+        <button class="dclose" id="drawerClose" aria-label="Close menu">${icon('x')}</button></div>
+      <button class="ditem" id="updAnswers">${icon('pencil')} <span>Update my answers <small style="display:block;color:#9AA3C7;font-weight:500;font-size:12px">blood pressure, sleep, mood…</small></span></button>
+      <a class="ditem" href="#/coach">${icon('bot')} <span>Coach chat &amp; saved plans</span></a>
+      <a class="ditem" href="#/science">${icon('flask')} <span>The science</span></a>
+      <button class="ditem" id="privBtn">${icon('lock')} <span>Privacy <small style="display:block;color:#9AA3C7;font-weight:500;font-size:12px">what's saved, what's allowed</small></span></button>
       <div class="dsec">TEXT SIZE</div>
       <div class="dsizes">${SIZES.map(([l], i) => `<button class="chip" data-size="${i}">${l}</button>`).join('')}</div>
       <div class="dsec">BUDDY</div>
-      <label class="ditem dtoggle"><input type="checkbox" id="talkToggle" ${talk ? 'checked' : ''}> <span>🔊 Buddy reads answers aloud</span></label>
-      <button class="ditem dlogout" id="logoutBtn">🚪 <span>Log out / switch player</span></button>
+      <label class="ditem dtoggle"><input type="checkbox" id="talkToggle" ${talk ? 'checked' : ''}> <span>${icon('speaker')} Buddy reads answers aloud</span></label>
+      <button class="ditem dlogout" id="logoutBtn">${icon('logout')} <span>Log out / switch player</span></button>
     </aside>
     <div class="coach-fab" id="coachFab">
       <div class="fab-hint" id="fabHint">Psst… ask me!</div>
       <button class="fab-btn" id="fabBtn" aria-label="Open your brain buddy coach">${buddy('happy', 74)}</button>
     </div>
     <div class="coach-pop glass" id="coachPop" role="dialog" aria-label="Brain buddy coach">
-      <div class="bhead"><b>🧠 Brain buddy</b><span class="muted">your AI coach</span>
-        <button class="chip" id="bSpeak" title="Read answers aloud">${talk ? '🔊' : '🔇'}</button><button class="chip" id="bClose" aria-label="Close">✕</button></div>
+      <div class="bhead"><b>${icon('brain')} Brain buddy</b><span class="muted">your AI coach</span>
+        <button class="chip" id="bSpeak" title="Read answers aloud">${spk(talk)}</button><button class="chip" id="bClose" aria-label="Close">${icon('x')}</button></div>
       <div class="bmsgs" id="bMsgs"></div>
       <div class="bquick">${QUICK.map(q => `<button class="chip" data-q="${esc(q)}">${q}</button>`).join('')}</div>
-      <div class="bcomp"><button class="chip bmic" id="bMic" title="Speak your question" ${Speech ? '' : 'hidden'}>🎤</button>
+      <div class="bcomp"><button class="chip bmic" id="bMic" title="Speak your question" ${Speech ? '' : 'hidden'}>${icon('mic')}</button>
         <input id="bAsk" placeholder="Ask your buddy…" autocomplete="off"><button class="cta" id="bSend">Send</button></div>
     </div>`);
 
@@ -169,7 +173,7 @@ export function initDock() {
   $('#privBtn').onclick = () => { toggleDrawer(false); window.NTconsent.edit().then(() => location.reload()); };
   $('#drawerClose').onclick = $('#scrim').onclick = () => toggleDrawer(false);
   document.querySelectorAll('#drawer [data-size]').forEach(b => b.onclick = () => applySize(+b.dataset.size));
-  $('#talkToggle').onchange = e => { talk = e.target.checked; store.set('nt_talk', talk ? '1' : '0'); $('#bSpeak').textContent = talk ? '🔊' : '🔇'; };
+  $('#talkToggle').onchange = e => { talk = e.target.checked; store.set('nt_talk', talk ? '1' : '0'); $('#bSpeak').innerHTML = spk(talk); };
   $('#logoutBtn').onclick = () => { try { localStorage.removeItem('nt_player'); } catch { } location.hash = '#/'; location.reload(); };
 
   $('#fabBtn').onclick = () => { $('#fabHint').remove?.(); togglePop(); };
