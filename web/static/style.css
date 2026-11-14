@@ -983,3 +983,65 @@ body.r-gym #caption, body.r-play #caption { bottom: 120px; max-width: 340px; }
 .mx-truth { margin-top: 4px; }
 .rtabs a small { display: none; }
 @media (max-width: 860px) { .mx-grid { grid-template-columns: 1fr; } }
+
+/* ---------- MRI "What it means" story cards ---------- */
+.mxs { width: 100%; max-width: 520px; margin-top: 10px; overflow: hidden; }
+.mxs-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.mxs-head b { font: 800 18px 'Space Grotesk'; color: #fff; }
+.mxs-dots { display: flex; gap: 6px; } .mxs-dots i { width: 9px; height: 9px; border-radius: 50%; background: rgba(255,255,255,.18); cursor: pointer; transition: .2s; }
+.mxs-dots i.on { width: 24px; border-radius: 6px; background: #59F0FF; }
+.mxs-track { display: flex; transition: transform .45s cubic-bezier(.3,1.3,.5,1); touch-action: pan-y; cursor: grab; }
+.mxs-card { flex: 0 0 100%; box-sizing: border-box; padding: 18px; border-radius: 22px; background: linear-gradient(160deg, rgba(89,240,255,.08), rgba(155,123,255,.08)); border: 1px solid rgba(255,255,255,.08); }
+.mxs-card p { margin: 14px 0 0; color: #DDE2FA; font-size: 15px; line-height: 1.4; }
+.mxs-t { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; } .mxs-t span { font-size: 28px; } .mxs-t b { font: 700 18px Inter; color: #fff; }
+.mxs-nav { display: flex; justify-content: space-between; margin-top: 10px; } .mxs-nav .chip:disabled { opacity: .3; }
+.mxs-src { display: block; margin-top: 8px; font-size: 11px; }
+/* 1. scale */
+.mxm { position: relative; height: 70px; }
+.mxm::before { content: ''; position: absolute; left: 0; right: 0; top: 22px; height: 12px; border-radius: 6px; background: linear-gradient(90deg, #3DDC97, #59F0FF 50%, #FF8A7A); opacity: .35; }
+.mxm-zone { position: absolute; top: 14px; height: 28px; border-radius: 8px; background: rgba(255,255,255,.12); border: 1px dashed rgba(255,255,255,.35); }
+.mxm-zone span { position: absolute; top: -18px; left: 50%; transform: translateX(-50%); font-size: 11px; color: #9AA3C7; white-space: nowrap; }
+.mxm-range { position: absolute; top: 24px; height: 8px; border-radius: 4px; background: color-mix(in srgb, var(--c) 55%, transparent); }
+.mxm-dot { position: absolute; top: 16px; left: 0; width: 24px; height: 24px; margin-left: -12px; border-radius: 50%; background: var(--c); border: 3px solid #fff; box-shadow: 0 0 18px var(--c); }
+.mxs-card.seen .mxm-dot { animation: slideDot 1.1s cubic-bezier(.3,1.4,.5,1) forwards; }
+@keyframes slideDot { from { left: 50%; } to { left: var(--x); } }
+.mxm-lab { position: absolute; left: 0; right: 0; top: 48px; display: flex; justify-content: space-between; font-size: 12px; color: #9AA3C7; }
+/* 2. AI votes */
+.mxv { display: flex; justify-content: center; gap: 14px; }
+.mxv-bot { display: flex; flex-direction: column; align-items: center; padding: 10px 14px; border-radius: 16px; background: rgba(255,255,255,.06); opacity: 0; }
+.mxs-card.seen .mxv-bot { animation: popin2 .5s cubic-bezier(.3,1.6,.5,1) var(--d) forwards; }
+@keyframes popin2 { from { opacity: 0; transform: translateY(14px) scale(.6); } to { opacity: 1; transform: none; } }
+.mxv-bot span { font-size: 30px; } .mxv-bot b { font: 800 26px 'Space Grotesk'; color: #fff; } .mxv-bot small { color: #9AA3C7; font-size: 11px; }
+.mxv-conf { margin: 14px auto 0; width: max-content; padding: 6px 14px; border-radius: 999px; font: 800 12px Inter; letter-spacing: .1em; color: var(--c); border: 1px solid var(--c); background: color-mix(in srgb, var(--c) 12%, transparent); }
+/* 3. colors */
+.mxc { display: flex; gap: 12px; } .mxc > div { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 12px; border-radius: 16px; background: rgba(255,255,255,.05); }
+.mxc i { width: 34px; height: 34px; border-radius: 50%; box-shadow: 0 0 16px currentColor; } .mxc b { color: #fff; } .mxc span { color: #9AA3C7; font-size: 13px; text-align: center; }
+/* 4. what helps */
+.mxh { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.mxh a { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 12px 8px; border-radius: 16px; background: rgba(255,255,255,.05); text-decoration: none; text-align: center; transition: .15s; border: 1px solid transparent; }
+.mxh a:hover { border-color: #59F0FF; transform: translateY(-3px); }
+.mxh span { font-size: 28px; } .mxh b { color: #fff; font-size: 14px; } .mxh small { color: #9AA3C7; font-size: 11px; line-height: 1.3; }
+/* 5. reveal (flip card) */
+.mxr { position: relative; width: 100%; height: 110px; border: 0; background: none; cursor: pointer; perspective: 800px; font: inherit; }
+.mxr span { position: absolute; inset: 0; display: grid; place-items: center; border-radius: 18px; backface-visibility: hidden; transition: transform .6s; color: #fff; font-size: 18px; text-align: center; line-height: 1.4; }
+.mxr .front { background: linear-gradient(135deg, #6A4CFF, #59F0FF); font-weight: 800; }
+.mxr .back { background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.2); transform: rotateY(180deg); }
+.mxr.flip .front { transform: rotateY(180deg); } .mxr.flip .back { transform: rotateY(360deg); }
+.mx-out { align-items: flex-start; }
+
+/* ---------- consent ---------- */
+.cs { z-index: 200; }
+.cs-modal { max-width: 520px; text-align: center; }
+.cs-lock { font-size: 46px; animation: bob 3s ease-in-out infinite; }
+.cs-modal h2 { margin: 6px 0 4px; font: 800 26px 'Space Grotesk'; }
+.cs-sub { color: #C9D0EE; margin: 0 0 16px; }
+.cs-row { display: flex; align-items: center; gap: 12px; text-align: left; padding: 12px 14px; margin: 8px 0; border-radius: 16px; background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.08); cursor: pointer; position: relative; }
+.cs-row > div { flex: 1; display: flex; flex-direction: column; } .cs-row b { color: #fff; font-size: 15px; } .cs-row small { color: #9AA3C7; font-size: 12.5px; line-height: 1.35; }
+.cs-ic { font-size: 24px; }
+.cs-row input { position: absolute; opacity: 0; pointer-events: none; }
+.cs-sw { flex: none; width: 46px; height: 26px; border-radius: 999px; background: rgba(255,255,255,.15); position: relative; transition: .2s; }
+.cs-sw::after { content: ''; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: .2s; }
+.cs-row input:checked + .cs-sw { background: #3DDC97; } .cs-row input:checked + .cs-sw::after { left: 23px; }
+.cs-row.locked { cursor: default; opacity: .85; }
+.cs-go { width: 100%; margin-top: 14px; padding: 16px; font-size: 18px; }
+.cs-foot { display: block; margin-top: 10px; color: #9AA3C7; font-size: 12px; }

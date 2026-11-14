@@ -3,7 +3,7 @@
 // Buddy: bottom-right, opens a small chat with the same AI coach (/api/player/{name}/coach).
 // It can talk: replies are read aloud (browser speech synthesis) and you can speak your question
 // (browser speech recognition, Chrome/Edge/Safari). Both are optional and can be switched off.
-import { buddy } from './ui2.js?v=13';
+import { buddy } from './ui2.js?v=14';
 
 const X = () => window.NTX;
 const $ = s => document.querySelector(s);
@@ -15,7 +15,10 @@ const store = { get: (k, d) => { try { return localStorage.getItem(k) ?? d; } ca
 const SIZES = [['A', 1], ['A+', 1.15], ['A++', 1.3]];
 const HIDE_BUDDY_ON = ['home', 'coach', 'game', 'sprint', 'hands'];   // Home has its own big buddy (tap it to chat)   // full-screen tasks: keep the buddy out of the way
 const QUICK = ['How am I doing?', 'What should I do today?', 'What do my games say?'];
-const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
+// Speaking to the buddy uses the browser's speech service (Google in Chrome): only if allowed on the consent screen.
+const Speech = (window.SpeechRecognition || window.webkitSpeechRecognition) && window.NTconsent?.get()?.browserSpeech
+  ? (window.SpeechRecognition || window.webkitSpeechRecognition) : null;
+const allowed = k => window.NTconsent?.get()?.[k] !== false;
 let ready = false, talk = store.get('nt_talk', '1') === '1', loaded = false;
 
 function applySize(i) {
@@ -97,7 +100,7 @@ function toggleDrawer(open) {
 
 function onRoute() {
   const r = (location.hash.replace(/^#\/?/, '').split('/')[0]) || 'home';
-  $('#coachFab').hidden = HIDE_BUDDY_ON.includes(r);
+  $('#coachFab').hidden = HIDE_BUDDY_ON.includes(r) || !allowed('ai');      // AI coach switched off → no buddy chat
   if ($('#coachFab').hidden) togglePop(false);
   toggleDrawer(false);
   mediaCheck(r);
@@ -110,6 +113,14 @@ async function mediaCheck(r) {
   const voiceGame = r === 'game' && /#\/game\/(voice|readaloud|fluency)/.test(location.hash);
   const need = NEEDS[r] || (voiceGame ? NEEDS.voice : null);
   if (!need) return;
+  if (!allowed('media')) {
+    document.body.insertAdjacentHTML('beforeend', `<div class="media-banner glass" id="mediaBanner" role="alert">
+      <b>Camera & mic checks are off</b><span>You turned them off in Privacy. Turn them on to do this check.</span>
+      <button class="chip" id="mbPriv">🔒 Privacy</button><button class="chip" id="mbClose" aria-label="Close">✕</button></div>`);
+    $('#mbPriv').onclick = () => window.NTconsent.edit().then(() => location.reload());
+    $('#mbClose').onclick = () => document.getElementById('mediaBanner')?.remove();
+    return;
+  }
   let state = 'prompt';
   try { state = (await navigator.permissions.query({ name: need[0] })).state; } catch { }
   if (state !== 'denied') return;
@@ -133,6 +144,7 @@ export function initDock() {
       <button class="ditem" id="updAnswers">✏️ <span>Update my answers <small style="display:block;color:#9AA3C7;font-weight:500;font-size:12px">blood pressure, sleep, mood…</small></span></button>
       <a class="ditem" href="#/coach">🤖 <span>Coach chat &amp; saved plans</span></a>
       <a class="ditem" href="#/science">🔬 <span>The science</span></a>
+      <button class="ditem" id="privBtn">🔒 <span>Privacy <small style="display:block;color:#9AA3C7;font-weight:500;font-size:12px">what's saved, what's allowed</small></span></button>
       <div class="dsec">TEXT SIZE</div>
       <div class="dsizes">${SIZES.map(([l], i) => `<button class="chip" data-size="${i}">${l}</button>`).join('')}</div>
       <div class="dsec">BUDDY</div>
@@ -154,6 +166,7 @@ export function initDock() {
 
   $('#menuBtn').onclick = () => toggleDrawer(true);
   $('#updAnswers').onclick = () => { toggleDrawer(false); X().updateAnswers(); };
+  $('#privBtn').onclick = () => { toggleDrawer(false); window.NTconsent.edit().then(() => location.reload()); };
   $('#drawerClose').onclick = $('#scrim').onclick = () => toggleDrawer(false);
   document.querySelectorAll('#drawer [data-size]').forEach(b => b.onclick = () => applySize(+b.dataset.size));
   $('#talkToggle').onchange = e => { talk = e.target.checked; store.set('nt_talk', talk ? '1' : '0'); $('#bSpeak').textContent = talk ? '🔊' : '🔇'; };

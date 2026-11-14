@@ -262,10 +262,12 @@ async function recall(g, L) {
 
 // ============================================================ READ ALOUD (levels: read N words aloud before time runs out)
 async function readaloud(g, L) {
-  const run = RUN, RA = await import('./readalong.js?v=1');
+  const run = RUN, RA = await import('./readalong.js?v=2');
   const back = `<div class="row" style="justify-content:center"><button class="cta" id="again">↻ Try again</button><a class="ghost" href="#/gym/${g.id}" style="text-decoration:none">Back to Games</a></div>`;
   if (!RA.supported()) {
-    $('#gb').innerHTML = `<div class="empty" style="margin-top:40px">📖 Live word tracking needs <b>Chrome</b> or <b>Edge</b>.<br>Open <b>http://localhost:8600/#/game/readaloud</b> there.</div>
+    $('#gb').innerHTML = (window.SpeechRecognition || window.webkitSpeechRecognition) && !window.NTconsent?.get()?.browserSpeech
+      ? `<div class="empty" style="margin-top:40px">📖 Read Aloud uses your browser's speech service (in Chrome, audio goes to Google).<br>It's off in your Privacy choices. <button class="chip" onclick="window.NTconsent.edit().then(() => location.reload())">🔒 Turn it on</button></div>`
+      : `<div class="empty" style="margin-top:40px">📖 Live word tracking needs <b>Chrome</b> or <b>Edge</b>.<br>Open <b>http://localhost:8600/#/game/readaloud</b> there.</div>
       <div class="row" style="justify-content:center"><a class="ghost" href="#/gym/${g.id}" style="text-decoration:none">Back to Games</a></div>`;
     return;
   }
@@ -314,7 +316,7 @@ async function voiceGame(g, L) {
   for (const n of [3, 2, 1]) { $('#rmsg').textContent = `Think about it… start talking in ${n}`; await sleep(800); if (run !== RUN) { rec.stop().catch(() => {}); return; } }
   $('#rmsg').textContent = '🎙️ Go! Keep talking until the timer ends.'; live = true;
   let RA = null, mic = null;
-  try { RA = await import('./readalong.js?v=1'); if (RA.supported()) mic = RA.listen(t => { const w = RA.wordsOf(t), el = $('#vwords'); if (el) el.innerHTML = w.slice(-14).map(x => `<span>${esc(x)}</span>`).join(' ') + `<b>${w.length} words</b>`; }); } catch { mic = null; }
+  try { RA = await import('./readalong.js?v=2'); if (RA.supported()) mic = RA.listen(t => { const w = RA.wordsOf(t), el = $('#vwords'); if (el) el.innerHTML = w.slice(-14).map(x => `<span>${esc(x)}</span>`).join(' ') + `<b>${w.length} words</b>`; }); } catch { mic = null; }
   const stop = {}, tick = setInterval(() => { if (ticks) goal(Math.round(talking / ticks * 100), L.target, '% talking (live estimate)'); }, 300);
   const how = await countdown(L.seconds, run, stop); clearInterval(tick); live = false;
   const words = mic ? RA.wordsOf(await mic.stop()).length : null;
@@ -587,9 +589,50 @@ function renderMRI(r) {
     ${word ? `<div class="mx-word" style="--c:${col}">${word}</div>` : ''}
     ${views.length ? `<div class="mx-scan"><img id="mxImg" src="${r.images[views[0]]}" alt="brain scan heatmap"><div class="mx-views">${views.map((k, i) => `<button class="chip ${i ? '' : 'on'}" data-v="${k}">${{ axial: 'Top', coronal: 'Front', sagittal: 'Side' }[k]}</button>`).join('')}</div>
       <small class="muted">🟠 Orange = areas that made it look older</small></div>` : ''}
-    ${t ? `<small class="muted mx-truth">This was a real ${t.age}-year-old · ${esc(t.status)}</small>` : ''}</div>`;
+    ${mxStory(r, gap, col, t)}</div>`;
   const el = $('#mout .mx-count'), t0 = performance.now();
   const step = now => { const k = Math.min(1, (now - t0) / 900); el.textContent = Math.round(ba * (1 - Math.pow(1 - k, 3))); if (k < 1) requestAnimationFrame(step); };
   requestAnimationFrame(step);
   $$('#mout [data-v]').forEach(b => b.onclick = () => { $('#mxImg').src = r.images[b.dataset.v]; $$('#mout [data-v]').forEach(x => x.classList.toggle('on', x === b)); });
+  mxStoryWire();
+}
+
+// ---- "What it means" story cards: swipe / tap through, one picture + one line each
+function mxStory(r, gap, col, t) {
+  const cards = [];
+  if (gap != null) {                          // 1. where you land on the scale
+    const lim = 15, pos = v => Math.max(0, Math.min(100, (v + lim) / (2 * lim) * 100)), s = r.sdc || 3.6;
+    cards.push(['🎯', 'Where you land', `<div class="mxm"><div class="mxm-zone" style="left:${pos(-s)}%;width:${pos(s) - pos(-s)}%"><span>normal wobble</span></div>
+      ${r.gap_low != null ? `<div class="mxm-range" style="left:${pos(r.gap_low)}%;width:${pos(r.gap_high) - pos(r.gap_low)}%;--c:${col}"></div>` : ''}
+      <i class="mxm-dot" style="--x:${pos(gap)}%;--c:${col}"></i><div class="mxm-lab"><span>younger</span><span>same as age</span><span>older</span></div></div>`,
+      Math.abs(gap) < s ? 'Inside the normal wobble: scans of the same person vary this much.' : gap > 0 ? `Older-looking than ${Math.round(r.age)}. The shaded bar is the likely range.` : `Younger-looking than ${Math.round(r.age)}. Nice.`]);
+  }
+  if (r.per_model?.length) {                  // 2. how sure: the AI models vote
+    const cc = { high: '#3DDC97', medium: '#FFC83D', low: '#FF8A7A' }[r.confidence] || '#59F0FF';
+    cards.push(['🤖', 'How sure are we?', `<div class="mxv">${r.per_model.map((p, i) => `<div class="mxv-bot" style="--d:${i * .18}s"><span>🤖</span><b>${p.brain_age.toFixed(0)}</b><small>AI ${i + 1}</small></div>`).join('')}</div>
+      <div class="mxv-conf" style="--c:${cc}">${(r.confidence || '').toUpperCase()} CONFIDENCE</div>`,
+      `${r.per_model.length} different AIs read your scan. They agree within ${(r.model_disagreement ?? 0).toFixed(0)} years.`]);
+  }
+  cards.push(['🔥', 'What the colors mean', `<div class="mxc"><div><i style="background:#FF8A3D"></i><b>Orange</b><span>made it look older</span></div><div><i style="background:#3A7BFF"></i><b>Blue/none</b><span>looked typical</span></div></div>`,
+    'With age, the fluid spaces in the brain grow. The AI often looks there.']);
+  cards.push(['💪', 'What helps your brain', `<div class="mxh"><a href="#/data"><span>🚶</span><b>Move</b><small>Walking grew the memory center 2% in a year</small></a>
+      <a href="#/levers"><span>🩺</span><b>Blood pressure</b><small>Lower BP slowed brain damage on MRI</small></a><a href="#/gym"><span>🧩</span><b>Stay sharp</b><small>Track your thinking with games</small></a></div>`,
+    'Small habits, done every day, show up on scans.']);
+  if (t) cards.push(['🕵️', 'Who was this?', `<button class="mxr" id="mxReveal"><span class="front">❓ Tap to reveal</span><span class="back">A real ${t.age}-year-old<br><b>${esc(t.status)}</b></span></button>`,
+    'Sample scans are real volunteers from the OASIS brain study.']);
+  return `<div class="mxs"><div class="mxs-head"><b>What it means</b><span class="mxs-dots">${cards.map((_, i) => `<i data-s="${i}" class="${i ? '' : 'on'}"></i>`).join('')}</span></div>
+    <div class="mxs-track" id="mxTrack">${cards.map(([ic, h, body, line]) => `<section class="mxs-card"><div class="mxs-t"><span>${ic}</span><b>${h}</b></div>${body}<p>${line}</p></section>`).join('')}</div>
+    <div class="mxs-nav"><button class="chip" id="mxPrev">←</button><button class="chip" id="mxNext">Next →</button></div>
+    <small class="muted mxs-src">Sources: Erickson 2011 (PNAS), SPRINT MIND 2019 (JAMA), OASIS. Not a diagnosis.</small></div>`;
+}
+function mxStoryWire() {
+  const tr = $('#mxTrack'); if (!tr) return;
+  const n = tr.children.length; let i = 0;
+  const go = k => { i = (k + n) % n; tr.style.transform = `translateX(-${i * 100}%)`; $$('#mout .mxs-dots i').forEach((d, j) => d.classList.toggle('on', j === i));
+    $('#mxNext').textContent = i === n - 1 ? 'Start over ↺' : 'Next →'; $('#mxPrev').disabled = i === 0; tr.children[i].classList.add('seen'); };
+  $('#mxNext').onclick = () => go(i + 1); $('#mxPrev').onclick = () => go(i - 1);
+  $$('#mout .mxs-dots i').forEach(d => d.onclick = () => go(+d.dataset.s));
+  let x0 = null; tr.onpointerdown = e => { x0 = e.clientX; }; tr.onpointerup = e => { if (x0 != null && Math.abs(e.clientX - x0) > 40) go(i + (e.clientX < x0 ? 1 : -1)); x0 = null; };
+  $('#mxReveal') && ($('#mxReveal').onclick = e => e.currentTarget.classList.toggle('flip'));
+  go(0);
 }

@@ -5,11 +5,11 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { pageGym, pageGame, pageMRI, railHTML, boardHTML, startDemo } from './gym.js?v=22';
+import { pageGym, pageGame, pageMRI, railHTML, boardHTML, startDemo } from './gym.js?v=24';
 import { pageHands } from './hands.js?v=7';
-import { initDock } from './dock.js?v=4';
+import { initDock } from './dock.js?v=5';
 import { pageEEG } from './records.js?v=5';
-import { pageHome as pageHome2, pageVoice, pageData, plainLever, plainAmount, buddy } from './ui2.js?v=13';
+import { pageHome as pageHome2, pageVoice, pageData, plainLever, plainAmount, buddy } from './ui2.js?v=14';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -428,14 +428,14 @@ async function pageProgress() {
 const SUGGEST = ["What's my biggest lever right now?", 'Build my weekly plan', 'How did I do this week?', 'Why does blood pressure matter for my brain?', 'What if I walked 150 minutes a week?'];
 async function pageCoach() {
   $('#p-coach').innerHTML = `<div class="coach"><div class="glass chat">
-      <div class="chat-head"><div><div class="eyebrow">🤖 NEUROCOACH · AI AGENT</div><div class="muted">Claude with 5 tools: your lever model, your activity log, quest evidence, what-if simulation, and plan saving. It only cites numbers its tools return.</div></div></div>
+      <div class="chat-head"><div><div class="eyebrow">🤖 NEUROCOACH · AI AGENT</div><div class="muted">Runs on this computer (Ollama). Your data never leaves this device.</div></div></div>
       <div class="msgs" id="msgs"></div>
       <div class="suggest">${SUGGEST.map(s => `<button class="chip" data-s="${esc(s)}">${s}</button>`).join('')}</div>
       <div class="composer"><input id="ask" placeholder="Ask your coach…" autocomplete="off"><button class="cta" id="askBtn">Send</button></div></div>
     <div class="glass panel" style="overflow-y:auto"><div class="eyebrow">📅 SAVED PLANS</div><div id="plans" style="margin-top:10px"></div></div></div>`;
   const [h, cs] = await Promise.all([api(`/api/player/${enc(ME.name)}/coach`), api('/api/coach/status')]);
-  $('.chat-head').insertAdjacentHTML('beforeend', cs.claude ? `<span class="dbnote">● Claude Opus 5.5 connected</span>`
-    : `<span class="dbnote" style="color:#FFC83D;border-color:rgba(255,200,61,.4);background:rgba(255,200,61,.1)" title="Set ANTHROPIC_API_KEY and restart the server">● Offline coach (Claude not connected)</span>`);
+  $('.chat-head').insertAdjacentHTML('beforeend', cs.local ? `<span class="dbnote">● On-device AI (${esc(cs.model)})</span>`
+    : `<span class="dbnote" style="color:#FFC83D;border-color:rgba(255,200,61,.4);background:rgba(255,200,61,.1)" title="Start Ollama to turn on the on-device AI">● Simple built-in coach (on-device AI not running)</span>`);
   renderMsgs(h.messages); renderPlans(h.plans);
   $$('#p-coach [data-s]').forEach(b => b.onclick = () => send(b.dataset.s));
   $('#askBtn').onclick = () => { const t = $('#ask').value.trim(); if (t) send(t); };
@@ -443,7 +443,7 @@ async function pageCoach() {
 }
 function bubble(m) {
   return `<div class="msg ${m.role}">${esc(m.content)}${m.tools?.length ? `<div class="toolchips">${m.tools.map(t => `<span>🔧 ${esc(t.label)}</span>`).join('')}</div>` : ''}
-    ${m.role === 'assistant' ? `<div class="src">${m.source === 'claude' ? 'CLAUDE OPUS 5.5 AGENT' : 'OFFLINE COACH (rules, same tools)'}</div>` : ''}</div>`;
+    ${m.role === 'assistant' ? `<div class="src">${m.source === 'local' ? 'ON-DEVICE AI · nothing sent online' : m.source === 'claude' ? 'OLD CLOUD ANSWER' : 'BUILT-IN COACH (rules)'}</div>` : ''}</div>`;
 }
 function renderMsgs(ms) {
   const box = $('#msgs');
@@ -565,7 +565,7 @@ async function pageScience() {
     <p class="muted">sparks = 20 + tier bonus (RCT 30 · cohort 15 · mixed 5) + 5 × PAF%. ${S.lancet}</p></div>
     <h3>6 · Architecture</h3>
     <div class="glass card"><p class="muted"><b>Python backend</b> (FastAPI): NHANES/OASIS models (scikit-learn, statsmodels), evidence catalog, game logic, <b>SQLite</b> database (players, quest_logs, step_progress, speed_rounds, coach_messages, plans).
-    <b>AI coach</b>: Claude Opus 5.5 agent with 5 tools grounded in your data; falls back to a rule-based offline coach with the same tools. <b>Front end</b>: one HTML/JS page with Three.js (WebGL brain) and Chart.js. Nothing leaves your device except coach messages sent to Claude.</p></div>
+    <b>AI coach</b>: a small open model (Llama 3.2) running on this computer in Ollama, grounded in your data; no cloud AI. Falls back to a rule-based coach. <b>Front end</b>: one HTML/JS page with Three.js (WebGL brain) and Chart.js. Nothing leaves your device except coach messages sent to Claude.</p></div>
   </div></div>`;
   chart('oofChart', { type: 'scatter', data: { datasets: [{ label: 'out-of-fold predictions (800 sample)', data: S.oof.map(([x, y]) => ({ x, y })), backgroundColor: 'rgba(155,123,255,.35)', pointRadius: 2.5 }] }, options: chartOpts() });
 }
@@ -662,6 +662,35 @@ async function showWelcome() {
   $$('#existing [data-p]').forEach(b => b.onclick = () => { localStorage.setItem('nt_player', b.dataset.p); closeOv('welcome'); boot(); });
 }
 function enter() { renderHUD(); paintRegions(); initDock(); if (!location.hash || location.hash === '#') location.hash = '#/'; route(); }
+// ---------------- Consent: asked once on this device, before anything is saved. Changeable from the menu.
+const CONSENT_KEY = 'nt_consent_v1';
+const consent = () => { try { return JSON.parse(localStorage.getItem(CONSENT_KEY)); } catch { return null; } };
+function consentGate(force = false) {
+  const c = consent();
+  if (c && !force) return Promise.resolve(c);
+  const v = c || { ai: true, media: true, browserSpeech: false };
+  const row = (k, ic, title, sub, locked) => `<label class="cs-row ${locked ? 'locked' : ''}"><span class="cs-ic">${ic}</span><div><b>${title}</b><small>${sub}</small></div>
+    <input type="checkbox" data-c="${k}" ${locked || v[k] ? 'checked' : ''} ${locked ? 'disabled' : ''}><i class="cs-sw"></i></label>`;
+  document.body.insertAdjacentHTML('beforeend', `<div class="overlay open cs" id="consent"><div class="modal cs-modal">
+    <div class="cs-lock">🔒</div><h2>Your brain data stays with you</h2>
+    <p class="cs-sub">Everything is saved <b>only on this computer</b>. Nothing is uploaded or shared.</p>
+    ${row('store', '💾', 'Save my results here', 'Games, checks and answers, on this device only', true)}
+    ${row('ai', '🤖', 'AI coach on this computer', 'Runs offline (Ollama). Never sent online', false)}
+    ${row('media', '📷', 'Camera & mic checks', 'Analyzed here. Only the numbers are kept, not video or audio', false)}
+    ${row('browserSpeech', '🗣️', 'Live word highlighting', 'Uses your browser\'s speech service. In Chrome, audio goes to Google', false)}
+    <button class="cta cs-go" id="csGo">I agree, let's go</button>
+    <small class="cs-foot">Change this anytime in ☰ menu → Privacy. Not a medical device.</small></div></div>`);
+  return new Promise(res => {
+    $('#csGo').onclick = () => {
+      const out = { store: true, at: new Date().toISOString() };
+      $$('#consent [data-c]').forEach(i => { if (i.dataset.c !== 'store') out[i.dataset.c] = i.checked; });
+      try { localStorage.setItem(CONSENT_KEY, JSON.stringify(out)); } catch { }
+      $('#consent').remove(); window.dispatchEvent(new Event('nt-consent')); res(out);
+    };
+  });
+}
+window.NTconsent = { get: consent, edit: () => consentGate(true) };
+
 async function boot() {
   const name = localStorage.getItem('nt_player');
   if (!name) return showWelcome();
@@ -676,7 +705,7 @@ async function boot() {
   QMAP = Object.fromEntries(QUESTS.map(q => [q.id, q]));
   window.NTX = { api, toast, chart, chartOpts, renderHUD, fmt, gameBrain, QMAP: () => QMAP, getME: () => ME, setME: (m) => { ME = m; }, updateAnswers };
   // Show the page first; build the 3D brain (2 MB, a few seconds of work) afterwards. It used to block every page.
-  frame(); await showWelcome();
+  frame(); await consentGate(); await showWelcome();
   (window.requestIdleCallback || (f => setTimeout(f, 50)))(() => loadBrain().catch(() => { }));
   window.NT = { camera, hemis, step: (dt, n = 1) => { for (let i = 0; i < n; i++) update(dt); composer.render(); }, get me() { return ME; } };
 })();
