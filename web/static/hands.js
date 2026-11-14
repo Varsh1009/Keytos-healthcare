@@ -70,6 +70,7 @@ export async function pageHands() {
   landmarker().catch(() => { });                     // load the tracker while you read
   const P = $('#p-hands');
   P.innerHTML = `<div class="scrollpage"><div class="wrap hx">
+    <a href="#/gym" class="ghost" style="text-decoration:none;display:inline-block;margin-bottom:10px">← Back to Games</a>
     <h1 class="hx-title">✋ Hand check</h1>
     <p class="hx-lead">3 moves · 10 seconds each</p>
     <div class="hx-moves">${STEPS.map((s, i) => `<div class="hx-move">${demo(s)}<b>${i + 1}. ${s.label}</b></div>`).join('')}</div>

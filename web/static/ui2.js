@@ -81,7 +81,7 @@ export async function pageHome() {
       <div class="glass st"><div class="stv">Lv ${Lv.index}</div><div class="stl">${Lv.name}${Lv.next_at ? ` · ${Lv.next_at - M.sparks} to go` : ''}</div><div class="lvbar"><i style="width:${frac * 100}%"></i></div></div>
     </section>
 
-    <section class="explore">${[['🧩', 'Games', '#/gym', `${games.games.length} brain games`], ['🎙️', 'Voice', '#/voice', 'How you speak'], ['📱', 'My data', '#/data', 'Watch, MRI, what-ifs'], ['🤖', 'Coach', '#/coach', 'Ask anything'], ['📈', 'Progress', '#/progress', 'Your charts']]
+    <section class="explore">${[['🧩', 'Games', '#/gym', `${games.games.length + 2} brain games`], ['📱', 'My data', '#/data', 'Watch, MRI, what-ifs'], ['🤖', 'Coach', '#/coach', 'Ask anything'], ['📈', 'Progress', '#/progress', 'Your charts']]
       .map(([i, t, h, s]) => `<a class="tile glass" href="${h}"><span>${i}</span><b>${t}</b><small>${s}</small></a>`).join('')}</section>
   </div></div>`;
 }
@@ -91,6 +91,7 @@ let REC = null;
 export async function pageVoice() {
   const [T, VH] = await Promise.all([X().api('/api/voice/tasks'), X().api(`/api/player/${enc(me().name)}/voice`)]);
   $('#p-voice').innerHTML = `<div class="scrollpage"><div class="wrap">
+    <a href="#/gym" class="ghost" style="text-decoration:none;display:inline-block;margin-bottom:10px">← Back to Games</a>
     <div class="h1">🎙️ Voice check</div>
     <div class="sub">Speak for about a minute. We measure <b>how</b> you talk (your pace, pauses and pitch), not what you say. Audio is analyzed and then thrown away; only the numbers are saved.</div>
     <div class="cr-grid">

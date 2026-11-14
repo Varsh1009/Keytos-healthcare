@@ -37,7 +37,9 @@ export async function pageGym(id) {
   const mix = `<div class="gmix">${kinds.map(([k, c]) => `<div class="${k === g.kind ? 'on' : ''}" title="${c} plays of ${k.toLowerCase()} games"><span>${KIND_ICON[k]}</span><b>${c}</b><small>${k}</small><i style="width:${total ? c / total * 100 : 0}%"></i></div>`).join('')}</div>`;
   const [ecls, elab] = EVIDENCE(g);
   const picker = `<div class="gpicker">${games.map(x => `<a href="#/gym/${x.id}" class="${x.id === g.id ? 'on' : ''}" style="--c:${x.color}" title="${esc(x.title)} · ${x.kind}">
-    <span>${x.icon}</span><b>${esc(x.title)}</b>${STATS[x.id]?.played_today ? '<i class="ok">✓</i>' : ''}</a>`).join('')}</div>`;
+    <span>${x.icon}</span><b>${esc(x.title)}</b>${STATS[x.id]?.played_today ? '<i class="ok">✓</i>' : ''}</a>`).join('')}
+    <a href="#/hands" style="--c:#FF8FB1" title="Hand check · tremor and finger tapping (camera)"><span>✋</span><b>Hand check</b></a>
+    <a href="#/voice" style="--c:#8FD3FF" title="Voice check · pace, pauses and pitch (microphone)"><span>🎙️</span><b>Pace &amp; pauses</b></a></div>`;
 
   $('#p-gym').innerHTML = `<div class="play"><div class="left glass" style="--c:${g.color}">
     <div class="eyebrow">CHOOSE A GAME · ${played}/${games.length} played today</div>${picker}

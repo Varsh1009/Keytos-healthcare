@@ -5,9 +5,10 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { pageGym, pageGame, pageMRI, railHTML, boardHTML, startDemo } from './gym.js?v=11';
-import { pageHands } from './hands.js?v=6';
-import { pageHome as pageHome2, pageVoice, pageData, plainLever, plainAmount, buddy } from './ui2.js?v=4';
+import { pageGym, pageGame, pageMRI, railHTML, boardHTML, startDemo } from './gym.js?v=12';
+import { pageHands } from './hands.js?v=7';
+import { initDock } from './dock.js?v=1';
+import { pageHome as pageHome2, pageVoice, pageData, plainLever, plainAmount, buddy } from './ui2.js?v=5';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -233,7 +234,7 @@ async function route() {
   const [, r = 'home', arg] = (location.hash || '#/').split('/');
   ROUTE = routes[r] ? r : 'home';
   document.body.className = 'r-' + ROUTE;
-  const tab = { game: 'gym', sprint: 'gym', mri: 'data', levers: 'data' }[ROUTE] || ROUTE;
+  const tab = { game: 'gym', sprint: 'gym', hands: 'gym', voice: 'gym', mri: 'data', levers: 'data' }[ROUTE] || ROUTE;
   $$('#tabs a').forEach(a => a.classList.toggle('on', a.dataset.r === tab));
   $$('.page').forEach(p => p.classList.toggle('on', p.id === 'p-' + ROUTE));
   stage.classList.toggle('dim', !['home', 'gym'].includes(ROUTE) || (ROUTE === 'home' && innerWidth < 1150));
@@ -600,7 +601,7 @@ async function showWelcome() {
   $('#existing').innerHTML = others.map(p => `<button class="chip" data-p="${esc(p.name)}">${esc(p.name)} · ${p.sparks} ⚡</button>`).join('');
   $$('#existing [data-p]').forEach(b => b.onclick = () => { localStorage.setItem('nt_player', b.dataset.p); closeOv('welcome'); boot(); });
 }
-function enter() { renderHUD(); paintRegions(); if (!location.hash || location.hash === '#') location.hash = '#/'; route(); }
+function enter() { renderHUD(); paintRegions(); initDock(); if (!location.hash || location.hash === '#') location.hash = '#/'; route(); }
 async function boot() {
   const name = localStorage.getItem('nt_player');
   if (!name) return showWelcome();
