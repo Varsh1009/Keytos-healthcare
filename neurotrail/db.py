@@ -57,6 +57,9 @@ CREATE TABLE IF NOT EXISTS voice_results (
 CREATE TABLE IF NOT EXISTS wearable_days (
   player TEXT NOT NULL, date TEXT NOT NULL, source TEXT NOT NULL, data TEXT NOT NULL,
   PRIMARY KEY(player, date));
+CREATE TABLE IF NOT EXISTS eeg_results (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, player TEXT NOT NULL, source TEXT NOT NULL, metrics TEXT NOT NULL,
+  ts TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS sync_tokens (
   player TEXT PRIMARY KEY, token TEXT NOT NULL, created_at TEXT NOT NULL, last_sync TEXT);
 CREATE TABLE IF NOT EXISTS plans (
@@ -282,3 +285,16 @@ def check_sync_token(player: str, token: str) -> bool:
         if ok:
             c.execute("UPDATE sync_tokens SET last_sync=? WHERE player=?", (now(), player))
     return ok
+
+
+# ------------------------------------------------------------------ EEG
+def add_eeg(player: str, source: str, metrics: dict) -> None:
+    keep = {k: v for k, v in metrics.items() if k not in ("spectrum", "plain")}
+    with conn() as c:
+        c.execute("INSERT INTO eeg_results(player,source,metrics,ts) VALUES (?,?,?,?)", (player, source, json.dumps(keep), now()))
+
+
+def eegs(player: str) -> list[dict]:
+    with conn() as c:
+        rows = c.execute("SELECT source,metrics,ts FROM eeg_results WHERE player=? ORDER BY id", (player,)).fetchall()
+    return [{"source": r["source"], "ts": r["ts"], **json.loads(r["metrics"])} for r in rows]

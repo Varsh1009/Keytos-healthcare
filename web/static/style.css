@@ -638,3 +638,30 @@ ul.plain { padding-left: 18px; line-height: 1.6; color: #DDE2FA; font-size: 14px
 .phow { margin: 10px 0 30px; color: var(--mute); font-size: 14px; } .phow summary { cursor: pointer; color: var(--cyan); }
 .phow li { margin: 6px 0; line-height: 1.5; }
 @media (max-width: 600px) { .pverdict { flex-direction: column; align-items: flex-start; } .pc-box, .pc-box canvas { height: 240px !important; } }
+
+/* brain records */
+.rtabs { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0 4px; align-items: stretch; }
+.rtabs a { display: grid; grid-template-columns: auto 1fr; column-gap: 10px; padding: 12px 16px; border-radius: 16px; border: 1px solid var(--line); background: rgba(255,255,255,.03); text-decoration: none; color: var(--ink); min-width: 200px; }
+.rtabs a span { grid-row: span 2; font-size: 24px; align-self: center; } .rtabs a small { color: var(--mute); font-size: 12px; }
+.rtabs a.on { border-color: rgba(89,240,255,.6); background: rgba(89,240,255,.1); box-shadow: 0 0 22px rgba(89,240,255,.15); }
+.rtab-soon { align-self: center; color: var(--mute); font-size: 12px; }
+.eres { display: flex; gap: 22px; align-items: center; flex-wrap: wrap; margin: 8px 0; }
+.eval { font: 700 54px 'Space Grotesk'; line-height: 1; } .eval small { font-size: 20px; color: var(--mute); }
+.erange { flex: 1; min-width: 220px; } .erange-bar { position: relative; height: 12px; border-radius: 6px; background: rgba(255,255,255,.08); }
+.erange-bar span { position: absolute; top: 0; height: 100%; background: rgba(61,220,151,.25); border-radius: 6px; }
+.erange-bar i { position: absolute; top: -4px; width: 4px; height: 20px; border-radius: 2px; transform: translateX(-2px); z-index: 1; }
+.erange-lab { display: flex; justify-content: space-between; font-size: 11px; color: var(--mute); margin-top: 6px; }
+.ebands { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 8px 0; }
+.ebands div { padding: 10px; border-radius: 12px; background: rgba(255,255,255,.04); display: flex; flex-direction: column; }
+.ebands b { font: 700 20px 'Space Grotesk'; color: var(--cyan); } .ebands span { font-size: 12px; } .ebands small { font-size: 11px; color: var(--mute); }
+@media (max-width: 600px) { .ebands { grid-template-columns: 1fr 1fr; } .rtabs a { min-width: 0; flex: 1; } }
+.pfeed { padding: 18px 20px; margin-top: 14px; }
+.pf-day { margin: 14px 0 4px; font: 700 12px 'Space Grotesk'; letter-spacing: .08em; color: var(--cyan); text-transform: uppercase; }
+.pf-row { display: flex; gap: 10px; align-items: baseline; padding: 7px 0; border-bottom: 1px solid rgba(255,255,255,.05); font-size: 14px; }
+.pf-ic { width: 22px; text-align: center; } .pf-tx { flex: 1; line-height: 1.45; } .pf-tm { color: var(--mute); font-size: 12px; }
+.pf-tag { font-style: normal; font-size: 11px; margin-left: 8px; padding: 2px 8px; border-radius: 999px; background: rgba(255,255,255,.07); color: var(--mute); white-space: nowrap; }
+.pf-tag.win { background: rgba(255,200,61,.15); color: var(--gold); }
+.ptotals { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 10px; margin: 14px 0; }
+.ptotals div { padding: 12px 14px; border-radius: 14px; background: rgba(255,255,255,.04); border: 1px solid var(--line); display: flex; flex-direction: column; gap: 2px; }
+.ptotals b { font: 700 20px 'Space Grotesk'; } .ptotals span { font-size: 12px; color: var(--mute); }
+#eout a, .prules a { color: var(--cyan); }

@@ -5,9 +5,10 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { pageGym, pageGame, pageMRI, railHTML, boardHTML, startDemo } from './gym.js?v=11';
+import { pageGym, pageGame, pageMRI, railHTML, boardHTML, startDemo } from './gym.js?v=12';
+import { pageEEG } from './records.js?v=1';
 import { pageHands } from './hands.js?v=6';
-import { pageHome as pageHome2, pageVoice, pageData, plainLever, plainAmount, buddy } from './ui2.js?v=4';
+import { pageHome as pageHome2, pageVoice, pageData, plainLever, plainAmount, buddy } from './ui2.js?v=5';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -227,13 +228,13 @@ function caption(id) {
 
 // ================================================================ ROUTER
 const homeRoute = () => { SEL = null; paintRegions(); caption(null); goHomeCam(); return pageHome2(); };
-const routes = { home: homeRoute, gym: pageGym, game: pageGame, sprint: pageSprint, voice: pageVoice, hands: pageHands, data: pageData, mri: pageMRI, progress: pageProgress, coach: pageCoach, levers: pageLevers, science: pageScience };
+const routes = { home: homeRoute, gym: pageGym, game: pageGame, sprint: pageSprint, voice: pageVoice, hands: pageHands, data: pageData, mri: pageMRI, eeg: pageEEG, progress: pageProgress, coach: pageCoach, levers: pageLevers, science: pageScience };
 async function route() {
   if (!ME?.onboarded) return;
   const [, r = 'home', arg] = (location.hash || '#/').split('/');
   ROUTE = routes[r] ? r : 'home';
   document.body.className = 'r-' + ROUTE;
-  const tab = { game: 'gym', sprint: 'gym', mri: 'data', levers: 'data' }[ROUTE] || ROUTE;
+  const tab = { game: 'gym', sprint: 'gym', mri: 'records', eeg: 'records', levers: 'data' }[ROUTE] || ROUTE;
   $$('#tabs a').forEach(a => a.classList.toggle('on', a.dataset.r === tab));
   $$('.page').forEach(p => p.classList.toggle('on', p.id === 'p-' + ROUTE));
   stage.classList.toggle('dim', !['home', 'gym'].includes(ROUTE) || (ROUTE === 'home' && innerWidth < 1150));
@@ -338,6 +339,18 @@ function pfmt(v, unit) {
 const PWORD = { 'much better': ['🌟', '#3DDC97'], better: ['😊', '#3DDC97'], 'a little better': ['🙂', '#8BE3B5'],
   'about the same': ['😐', '#59F0FF'], 'a little lower': ['😕', '#FFC83D'], lower: ['😟', '#FF9F43'], 'much lower': ['😟', '#FF7A6E'] };
 const AREA_ICON = { movement: '🚶', sleep_heart: '🌙', thinking: '🧩', speech_hands: '🎙️', hearing: '👂', brain_scan: '🩻' };
+function feedHTML(U) {
+  if (!U?.length) return '';
+  const day = ts => { const d = ts.slice(0, 10), t = new Date(), y = new Date(t - 864e5), iso = x => x.toISOString().slice(0, 10);
+    return d === iso(t) ? 'Today' : d === iso(y) ? 'Yesterday' : new Date(d + 'T12:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }); };
+  let last = '', rows = '';
+  for (const u of U) {
+    const d = day(u.ts);
+    if (d !== last) { rows += `<div class="pf-day">${d}</div>`; last = d; }
+    rows += `<div class="pf-row"><span class="pf-ic">${u.icon}</span><span class="pf-tx">${esc(u.text)}${u.tags.map(t => `<em class="pf-tag ${/cleared|best/.test(t) ? 'win' : ''}">${esc(t)}</em>`).join('')}</span><span class="pf-tm">${u.ts.slice(11, 16) === '23:59' ? '' : u.ts.slice(11, 16)}</span></div>`;
+  }
+  return `<div class="glass pfeed"><b>Latest updates</b><div class="muted">Everything you've done, newest first</div>${rows}</div>`;
+}
 async function pageProgress() {
   const O = await api(`/api/player/${enc(ME.name)}/overview`), C = O.combined;
   const missing = O.coverage.filter(c => !c.ok);
@@ -345,7 +358,7 @@ async function pageProgress() {
   let body;
   if (C.overall == null) {
     body = `<div class="glass pverdict"><div class="pv-emoji">🌱</div><div><h2>We're still learning your starting point</h2>
-      <p>Keep playing games, checking in and wearing your watch. After a few plays of a game, or about a month of watch data, this page shows one line with how you're doing compared with when you started.</p>
+      <p>Play any game 3 times, or add about a month of watch data, and this page draws one line showing how you're doing compared with when you started. Everything you do already shows in <b>Latest updates</b> below.</p>
       ${C.collecting.length ? `<p class="muted">Collecting now: ${C.collecting.slice(0, 6).map(esc).join(', ')}${C.collecting.length > 6 ? '…' : ''}</p>` : ''}</div></div>`;
   } else {
     const [emo, col] = PWORD[C.word];
@@ -354,7 +367,7 @@ async function pageProgress() {
         <p class="muted">Based on ${C.n_measures} things we track from ${esc(C.sources)}.</p></div></div>
       <div class="glass pchart"><div class="pc-head"><b>Your progress over time</b><label class="pc-tog"><input type="checkbox" id="pAreas"> show each area</label></div>
         <div class="pc-box"><canvas id="pLine"></canvas></div></div>
-      <div class="pareas">${C.areas.map(a => { const [e, c] = PWORD[a.word]; return `<div class="parea glass" style="--c:${c}"><span>${AREA_ICON[a.id]}</span><b>${a.name}</b><em>${e} ${a.word}</em></div>`; }).join('')}</div>
+      <div class="pareas">${C.areas.map(a => { const [e, c] = PWORD[a.word] || ['⏳', '#9AA3C7']; return `<div class="parea glass" style="--c:${c}"><span>${AREA_ICON[a.id]}</span><b>${a.name}</b><em>${e} ${a.hint ? esc(a.hint) + ' to compare' : a.word}</em></div>`; }).join('')}</div>
       ${C.gains.length || C.drops.length ? `<div class="glass pchanges"><b>What changed most</b>
         ${C.gains.map(c => `<p>⬆️ <b>${esc(c.label)}</b> is better than when you started${change(c)}</p>`).join('')}
         ${C.drops.map(c => `<p>⬇️ <b>${esc(c.label)}</b> is lower than when you started${change(c)}</p>`).join('')}</div>` : ''}`;
@@ -363,6 +376,9 @@ async function pageProgress() {
     <div class="h1">Your progress</div>
     <div class="sub">Everything you do in NeuroTrail, put together and compared with <b>your own</b> starting point.</div>
     ${body}
+    ${(() => { const T = O.totals, k = [[T.plays, 'game plays', '🧩'], [T.games_tried, 'games tried', '🎮'], [T.levels, 'levels cleared', '🏅'], [T.watch_days, 'days of watch data', '⌚'], [T.voice + T.hands, 'voice & hand checks', '🎙️'], [T.scans, 'scans & recordings', '🧠'], [T.checkins, 'check-ins', '✅']].filter(x => x[0]);
+      return k.length ? `<div class="ptotals">${k.map(([n, l, i]) => `<div><b>${i} ${n}</b><span>${l}</span></div>`).join('')}</div>` : ''; })()}
+    ${feedHTML(O.updates)}
     ${O.sample_watch ? `<p class="caveat">⌚ Your watch data here is <b>made-up sample data</b>. Remove it on <a href="#/data">My data</a> when you add your own.</p>` : ''}
     ${missing.length ? `<p class="padd">Add more for a fuller picture: ${missing.map(c => `<a href="${c.link}">${c.icon} ${c.label}</a>`).join(' · ')}</p>` : ''}
     <details class="phow"><summary>How is this worked out?</summary><ul>
@@ -374,7 +390,7 @@ async function pageProgress() {
       <li>This shows change, not a diagnosis. Talk to a doctor about any health worry.</li></ul></details>
   </div></div>`;
   if (C.overall == null) return;
-  const W = C.weeks.filter(w => w.overall != null), lab = W.map(w => w.week.slice(5));
+  const W = C.weeks.filter(w => w.overall != null), lab = W.map(w => new Date(w.week + 'T12:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }));
   const m = Math.max(1, ...W.map(w => Math.abs(w.overall)), ...W.flatMap(w => Object.values(w.areas).map(Math.abs))) * 1.15;
   const AREA_COL = { movement: '#3DDC97', sleep_heart: '#9B7BFF', thinking: '#FFC83D', speech_hands: '#FF7AC8', hearing: '#59F0FF', brain_scan: '#FF9F43' };
   const draw = showAreas => chart('pLine', { type: 'line', data: { labels: lab, datasets: [

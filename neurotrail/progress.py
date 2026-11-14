@@ -32,6 +32,9 @@ from functools import lru_cache
 from pathlib import Path
 
 from . import db, games as gym
+from .quests import QUEST_BY_ID
+
+QUEST_TITLES = {k: q.title for k, q in QUEST_BY_ID.items()}
 from .wearables import FIELD_INFO
 
 ART = Path(__file__).resolve().parents[1] / "models" / "artifacts"
@@ -66,7 +69,7 @@ WATCH_VARS = {
     "headphone_db": ("hearing", "lower", 2, "WHO safe-listening guidance: keep the weekly average under 80 dBA."),
     "noise_db": ("hearing", "lower", 2, None),
 }
-GAME_PRACTICE = 2
+GAME_PRACTICE = 1
 DAY_BASE, DAY_RECENT, DAY_MIN = 28, 14, 7
 STALE_DAYS = 21
 
@@ -147,18 +150,19 @@ def _trend(points: list[tuple[str, float]], better, floor: float, kind: str, pra
         out |= {"baseline": b, "recent": r, "baseline_label": f"first {DAY_BASE} days", "recent_label": f"last {DAY_RECENT} days"}
     else:
         usable = pts[practice:]
-        need = practice + 5 - len(pts)
+        need = practice + 2 - len(pts)
         if need > 0:
             return out | {"status": "building", "need": f"{need} more {word}{'' if need == 1 else 's'}"}
-        base, recent = [v for _, v in usable[:3]], [v for _, v in usable[-3:]]
+        k = min(3, len(usable) // 2)                     # first k vs last k, never overlapping
+        base, recent = [v for _, v in usable[:k]], [v for _, v in usable[-k:]]
         b, r = st.median(base), st.median(recent)
-        out |= {"baseline": b, "recent": r, "baseline_label": f"your first 3 counted {word}s",
-                "recent_label": f"your last 3 {word}s"}
+        out |= {"baseline": b, "recent": r, "baseline_label": f"your first {k} counted {word}{'s' if k > 1 else ''}",
+                "recent_label": f"your last {k} {word}{'s' if k > 1 else ''}"}
         if practice:
             out["practice_skipped"] = min(practice, len(pts))
     # normal wobble = day-to-day spread WITHIN each period (a real change between periods mustn't inflate it)
     spread = ((st.pvariance(base) + st.pvariance(recent)) / 2) ** 0.5
-    thr = max(floor, 0.5 * spread)
+    thr = max(floor, 0.5 * spread, 0.05 * abs(b) if not floor else 0)   # floor 0 → at least a 5% change
     delta = _score_for(better, r) - _score_for(better, b)
     out |= {"change": r - b, "threshold": thr,
             "status": "improving" if delta > thr else "slipping" if delta < -thr else "steady"}
@@ -188,35 +192,53 @@ def _rolling_sleep_sd(days: dict[str, dict]) -> list[tuple[str, float]]:
     return out
 
 
-FORMAT_LABEL = {"classic": "classic test", "old": "older version of the game"}
+FORMAT_LABEL = {"classic": "classic test", "old": "older version of the game", "levels": "levels (difficulty-adjusted)"}
 
 
-def game_rows(p, gid: str) -> list[tuple[str, float, str, int | None]]:
-    """(timestamp, score, format, level passed or None). Format = "classic", "level N" or "old".
-    Old = rounds saved before levels existed (e.g. 90-second Speed Sprint, the old voice-recording rows)."""
+def level_index(gid: str, level: int, score: float) -> float:
+    """One number across levels: (level - 1) + how you did against that level's pass mark (capped at 1.5×).
+    Clearing level 3 right on target = 3.0; scraping half the target on level 1 = 0.5. So moving up a
+    level shows as progress instead of a lower raw score."""
+    g = gym.GAME_BY_ID[gid]
+    L = (gym.SPEED_LEVELS if gid == "speed" else gym.LEVELS[gid])[max(1, min(level, 99)) - 1]
+    t = float(L["target"]) or 1.0
+    perf = (t / score if score > 0 else 0.0) if g["better"] == "lower" else score / t
+    return (level - 1) + max(0.0, min(perf, 1.5))
+
+
+def game_rows(p, gid: str) -> list[dict]:
+    """Every play: raw score, a comparable value, its format ("levels", "classic" or "old") and level.
+    Old = rounds saved before levels existed (e.g. 90-second Speed Sprint)."""
     if gid == "speed":
-        return [(r["ts"], float(r["correct"]), f"level {r['level']}" if r.get("level") else "old",
-                 r["level"] if r.get("level") and gym.speed_passed(r) else None) for r in db.rounds(p.name)]
-    out = []
-    for r in db.games(p.name, gid):
-        d = r["detail"]
-        if gid == "voice" and "task" in d:       # voice-recording page rows (speech tempo), not the Voice Check game
-            continue
-        fmt = "classic" if d.get("classic") else f"level {d['level']}" if d.get("level") else "old"
-        out.append((r["ts"], float(r["score"]), fmt, d["level"] if d.get("level") and d.get("passed") else None))
-    return out
+        src = [{"ts": r["ts"], "raw": float(r["correct"]), "level": r.get("level"),
+                "passed": bool(r.get("level")) and gym.speed_passed(r), "classic": False} for r in db.rounds(p.name)]
+    else:
+        src = []
+        for r in db.games(p.name, gid):
+            d = r["detail"]
+            if gid == "voice" and "task" in d:       # voice-recording page rows (speech tempo), not the Voice Check game
+                continue
+            src.append({"ts": r["ts"], "raw": float(r["score"]), "level": d.get("level"), "passed": bool(d.get("passed")),
+                        "classic": bool(d.get("classic"))})
+    for r in src:
+        if r["classic"]:
+            r["fmt"], r["value"] = "classic", r["raw"]
+        elif r["level"]:
+            r["fmt"], r["value"] = "levels", level_index(gid, int(r["level"]), r["raw"])
+        else:
+            r["fmt"], r["value"] = "old", r["raw"]
+    return src
 
 
 def pick_format(rows) -> tuple[str, list[tuple[str, float]], int]:
-    """The format to trend: the classic test if it has enough plays (fixed difficulty, best for tracking),
-    otherwise the format played most. Practice plays are skipped only if this format includes the very
-    first plays of the game."""
+    """The format to trend: whichever (levels / classic test / old version) has the most plays. Practice
+    plays are skipped only if this format includes the very first play of the game."""
     count = {}
-    for _, _, f, _ in rows:
-        count[f] = count.get(f, 0) + 1
-    fmt = "classic" if count.get("classic", 0) >= GAME_PRACTICE + 5 else max(count, key=lambda f: (count[f], f == "classic"))
-    pts = [(t, v) for t, v, f, _ in rows if f == fmt]
-    practice = GAME_PRACTICE if rows[0][2] == fmt else 0
+    for r in rows:
+        count[r["fmt"]] = count.get(r["fmt"], 0) + 1
+    fmt = max(count, key=lambda f: (count[f], f == "levels"))
+    pts = [(r["ts"], r["value"]) for r in rows if r["fmt"] == fmt]
+    practice = GAME_PRACTICE if rows[0]["fmt"] == fmt else 0
     return fmt, pts, practice
 
 
@@ -275,14 +297,15 @@ def build(p) -> dict:
             vars_.append(base | {"status": "none", "n": 0, "points": []})
             continue
         fmt, pts, practice = pick_format(rows)
-        v = _var(base["id"], "thinking", g["title"], g["unit"], "game", pts, g["better"], 0, "game",
+        lv = fmt == "levels"                    # difficulty-adjusted: higher is always better, half a level is meaningful
+        v = _var(base["id"], "thinking", g["title"], "level" if lv else g["unit"], "game", pts,
+                 "higher" if lv else g["better"], 0.25 if lv else 0, "game",
                  practice=practice, icon=base["icon"], domain=base["domain"], link=link)
         v["format"] = FORMAT_LABEL.get(fmt, fmt)
-        formats = {r[2] for r in rows}
-        if len(formats) > 1:
-            v["note"] = (f"Trend uses your {v['format']} only ({len(pts)} of {len(rows)} plays). Harder levels and "
-                         f"different versions give different scores, so they're never mixed.")
-        passed = [r[3] for r in rows if r[3]]
+        if len({r["fmt"] for r in rows}) > 1:
+            v["note"] = (f"Trend uses your {v['format']} plays ({len(pts)} of {len(rows)}); the classic test and the "
+                         f"level games score differently, so they're never mixed.")
+        passed = [r["level"] for r in rows if r["passed"]]
         if passed:
             v["level_reached"] = max(passed)
             v["level_top"] = len(gym.SPEED_LEVELS) if g["id"] == "speed" else len(gym.LEVELS.get(g["id"], [])) or None
@@ -345,6 +368,14 @@ def build(p) -> dict:
                       "n": 0, "points": [], "link": "#/mri",
                       "note": f"You tried {tried} sample scan{'s' if tried > 1 else ''}; those belong to OASIS volunteers, so they aren't counted here."})
 
+    # ---------------- EEG (own uploads only; samples belong to PhysioNet volunteers)
+    own_eeg = [e for e in db.eegs(p.name) if e["source"].startswith("upload")]
+    if own_eeg:
+        pts = [(e["ts"], float(e["paf_hz"])) for e in own_eeg]
+        vars_.append(_var("eeg_paf", "brain_scan", "Resting brain rhythm (EEG alpha)", "Hz", "EEG upload", pts,
+                          "higher", 0.5, "test", link="#/eeg",
+                          note="Slower alpha rhythms are seen more in Alzheimer's; a change under 0.5 Hz is normal wobble."))
+
     # ---------------- coverage, summary, links
     counted = [v for v in vars_ if v["status"] in ("improving", "steady", "slipping")]
     summary = {s: sum(1 for v in counted if v["status"] == s) for s in ("improving", "steady", "slipping")}
@@ -357,10 +388,16 @@ def build(p) -> dict:
         groups.append({"id": gid, "title": title, "sub": sub, "counts": c, "n": len(gv),
                        "has_data": any(v.get("n") for v in gv)})
     comb = combined(vars_)
+    feed = updates(p, days)
     for v in vars_:
         v.pop("_spec", None)
     srcs = db.day_sources(p.name)
-    return {"combined": comb, "sample_watch": bool(srcs) and all(x.startswith("Sample") for x in srcs), "groups": groups, "variables": vars_, "summary": summary, "coverage": _coverage(p, days, voices, hands, scans),
+    rows_all = {g["id"]: game_rows(p, g["id"]) for g in gym.GAMES}
+    totals = {"plays": sum(len(r) for r in rows_all.values()), "games_tried": sum(1 for r in rows_all.values() if r),
+              "levels": sum(len({x["level"] for x in r if x["passed"]}) for r in rows_all.values()),
+              "watch_days": len(days), "checkins": len(logs), "voice": len(voices), "hands": len(hands),
+              "scans": len(all_mri) + len(db.eegs(p.name))}
+    return {"combined": comb, "updates": feed, "totals": totals, "sample_watch": bool(srcs) and all(x.startswith("Sample") for x in srcs), "groups": groups, "variables": vars_, "summary": summary, "coverage": _coverage(p, days, voices, hands, scans),
             "links": _links(series, p), "rules": RULES, "model": _model_card(wm)}
 
 
@@ -490,9 +527,9 @@ def _personal_scores(spec) -> list[tuple[str, float]] | None:
         base = pts[:1]
     else:
         pts = pts[practice:]
-        if len(pts) < 4:
+        if len(pts) < 2:
             return None
-        base = pts[:3]
+        base = pts[:min(3, len(pts) - 1)]           # at least one play after the starting point
     tb = [_score_for(better, v) for _, v in base]
     b = st.median(tb)
     scale = floor if kind == "test" else max(st.pstdev(tb), floor, 0.05 * abs(b), 1e-6)
@@ -503,7 +540,7 @@ def combined(vars_: list[dict], today: date | None = None) -> dict:
     """One line for everything: per week, each measure's distance from your start → averaged within its
     area → areas averaged equally (so 9 games can't outvote your watch). 0 = where you started."""
     today = today or date.today()
-    scored, collecting = {}, []
+    scored, collecting, coll_groups = {}, [], set()
     for v in vars_:
         spec = v.get("_spec")
         sc = _personal_scores(spec) if spec else None
@@ -511,19 +548,26 @@ def combined(vars_: list[dict], today: date | None = None) -> dict:
             scored[v["id"]] = (v, sc)
         elif v.get("n"):
             collecting.append(v["label"])
+            coll_groups.add(v["group"])
+    waiting = lambda have: [{"id": g, "name": AREA_NAMES[g], "word": "collecting",
+                             "hint": "Play any game 3 times" if g == "thinking" else "Add a second scan or recording later" if g == "brain_scan"
+                             else "A few more checks"} for g in AREA_NAMES if g in coll_groups and g not in have]
     if not scored:
-        return {"weeks": [], "overall": None, "areas": [], "changes": [], "collecting": collecting, "n_measures": 0}
-    start = min(_week(sc[0][0]) for _, sc in scored.values())
+        return {"weeks": [], "overall": None, "areas": waiting(set()), "changes": [], "collecting": collecting, "n_measures": 0}
+    first = min(date.fromisoformat(sc[0][0][:10]) for _, sc in scored.values())
+    daily = (today - first).days <= 56            # little history: one point per day; otherwise per week
+    bucket = (lambda d: date.fromisoformat(d[:10])) if daily else _week
+    step = timedelta(days=1 if daily else 7)
     weeks = []
-    w = start
-    while w <= _week(today.isoformat()):
+    w = bucket(first.isoformat())
+    while w <= bucket(today.isoformat()):
         weeks.append(w)
-        w += timedelta(days=7)
+        w += step
     by_var_week = {}
     for vid, (_, sc) in scored.items():
         wk = {}
         for d, x in sc:
-            wk.setdefault(_week(d), []).append(x)
+            wk.setdefault(bucket(d), []).append(x)
         by_var_week[vid] = {k: sum(x) / len(x) for k, x in wk.items()}
     series, latest_var = [], {}
     for w in weeks:
@@ -544,13 +588,14 @@ def combined(vars_: list[dict], today: date | None = None) -> dict:
     last = next((s for s in reversed(series) if s["overall"] is not None), None)
     areas = [{"id": g, "name": AREA_NAMES[g], "value": last["areas"][g], "word": _word(last["areas"][g]),
               "n": sum(1 for v, _ in scored.values() if v["group"] == g)} for g in AREA_NAMES if last and g in last["areas"]]
+    areas += waiting({a["id"] for a in areas})
     changes = sorted(({"id": vid, "label": scored[vid][0]["label"], "icon": scored[vid][0].get("icon", ""),
                        "value": round(x, 2), "unit": scored[vid][0].get("unit"),
                        "from": scored[vid][0].get("baseline"), "to": scored[vid][0].get("recent", scored[vid][0].get("latest"))}
                       for vid, x in latest_var.items()), key=lambda c: -abs(c["value"]))
     # only changes that pass the "bigger than your normal ups and downs" rule are listed
     status = {vid: v["status"] for vid, (v, _) in scored.items()}
-    return {"weeks": series, "overall": last["overall"] if last else None, "word": _word(last["overall"]) if last else None,
+    return {"weeks": series, "daily": daily, "overall": last["overall"] if last else None, "word": _word(last["overall"]) if last else None,
             "areas": areas, "gains": [c for c in changes if status[c["id"]] == "improving" and c["value"] > 0][:3],
             "drops": [c for c in changes if status[c["id"]] == "slipping" and c["value"] < 0][:3],
             "collecting": collecting, "n_measures": len(scored), "sources": _sources(scored)}
@@ -566,3 +611,60 @@ def _sources(scored) -> str:
 def _word(x: float) -> str:
     return ("much better" if x >= 1 else "better" if x >= 0.4 else "a little better" if x >= 0.15 else
             "about the same" if x > -0.15 else "a little lower" if x > -0.4 else "lower" if x > -1 else "much lower")
+
+
+# ====================================================================== everything that happened, newest first
+def updates(p, days: dict, limit: int = 30) -> list[dict]:
+    ev = []
+    for g in gym.GAMES:
+        rows = game_rows(p, g["id"])
+        best: dict[str, float] = {}
+        cleared: set[int] = set()
+        for i, r in enumerate(rows):
+            unit = g["unit"]
+            text = f"{g['title']}: {pfmt(r['raw'])} {unit}" + (f" on level {r['level']}" if r["level"] else "") + \
+                   (" (classic test)" if r["classic"] else "")
+            tags = []
+            if r["passed"] and r["level"] not in cleared:
+                cleared.add(r["level"]); tags.append(f"🏅 cleared level {r['level']}")
+            key = r["fmt"] + str(r["level"] if r["fmt"] == "levels" else "")
+            better = (r["raw"] < best[key]) if g["better"] == "lower" and key in best else (r["raw"] > best[key]) if key in best else False
+            if better:
+                tags.append("⭐ new best")
+            best[key] = r["raw"] if key not in best or better else best[key]
+            if i == 0:
+                tags.append("first play")
+            ev.append({"ts": r["ts"], "icon": g.get("icon", "🧩"), "area": "thinking", "text": text, "tags": tags})
+    for m in db.mris(p.name):
+        own = str(m["source"]).startswith("upload")
+        ba = f"brain age {m['brain_age']:.0f}" if m["brain_age"] is not None else "couldn't be read"
+        ev.append({"ts": m["ts"], "icon": "🩻", "area": "brain_scan", "text": f"MRI analyzed: {ba}",
+                   "tags": [] if own else ["sample scan (a research volunteer's, not counted as yours)"]})
+    for e in db.eegs(p.name):
+        own = e["source"].startswith("upload")
+        ev.append({"ts": e["ts"], "icon": "〰️", "area": "brain_scan", "text": f"EEG analyzed: resting rhythm {e['paf_hz']:.1f} Hz",
+                   "tags": [] if own else ["sample recording (not counted as yours)"]})
+    for v in db.voices(p.name):
+        ev.append({"ts": v["ts"], "icon": "🎙️", "area": "speech_hands",
+                   "text": f"Voice check ({'read aloud' if v['task'] == 'reading' else 'story'}): {v['metrics'].get('speech_tempo')} syllables/sec", "tags": []})
+    for h in db.games(p.name, "hands"):
+        tap = h["detail"].get("results", {}).get("tap", {}).get("rate_hz")
+        ev.append({"ts": h["ts"], "icon": "✋", "area": "speech_hands",
+                   "text": f"Hand check ({h['detail'].get('hand', '?')} hand)" + (f": {tap} taps/sec" if tap else ""), "tags": []})
+    for l in p.logs:
+        q = QUEST_TITLES.get(l["quest"], l["quest"])
+        val = f": {pfmt(l['value'])}" if l.get("value") is not None else ""
+        ev.append({"ts": l["ts"], "icon": "✅", "area": "checkins", "text": f"Check-in: {q}{val}", "tags": []})
+    with db.conn() as c:
+        for r in c.execute("SELECT source, COUNT(*) n, MIN(date) a, MAX(date) b FROM wearable_days WHERE player=? GROUP BY source", (p.name,)):
+            sample = r["source"].startswith("Sample")
+            ev.append({"ts": r["b"] + "T23:59:00", "icon": "⌚", "area": "movement",
+                       "text": f"Watch data: {r['n']} days ({r['a']} → {r['b']})",
+                       "tags": ["made-up sample"] if sample else [r["source"]]})
+    ev.sort(key=lambda e: e["ts"], reverse=True)
+    return ev[:limit]
+
+
+def pfmt(v) -> str:
+    v = float(v)
+    return f"{v:,.0f}" if abs(v) >= 100 or v == int(v) else f"{v:.1f}" if abs(v) >= 10 else f"{v:.2f}".rstrip("0").rstrip(".")

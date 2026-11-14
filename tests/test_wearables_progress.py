@@ -134,7 +134,7 @@ def test_overview_combines_sources_with_rules(client):
     assert V["steps"]["status"] == "improving" and V["steps"]["source"] == "watch"
     assert V["resting_hr"]["status"] == "steady"
     g = V["game_stroop"]
-    assert g["practice_skipped"] == 2 and g["baseline"] == 31   # practice plays (10, 30) never form the baseline
+    assert g["practice_skipped"] == 1 and g["baseline"] == 30   # the practice play (10) never forms the baseline
     assert g["status"] == "improving"
     assert V["game_recall"]["status"] == "none"                  # never played: listed, no trend
     assert V["mri_gap"]["status"] == "none" and "sample" in V["mri_gap"]["note"]
@@ -172,18 +172,29 @@ def test_hearing_tests_are_snapshots_then_compared(client):
     assert V["hearing_pta_db"]["status"] == "slipping" and V["hearing_pta_db"]["change"] == 15.0
 
 
-def test_game_levels_never_mixed(client):
-    """Level 1 is easy and level 2 harder: a lower score at level 2 is not a decline."""
+def test_moving_up_levels_counts_as_progress(client):
+    """Harder levels give lower raw scores; the difficulty-adjusted score must still go UP."""
     client.post("/api/players", json={"name": "Ed"})
-    for sc in [12, 13, 13, 14]:                      # level 1 (target 6): each passes, so next round is level 2
+    for sc in [7, 8, 9, 10, 11]:                     # passes each level in turn (targets 6, 7, 8, 9, 10)
         client.post("/api/player/Ed/game", json={"game": "stroop", "score": sc, "detail": {"correct": sc, "wrong": 0}})
-    rows = __import__("neurotrail.progress", fromlist=["x"]).game_rows(type("P", (), {"name": "Ed"}), "stroop")
-    assert len({f for _, _, f, _ in rows}) > 1      # really did move up levels
+    from neurotrail import progress as prog
+    rows = prog.game_rows(type("P", (), {"name": "Ed"}), "stroop")
+    assert [r["level"] for r in rows] == [1, 2, 3, 4, 5] and all(r["fmt"] == "levels" for r in rows)
+    assert [round(r["value"], 2) for r in rows] == sorted(round(r["value"], 2) for r in rows)
     V = {v["id"]: v for v in client.get("/api/player/Ed/overview").json()["variables"]}
-    g = V["game_stroop"]
-    assert g["format"].startswith("level") and g["level_reached"] >= 1
-    same = [r for r in rows if r[2] == g["format"].replace("classic test", "classic")]
-    assert len(g["points"]) == len(same) < len(rows)   # only one level's rounds feed the trend
+    assert V["game_stroop"]["status"] == "improving" and V["game_stroop"]["level_reached"] == 5
+    ov = client.get("/api/player/Ed/overview").json()
+    assert ov["combined"]["overall"] > 0                          # shows on the one combined line
+    assert any("cleared level 5" in t for u in ov["updates"] for t in u["tags"])   # and in the updates feed
+
+
+def test_a_few_plays_already_show(client):
+    client.post("/api/players", json={"name": "Gus"})
+    for sc in [300, 280, 270]:                       # 3 classic Reflex plays (lower is better)
+        client.post("/api/player/Gus/game", json={"game": "reaction", "score": sc, "detail": {"classic": True}})
+    ov = client.get("/api/player/Gus/overview").json()
+    assert ov["combined"]["overall"] is not None and ov["combined"]["daily"]
+    assert len([u for u in ov["updates"] if u["text"].startswith("Reflex")]) == 3
 
 
 def test_sample_watch_data_load_refuse_remove(client):
@@ -197,3 +208,20 @@ def test_sample_watch_data_load_refuse_remove(client):
     assert db.days("Fay") == {}
     db.put_days("Fay", {"2026-11-01": {"steps": 5000}}, "export.zip")   # real data → sample refused
     assert client.post("/api/player/Fay/wearables/sample").status_code == 409
+
+
+
+def test_eeg_samples_and_uploads(client):
+    from pathlib import Path
+    smp = client.get("/api/eeg/samples").json()
+    if not smp:
+        pytest.skip("EEG samples not downloaded")
+    client.post("/api/players", json={"name": "Hal"})
+    r = client.post("/api/player/Hal/eeg/sample", data={"file": smp[0]["file"]}).json()
+    assert 7 <= r["paf_hz"] <= 13 and r["sample"]
+    data = (ROOT / "data" / "raw" / "eeg_samples" / smp[1]["file"]).read_bytes()
+    r = client.post("/api/player/Hal/eeg/upload", files={"file": ("mine.edf", data)}).json()
+    assert len(r["history"]) == 1                                 # only the upload is "yours"
+    V = {v["id"]: v for v in client.get("/api/player/Hal/overview").json()["variables"]}
+    assert V["eeg_paf"]["status"] == "snapshot"
+    assert client.post("/api/player/Hal/eeg/upload", files={"file": ("x.edf", b"not an edf")}).status_code == 422

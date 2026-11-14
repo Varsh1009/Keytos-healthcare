@@ -841,6 +841,46 @@ async def sync_push(name: str, request: Request) -> dict:
     return {"imported_days": n, "from": min(days), "to": max(days)}
 
 
+# ====================================================================== EEG (resting rhythm)
+EEG_SAMPLES = ROOT / "data" / "raw" / "eeg_samples"
+
+
+@app.get("/api/eeg/samples")
+def eeg_samples() -> list[dict]:
+    """Real resting, eyes-closed EEGs from healthy volunteers (PhysioNet EEG Motor Movement/Imagery, run 2)."""
+    return [{"id": f.stem, "file": f.name, "label": f"Volunteer {f.stem[1:4].lstrip('0')} · 1 min, eyes closed"}
+            for f in sorted(EEG_SAMPLES.glob("*.edf"))]
+
+
+def _eeg_result(p: Player, data: bytes, source: str) -> dict:
+    from neurotrail import eeg
+    try:
+        r = eeg.analyze(data)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    db.add_eeg(p.name, source, r)
+    hist = [h for h in db.eegs(p.name) if h["source"].startswith("upload")]
+    return r | {"history": hist, "player": snapshot(p)}
+
+
+@app.post("/api/player/{name}/eeg/sample")
+def eeg_sample(name: str, file: str = Form(...)) -> dict:
+    p = get(name)
+    f = EEG_SAMPLES / Path(file).name
+    if not f.exists():
+        raise HTTPException(503, "The sample EEGs aren't downloaded yet. Run: python setup_neurotrail.py")
+    return _eeg_result(p, f.read_bytes(), f"PhysioNet sample {f.stem}") | {"sample": True}
+
+
+@app.post("/api/player/{name}/eeg/upload")
+async def eeg_upload(name: str, file: UploadFile = File(...)) -> dict:
+    p = get(name)
+    data = await file.read()
+    if len(data) > 200 * 1024 * 1024:
+        raise HTTPException(400, "File too large (200 MB max)")
+    return _eeg_result(p, data, f"upload {file.filename}")
+
+
 # ====================================================================== Progress (every source)
 @app.get("/api/player/{name}/overview")
 def overview(name: str) -> dict:

@@ -203,7 +203,7 @@ export async function pageData() {
         <div style="height:200px"><canvas id="wch"></canvas></div>` : '<div class="empty">No device data yet. Drop a file on the left to see your real steps and sleep here.</div>'}</div>
     </div>
     <div class="explore" style="margin-top:16px">
-      <a class="tile glass" href="#/mri"><span>🩻</span><b>MRI brain age</b><small>Upload a scan or try a real one</small></a>
+      <a class="tile glass" href="#/mri"><span>🧠</span><b>Brain records</b><small>MRI and EEG: upload yours or try a sample</small></a>
       <a class="tile glass" href="#/levers"><span>🎛</span><b>What if…</b><small>Move sliders, see the effect</small></a>
       <a class="tile glass" href="#/progress"><span>📈</span><b>All my charts</b><small>Games, voice, trends</small></a></div>
   </div></div>`;

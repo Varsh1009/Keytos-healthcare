@@ -99,6 +99,26 @@ def download_physionet_steps() -> None:
             raise RuntimeError(f"checksum mismatch for {dest.name}; deleted, run again")
 
 
+def download_eeg_samples() -> None:
+    """Resting, eyes-closed EEG (run 2) from 8 healthy volunteers: PhysioNet EEG Motor Movement/Imagery
+    Dataset (Schalk et al. 2004, doi:10.13026/C28G6P), open access, ~1.3 MB each."""
+    import hashlib
+    print("PhysioNet resting EEG samples (~10 MB)")
+    base = "https://physionet.org/files/eegmmidb/1.0.0/"
+    out = RAW / "eeg_samples"
+    out.mkdir(exist_ok=True)
+    sums = out / "SHA256SUMS.txt"
+    fetch(base + "SHA256SUMS.txt", sums)
+    want = dict(reversed(l.split(maxsplit=1)) for l in sums.read_text().splitlines() if l.strip())
+    for i in range(1, 9):
+        name = f"S{i:03d}/S{i:03d}R02.edf"
+        dest = out / name.split("/")[1]
+        fetch(base + name, dest)
+        if hashlib.sha256(dest.read_bytes()).hexdigest() != want.get(name):
+            dest.unlink()
+            raise RuntimeError(f"checksum mismatch for {dest.name}; deleted, run again")
+
+
 def download_oasis() -> None:
     print("OASIS-1 cross-sectional MRI table (Kaggle jboysen/mri-and-alzheimers)")
     out = RAW / "oasis"
@@ -134,6 +154,7 @@ def _kaggle(slug: str, out: Path) -> None:
 if __name__ == "__main__":
     download_nhanes()
     download_physionet_steps()
+    download_eeg_samples()
     try:
         download_oasis()
         if "--skip-mri" not in sys.argv:

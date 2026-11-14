@@ -1,4 +1,5 @@
 // Brain Gym (8 games) + MRI page. Uses helpers exposed by app.js on window.NTX.
+import { recordsTabs } from './records.js?v=1';
 const X = () => window.NTX;
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -508,9 +509,8 @@ export async function pageMRI() {
   RUN++;
   const [m, samples] = await Promise.all([X().api('/api/mri/metrics'), X().api('/api/mri/samples')]);
   const cv = m.clinical_validity, tr = m.test_retest;
-  $('#p-mri').innerHTML = `<div class="scrollpage"><div class="wrap">
-    <div class="h1">🩻 MRI brain age</div>
-    <div class="sub">3D convolutional neural networks trained on <b>${m.n_volumes} real MRI scans</b> from Kaggle (OASIS-1, ${m.data.split(':')[0]}), joined to each person's real age and dementia rating.${m.active_model ? ` Active model: <b>${m.active_model === 'ensemble' ? `ensemble of ${Object.entries(m.n_models).map(([k, n]) => `${n} × ${k}`).join(' + ')}` : m.active_model}</b>${m.interval_coverage_95 != null ? `; its 95% intervals contain the true age of ${(m.interval_coverage_95 * 100).toFixed(0)}% of cognitively normal people` : ''}.` : ''}</div>
+  $('#p-mri').innerHTML = `<div class="scrollpage"><div class="wrap">${recordsTabs('mri')}
+    <div class="sub" style="margin-top:14px"><b>MRI brain age.</b> 3D convolutional neural networks trained on <b>${m.n_volumes} real MRI scans</b> from Kaggle (OASIS-1, ${m.data.split(':')[0]}), joined to each person's real age and dementia rating.${m.active_model ? ` Active model: <b>${m.active_model === 'ensemble' ? `ensemble of ${Object.entries(m.n_models).map(([k, n]) => `${n} × ${k}`).join(' + ')}` : m.active_model}</b>${m.interval_coverage_95 != null ? `; its 95% intervals contain the true age of ${(m.interval_coverage_95 * 100).toFixed(0)}% of cognitively normal people` : ''}.` : ''}</div>
     <div class="kpis"><div class="kpi"><div class="v">${m.mae.toFixed(1)} yrs</div><div class="l">MAE on ${m.n_normal} cognitively normal people, 5-fold CV split by subject (r = ${m.r.toFixed(2)}). Volume-only model: ${m.nwbv_model_mae.toFixed(1)}.</div></div>
       <div class="kpi"><div class="v">AUC ${cv.auc.toFixed(2)}</div><div class="l">brain-age gap separates dementia (n=${m.n_dementia}) from age-matched normals · 95% CI ${cv.auc_ci[0].toFixed(2)}–${cv.auc_ci[1].toFixed(2)}</div></div>
       <div class="kpi"><div class="v">ICC ${tr.icc.toFixed(2)}</div><div class="l">${tr.n_pairs} people scanned twice: mean difference ${tr.mean_abs_diff.toFixed(1)} yrs</div></div>

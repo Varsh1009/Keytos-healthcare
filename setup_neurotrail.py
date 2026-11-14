@@ -9,6 +9,7 @@ What it does:
   2. Downloads the public data the app uses (none of it needs an account or login):
        - CDC NHANES 2011-2014 (cognition tests, health, wrist tracker)  ~100 MB
        - PhysioNet NHANES step counts (for the watch model)               ~40 MB
+       - PhysioNet resting EEG recordings (EEG samples)                   ~10 MB
        - OASIS-1 MRI table + 436 real MRI scans from Kaggle               ~1.5 GB
   3. Checks everything arrived and tells you how to start the app.
 
@@ -73,6 +74,7 @@ def check(skip_mri: bool) -> bool:
         ("NHANES files", len(list(raw.glob("*.xpt"))) >= 30, "re-run this script"),
         ("PhysioNet step counts", (raw / "physionet_steps" / "nhanes_1440_scsslsteps.csv.xz").exists(), "re-run this script"),
         ("OASIS MRI table", any(raw.glob("oasis/*.csv")), "re-run this script"),
+        ("EEG samples (8 resting recordings)", len(list((raw / "eeg_samples").glob("*.edf"))) >= 8, "re-run this script"),
         ("Sample Apple Watch data", (ROOT / "data" / "samples" / "apple_health_sample.zip").exists(), "git pull"),
         ("Trained models", (ROOT / "models" / "artifacts" / "cognition_gbm.joblib").exists(), "git pull"),
     ]
