@@ -14,3 +14,5 @@ models/pretrained/
 data/mediapipe/
 # Local signing keys (other branches); never committed
 data/keys/
+# Python environment made by setup_neurotrail.py
+.venv/

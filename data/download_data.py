@@ -106,11 +106,7 @@ def download_oasis() -> None:
         print("  have oasis_cross-sectional.csv")
         return
     out.mkdir(exist_ok=True)
-    subprocess.run(
-        ["kaggle", "datasets", "download", "-d", "jboysen/mri-and-alzheimers",
-         "-p", str(out), "--unzip"],
-        check=True,
-    )
+    _kaggle("jboysen/mri-and-alzheimers", out)
 
 
 def download_oasis_mri() -> None:
@@ -120,15 +116,19 @@ def download_oasis_mri() -> None:
         print("  have MRI volumes")
         return
     out.mkdir(exist_ok=True)
-    try:   # kagglehub downloads public datasets without a Kaggle login
+    _kaggle("ninadaithal/oasis-1-shinohara", out)
+
+
+def _kaggle(slug: str, out: Path) -> None:
+    """Public Kaggle dataset → out. kagglehub needs no Kaggle login; the kaggle CLI (needs a token) is the fallback."""
+    try:
         import shutil
         import kagglehub
-        src = Path(kagglehub.dataset_download("ninadaithal/oasis-1-shinohara"))
+        src = Path(kagglehub.dataset_download(slug))
         shutil.copytree(src, out, dirs_exist_ok=True)
-        shutil.rmtree(src, ignore_errors=True)       # don't keep a second 1.5 GB copy in the cache
+        shutil.rmtree(src, ignore_errors=True)       # don't keep a second copy in the cache
     except ImportError:
-        subprocess.run(["kaggle", "datasets", "download", "-d", "ninadaithal/oasis-1-shinohara",
-                        "-p", str(out), "--unzip"], check=True)
+        subprocess.run(["kaggle", "datasets", "download", "-d", slug, "-p", str(out), "--unzip"], check=True)
 
 
 if __name__ == "__main__":
@@ -136,8 +136,9 @@ if __name__ == "__main__":
     download_physionet_steps()
     try:
         download_oasis()
-        download_oasis_mri()
-    except Exception as e:  # Kaggle needs ~/.kaggle credentials
+        if "--skip-mri" not in sys.argv:
+            download_oasis_mri()
+    except Exception as e:
         print(f"OASIS download failed: {e}", file=sys.stderr)
         sys.exit(1)
     print("done")
