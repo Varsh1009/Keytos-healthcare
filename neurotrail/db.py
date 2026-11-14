@@ -244,6 +244,16 @@ def put_days(player: str, days: dict, source: str) -> int:
     return len(days)
 
 
+def day_sources(player: str) -> set[str]:
+    with conn() as c:
+        return {r["source"] for r in c.execute("SELECT DISTINCT source FROM wearable_days WHERE player=?", (player,))}
+
+
+def delete_days(player: str, source: str) -> int:
+    with conn() as c:
+        return c.execute("DELETE FROM wearable_days WHERE player=? AND source=?", (player, source)).rowcount
+
+
 def days(player: str) -> dict[str, dict]:
     with conn() as c:
         rows = c.execute("SELECT date,data FROM wearable_days WHERE player=? ORDER BY date", (player,)).fetchall()

@@ -359,7 +359,8 @@ def build(p) -> dict:
     comb = combined(vars_)
     for v in vars_:
         v.pop("_spec", None)
-    return {"combined": comb, "groups": groups, "variables": vars_, "summary": summary, "coverage": _coverage(p, days, voices, hands, scans),
+    srcs = db.day_sources(p.name)
+    return {"combined": comb, "sample_watch": bool(srcs) and all(x.startswith("Sample") for x in srcs), "groups": groups, "variables": vars_, "summary": summary, "coverage": _coverage(p, days, voices, hands, scans),
             "links": _links(series, p), "rules": RULES, "model": _model_card(wm)}
 
 

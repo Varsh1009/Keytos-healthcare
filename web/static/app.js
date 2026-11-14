@@ -363,6 +363,7 @@ async function pageProgress() {
     <div class="h1">Your progress</div>
     <div class="sub">Everything you do in NeuroTrail, put together and compared with <b>your own</b> starting point.</div>
     ${body}
+    ${O.sample_watch ? `<p class="caveat">⌚ Your watch data here is <b>made-up sample data</b>. Remove it on <a href="#/data">My data</a> when you add your own.</p>` : ''}
     ${missing.length ? `<p class="padd">Add more for a fuller picture: ${missing.map(c => `<a href="${c.link}">${c.icon} ${c.label}</a>`).join(' · ')}</p>` : ''}
     <details class="phow"><summary>How is this worked out?</summary><ul>
       <li>Each thing we track (steps, sleep, each game, voice, hands, hearing, MRI) is compared with <b>your own</b> first weeks or first plays, never with other people.</li>

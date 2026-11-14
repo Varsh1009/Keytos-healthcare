@@ -120,8 +120,15 @@ def download_oasis_mri() -> None:
         print("  have MRI volumes")
         return
     out.mkdir(exist_ok=True)
-    subprocess.run(["kaggle", "datasets", "download", "-d", "ninadaithal/oasis-1-shinohara",
-                    "-p", str(out), "--unzip"], check=True)
+    try:   # kagglehub downloads public datasets without a Kaggle login
+        import shutil
+        import kagglehub
+        src = Path(kagglehub.dataset_download("ninadaithal/oasis-1-shinohara"))
+        shutil.copytree(src, out, dirs_exist_ok=True)
+        shutil.rmtree(src, ignore_errors=True)       # don't keep a second 1.5 GB copy in the cache
+    except ImportError:
+        subprocess.run(["kaggle", "datasets", "download", "-d", "ninadaithal/oasis-1-shinohara",
+                        "-p", str(out), "--unzip"], check=True)
 
 
 if __name__ == "__main__":

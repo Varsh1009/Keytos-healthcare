@@ -17,5 +17,6 @@ pillow             # MRI slice images
 torch
 faster-whisper      # Animal Naming: accurate speech-to-text (model downloads on first use)
 kaggle
+kagglehub           # downloads the public OASIS MRI scans without a Kaggle login
 pytest
 httpx

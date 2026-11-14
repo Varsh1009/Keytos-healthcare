@@ -184,3 +184,16 @@ def test_game_levels_never_mixed(client):
     assert g["format"].startswith("level") and g["level_reached"] >= 1
     same = [r for r in rows if r[2] == g["format"].replace("classic test", "classic")]
     assert len(g["points"]) == len(same) < len(rows)   # only one level's rounds feed the trend
+
+
+def test_sample_watch_data_load_refuse_remove(client):
+    client.post("/api/players", json={"name": "Fay"})
+    r = client.post("/api/player/Fay/wearables/sample").json()
+    assert r["imported_days"] >= 90 and r["is_sample"]
+    assert max(db.days("Fay")) == date.today().isoformat()          # shifted to end today
+    ov = client.get("/api/player/Fay/overview").json()
+    assert ov["sample_watch"] and ov["combined"]["overall"] is not None
+    assert client.delete("/api/player/Fay/wearables/sample").json()["removed_days"] >= 90
+    assert db.days("Fay") == {}
+    db.put_days("Fay", {"2026-11-01": {"steps": 5000}}, "export.zip")   # real data → sample refused
+    assert client.post("/api/player/Fay/wearables/sample").status_code == 409

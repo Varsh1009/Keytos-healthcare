@@ -186,6 +186,8 @@ export async function pageData() {
         <p class="muted"><b>Apple Watch / iPhone:</b> Health app → your photo (top right) → <i>Export All Health Data</i> → save the zip, then drop it here. We read steps, sleep, heart, VO₂ max, walking steadiness, blood oxygen, headphone and noise levels, and AirPods hearing tests.<br>
         <b>Fitbit:</b> Google Takeout → Fitbit → drop the zip.<br>
         <b>Garmin, Samsung, Oura…</b> a CSV with a <code>date</code> column and any of <code>steps</code>, <code>sleep_hours</code>, <code>resting_hr</code>, <code>hrv_ms</code>, <code>vo2max</code>, <code>walking_speed</code>.</p>
+        ${W.is_sample ? `<p class="caveat">You're looking at <b>made-up sample data</b>, not a real person. <button class="chip" id="wsampleDel">Remove sample</button></p>`
+          : S.days_with_data ? '' : `<button class="ghost" id="wsample" style="width:100%">⌚ No watch? Try 90 days of sample Apple Watch data</button>`}
         <div id="wmsg"></div></div>
       <div class="glass card"><div class="eyebrow">LIVE SYNC FROM YOUR IPHONE</div>
         <p class="muted">An Apple Watch can't send data to a website by itself; Apple keeps Health data on your iPhone. To keep this page updated automatically, let the iPhone send it:</p>
@@ -210,6 +212,10 @@ export async function pageData() {
     const fd = new FormData(); fd.append('file', f); const r = await fetch(`/api/player/${enc(me().name)}/wearables`, { method: 'POST', body: fd }); const j = await r.json();
     if (!r.ok) { $('#wmsg').innerHTML = `<p class="caveat">⚠ ${esc(j.detail)}</p>`; return; } X().setME(j.player); X().toast(`Imported ${j.imported_days} days ✓`); pageData(); };
   $('#wfile').onchange = e => e.target.files[0] && up(e.target.files[0]);
+  const sampleCall = async method => { const r = await fetch(`/api/player/${enc(me().name)}/wearables/sample`, { method }); const j = await r.json();
+    if (!r.ok) return X().toast(j.detail, 5000); X().setME(j.player); X().toast(method === 'POST' ? `Loaded ${j.imported_days} days of sample data ✓` : 'Sample data removed'); pageData(); };
+  $('#wsample') && ($('#wsample').onclick = () => sampleCall('POST'));
+  $('#wsampleDel') && ($('#wsampleDel').onclick = () => sampleCall('DELETE'));
   const sync = async (rotate = false) => {
     const t = await X().api(`/api/player/${enc(me().name)}/wearables/sync${rotate ? '?rotate=true' : ''}`);
     $('#syncUrl').textContent = t.url; $('#syncTok').textContent = t.token;

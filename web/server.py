@@ -782,7 +782,32 @@ def wearables_get(name: str) -> dict:
     p = get(name)
     all_days = db.days(p.name)
     recent = dict(list(all_days.items())[-60:])
-    return {"days": recent, "summary": wearables.summary(all_days), "player": snapshot(p)}
+    return {"days": recent, "summary": wearables.summary(all_days), "player": snapshot(p),
+            "is_sample": db.day_sources(p.name) == {SAMPLE_SOURCE}}
+
+
+# Sample watch data: a made-up 90-day Apple Health export (data/samples/), loaded through the real importer.
+SAMPLE_SOURCE = "Sample Apple Watch data (made up)"
+SAMPLE_ZIP = ROOT / "data" / "samples" / "apple_health_sample.zip"
+
+
+@app.post("/api/player/{name}/wearables/sample")
+def wearables_sample(name: str) -> dict:
+    p = get(name)
+    if db.day_sources(p.name) - {SAMPLE_SOURCE}:
+        raise HTTPException(409, "You already have your own watch data, so the sample isn't loaded (we never mix them).")
+    days = wearables.parse_upload(SAMPLE_ZIP.read_bytes(), SAMPLE_ZIP.name)
+    shift = date.today() - date.fromisoformat(max(days))           # make the sample end today
+    days = {(date.fromisoformat(d) + shift).isoformat(): v for d, v in days.items()}
+    db.delete_days(p.name, SAMPLE_SOURCE)
+    n = db.put_days(p.name, days, SAMPLE_SOURCE)
+    return wearables_get(name) | {"imported_days": n}
+
+
+@app.delete("/api/player/{name}/wearables/sample")
+def wearables_sample_remove(name: str) -> dict:
+    p = get(name)
+    return wearables_get(name) | {"removed_days": db.delete_days(p.name, SAMPLE_SOURCE)}
 
 
 # Live sync: the iPhone (Health Auto Export app or an iOS Shortcut) POSTs JSON here.
