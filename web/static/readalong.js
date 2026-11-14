@@ -5,7 +5,9 @@
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const norm = w => w.toLowerCase().replace(/’/g, "'").replace(/[^a-z0-9']/g, '');
 
-export const supported = () => !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+// Browser speech recognition sends audio to the browser maker's servers (Google in Chrome), so it only runs
+// if the person allowed "Live word highlighting" on the consent screen.
+export const supported = () => !!(window.SpeechRecognition || window.webkitSpeechRecognition) && !!window.NTconsent?.get()?.browserSpeech;
 export const wordsOf = text => String(text).split(/\s+/).filter(Boolean);
 export const spans = text => wordsOf(text).map((w, i) => `<span class="rw" data-i="${i}">${esc(w)}</span>`).join(' ');
 

@@ -1,5 +1,5 @@
 // Friendly Home, Voice check and My Data pages. Helpers come from app.js via window.NTX.
-import * as RA from './readalong.js?v=1';
+import * as RA from './readalong.js?v=2';
 import { icon, tile } from './icons.js?v=1';
 const X = () => window.NTX;
 const $ = (s, r = document) => r.querySelector(s);

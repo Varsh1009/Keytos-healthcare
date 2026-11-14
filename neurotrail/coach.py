@@ -1,5 +1,6 @@
 """
-NeuroCoach: an AI agent (Claude + tool use) grounded in the player's real data.
+NeuroCoach: an on-device AI coach (Ollama, local) grounded in the player's real data.
+No cloud AI: patient data never leaves this computer.
 
 The agent never guesses numbers. It has five tools, all backed by this project's
 own data and models:
@@ -9,13 +10,14 @@ own data and models:
   simulate_change         - re-runs the lever model with hypothetical values
   save_weekly_plan        - writes a plan to the database (shown on the Coach page)
 
-If no Anthropic credentials are available the "offline coach" runs the same tools
+If the local model (Ollama) isn't running, the rule-based "offline coach" runs the same tools
 with fixed rules and says so. The answer's `source` field tells the UI which ran.
 """
 from __future__ import annotations
 
 import json
 import logging
+import os
 from datetime import date, timedelta
 
 from . import db, scoring
@@ -23,7 +25,6 @@ from .quests import QUEST_BY_ID, QUESTS
 from .state import Player
 
 log = logging.getLogger(__name__)
-MODEL = "claude-opus-5-5"
 
 SYSTEM = """You are NeuroCoach inside NeuroTrail, a brain-health habit game for adults.
 Ground every number you mention in a tool result from this conversation; never invent statistics,
@@ -126,7 +127,7 @@ def run_tool(p: Player, name: str, args: dict) -> dict:
     if name == "simulate_change":
         return _simulate(p, args)
     if name == "save_weekly_plan":
-        db.save_plan(p.name, args["title"], args["items"], "claude")
+        db.save_plan(p.name, args["title"], args["items"], "local")
         return {"saved": True, "items": len(args["items"])}
     raise ValueError(f"unknown tool {name}")
 
@@ -136,44 +137,63 @@ TOOL_LABELS = {"get_profile_and_levers": "Ran your lever model", "get_recent_act
                "save_weekly_plan": "Saved your weekly plan"}
 
 
-# ------------------------------------------------------------------ Claude agent loop
-def _claude(p: Player, user_text: str) -> dict:
-    import anthropic
+# ------------------------------------------------------------------ local AI coach (Ollama, on this computer)
+# Patient data never leaves the device: the facts are gathered by our own tools here, and the words are
+# written by a small open model running locally in Ollama (http://127.0.0.1:11434). No cloud AI is called.
+OLLAMA = os.environ.get("NEUROTRAIL_OLLAMA", "http://127.0.0.1:11434")
+LOCAL_MODEL = os.environ.get("NEUROTRAIL_LLM", "llama3.2:3b")
 
-    client = anthropic.Anthropic()
-    history = []
-    for m in db.messages(p.name, 12):
-        if m["role"] in ("user", "assistant") and m["content"]:
-            history.append({"role": m["role"], "content": m["content"]})
-    while history and history[0]["role"] != "user":
-        history.pop(0)
-    msgs = history + [{"role": "user", "content": user_text}]
-    trace = []
-    for _ in range(8):
-        resp = client.beta.messages.create(
-            model=MODEL, max_tokens=4000, system=SYSTEM, tools=TOOLS, messages=msgs,
-            output_config={"effort": "medium"},
-            betas=["server-side-fallback-2026-07-01"], extra_body={"fallbacks": "default"},
-        )
-        if resp.stop_reason == "refusal":
-            return {"text": "I can't help with that one. Try asking about your quests, levers or plan.",
-                    "tools": trace, "source": "claude"}
-        msgs.append({"role": "assistant", "content": resp.content})
-        uses = [b for b in resp.content if b.type == "tool_use"]
-        if resp.stop_reason != "tool_use" or not uses:
-            text = "\n".join(b.text for b in resp.content if b.type == "text").strip()
-            return {"text": text, "tools": trace, "source": "claude"}
-        results = []
-        for u in uses:
-            try:
-                out = run_tool(p, u.name, dict(u.input))
-                results.append({"type": "tool_result", "tool_use_id": u.id, "content": json.dumps(out)})
-                trace.append({"tool": u.name, "label": TOOL_LABELS[u.name], "input": dict(u.input)})
-            except Exception as e:  # noqa: BLE001 - report tool failures back to the model
-                results.append({"type": "tool_result", "tool_use_id": u.id, "content": str(e), "is_error": True})
-        msgs.append({"role": "user", "content": results})
-    return {"text": "I ran out of steps on that one. Ask me again more specifically?", "tools": trace,
-            "source": "claude"}
+
+def _facts(p: Player, user_text: str) -> tuple[dict, list]:
+    from . import progress
+    lev, act = _levers(p), _activity(p, 7)
+    trace = [{"tool": "get_profile_and_levers", "label": TOOL_LABELS["get_profile_and_levers"], "input": {}},
+             {"tool": "get_recent_activity", "label": TOOL_LABELS["get_recent_activity"], "input": {"days": 7}}]
+    o = progress.build(p)
+    areas = {g["title"]: {s: n for s, n in g["counts"].items() if n} or ("no data yet" if not g["has_data"] else "still learning")
+             for g in o["groups"]}
+    sig = [f for f in lev["factors"] if f["significant"] and f["years"] > 0.05]
+    facts = {"name": p.name, "today": {"headline": o["today"]["headline"],
+                                       "played": [{"what": i["title"], "result": i["text"]} for i in o["today"]["items"]]},
+             "areas_vs_own_start": areas, "overall_vs_start": o["combined"].get("word"),
+             "habit_levers": [{"factor": f["factor"], "you": f["you"], "target": f["target"], "years": f["years"]} for f in sig],
+             "streak_days": act["streak"], "open_today": act["today_open_quests"][:4]}
+    if sig:
+        qid = {"Blood pressure": "bp", "Mood (PHQ-9)": "joy", "Sleep (distance from 7 h)": "sleep",
+               "Smoking": "smoke", "Diabetes": "labs"}.get(sig[0]["factor"], "steps")
+        ev = _evidence(qid)
+        facts["top_lever_evidence"] = {"quest": ev["quest"], "first_step": ev["steps"][0], "study": ev["evidence"][0]["claim"]}
+        trace.append({"tool": "get_quest_evidence", "label": TOOL_LABELS["get_quest_evidence"], "input": {"quest_id": qid}})
+    return facts, trace
+
+
+def _local(p: Player, user_text: str) -> dict:
+    import urllib.request
+    facts, trace = _facts(p, user_text)
+    out = None
+    if "plan" in user_text.lower():                       # plans are built by the same fixed rules, then explained
+        out = _offline(p, user_text)
+        trace = out["tools"]
+        facts["saved_weekly_plan"] = db.plans(p.name)[0]["items"] if db.plans(p.name) else []
+    history = [{"role": m["role"], "content": m["content"]} for m in db.messages(p.name, 6)
+               if m["role"] in ("user", "assistant") and m["content"]][:-1]
+    sys_msg = (SYSTEM_LOCAL + "\n\nFACTS ABOUT THIS PERSON (only use these numbers):\n" + json.dumps(facts, default=str))
+    body = {"model": LOCAL_MODEL, "stream": False, "options": {"temperature": 0.4, "num_predict": 220},
+            "messages": [{"role": "system", "content": sys_msg}, *history[-4:], {"role": "user", "content": user_text}]}
+    req = urllib.request.Request(OLLAMA + "/api/chat", data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=90) as r:
+        text = json.loads(r.read())["message"]["content"].strip()
+    return {"text": text, "tools": trace, "source": "local"}
+
+
+SYSTEM_LOCAL = """You are Brain Buddy, the friendly coach inside NeuroTrail, a brain-health habit app.
+Answer in plain, warm words, like talking to a 65-year-old: short sentences, no jargon, no statistics words
+(no "CI", "p-value", "NHANES", "association"). At most 4 short sentences, then one concrete next step.
+Only use numbers that appear in FACTS. Never diagnose. "Better/steady/lower" always means compared with the
+person's own starting point, not other people. Only say something got better or worse if FACTS say so
+(an area listing "improving" or "slipping", or a today result saying "above/below your usual"); "still learning"
+or "no data yet" means there is no trend yet, so say that. If they mention self-harm or hopelessness, give the US 988 line first.
+For medicines, very high blood pressure (180+) or worrying symptoms, tell them to talk to their doctor."""
 
 
 # ------------------------------------------------------------------ offline coach (no API)
@@ -212,24 +232,23 @@ def _offline(p: Player, user_text: str) -> dict:
 
 
 def status() -> dict:
-    """Is the Claude agent usable? (Builds a client; never reads or returns the key.)"""
+    """Is the local AI (Ollama) running with our model? Nothing is sent anywhere else."""
+    import urllib.request
     try:
-        import anthropic
-        c = anthropic.Anthropic()
-        configured = bool(getattr(c, "api_key", None) or getattr(c, "auth_token", None))
-        return {"claude": configured, "model": MODEL}
+        with urllib.request.urlopen(OLLAMA + "/api/tags", timeout=2) as r:
+            names = [m["name"] for m in json.loads(r.read()).get("models", [])]
+        return {"local": LOCAL_MODEL in names, "model": LOCAL_MODEL, "where": "this computer (Ollama)"}
     except Exception as e:  # noqa: BLE001
-        return {"claude": False, "model": MODEL, "reason": type(e).__name__}
+        return {"local": False, "model": LOCAL_MODEL, "reason": type(e).__name__}
 
 
 def ask(p: Player, user_text: str) -> dict:
     db.add_message(p.name, "user", user_text)
     try:
-        out = _claude(p, user_text)
-    except Exception as e:  # noqa: BLE001 - no credentials / network: use offline coach
-        log.warning("Claude coach unavailable (%s); using offline coach", type(e).__name__)
+        out = _local(p, user_text)
+    except Exception as e:  # noqa: BLE001 - Ollama not running: fixed-rule coach, still fully local
+        log.warning("Local AI coach unavailable (%s); using rule-based coach", type(e).__name__)
         out = _offline(p, user_text)
-        out["note"] = ("Claude isn't connected (no Anthropic credentials found), so the offline coach answered. "
-                       "Set ANTHROPIC_API_KEY and restart the server to enable the Claude agent.")
+        out["note"] = "The on-device AI isn't running (start Ollama), so the simple built-in coach answered."
     db.add_message(p.name, "assistant", out["text"], out["tools"], out["source"])
     return out

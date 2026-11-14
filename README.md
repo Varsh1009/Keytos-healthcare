@@ -34,7 +34,7 @@ Run it again any time: finished downloads are skipped. Optional NVIDIA GPU:
 `pip install torch --index-url https://download.pytorch.org/whl/cu126`.
 
 - `CERTIFICATE_VERIFY_FAILED` while downloading or installing (antivirus / proxy): `pip install pip-system-certs`, then retry.
-- AI coach: works offline by default; set `ANTHROPIC_API_KEY` for the Claude agent.
+- AI coach: runs on this computer with Ollama (`ollama pull llama3.2:3b`). No cloud AI; patient data never leaves the device.
 - No GPU: everything works, MRI results just take a few seconds longer.
 
 ## Rebuild everything (optional)
@@ -179,14 +179,14 @@ SQLite, stored locally at `data/neurotrail.db` (`neurotrail/db.py`). It has six 
 
 ## AI coach agent (`neurotrail/coach.py`)
 
-The coach is Claude Opus 5.5 running a tool-use loop. Its five tools are grounded in your data:
+The coach runs locally: our own tools gather the facts from your data, and a small open model (Llama 3.2 3B in Ollama, on this computer) puts them in plain words. Nothing is sent to a cloud AI. The tools:
 - the NHANES lever model on your current values
 - your activity log from SQLite
 - each quest's verified evidence
 - a what-if simulation
 - saving a weekly plan to the database
 
-The system prompt forbids numbers that didn't come from a tool. To enable it, set `ANTHROPIC_API_KEY`
+The model may only use numbers from those facts. Without Ollama running, a rule-based coach answers instead.
 and restart the server. Without credentials, a labeled offline coach runs the same tools with fixed rules.
 
 ## Data (all real, all public)

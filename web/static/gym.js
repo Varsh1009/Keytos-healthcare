@@ -262,10 +262,12 @@ async function recall(g, L) {
 
 // ============================================================ READ ALOUD (levels: read N words aloud before time runs out)
 async function readaloud(g, L) {
-  const run = RUN, RA = await import('./readalong.js?v=1');
+  const run = RUN, RA = await import('./readalong.js?v=2');
   const back = `<div class="row" style="justify-content:center"><button class="cta" id="again">${icon('refresh')} Try again</button><a class="ghost" href="#/gym/${g.id}" style="text-decoration:none">Back to Games</a></div>`;
   if (!RA.supported()) {
-    $('#gb').innerHTML = `<div class="empty" style="margin-top:40px">${icon('book')} Live word tracking needs <b>Chrome</b> or <b>Edge</b>.<br>Open <b>http://localhost:8600/#/game/readaloud</b> there.</div>
+    $('#gb').innerHTML = (window.SpeechRecognition || window.webkitSpeechRecognition) && !window.NTconsent?.get()?.browserSpeech
+      ? `<div class="empty" style="margin-top:40px">${icon('book')} Read Aloud uses your browser's speech service (in Chrome, audio goes to Google).<br>It's off in your Privacy choices. <button class="chip" onclick="window.NTconsent.edit().then(() => location.reload())">🔒 Turn it on</button></div>`
+      : `<div class="empty" style="margin-top:40px">${icon('book')} Live word tracking needs <b>Chrome</b> or <b>Edge</b>.<br>Open <b>http://localhost:8600/#/game/readaloud</b> there.</div>
       <div class="row" style="justify-content:center"><a class="ghost" href="#/gym/${g.id}" style="text-decoration:none">Back to Games</a></div>`;
     return;
   }
@@ -314,7 +316,7 @@ async function voiceGame(g, L) {
   for (const n of [3, 2, 1]) { $('#rmsg').textContent = `Think about it… start talking in ${n}`; await sleep(800); if (run !== RUN) { rec.stop().catch(() => {}); return; } }
   $('#rmsg').textContent = 'Go! Keep talking until the timer ends.'; live = true;
   let RA = null, mic = null;
-  try { RA = await import('./readalong.js?v=1'); if (RA.supported()) mic = RA.listen(t => { const w = RA.wordsOf(t), el = $('#vwords'); if (el) el.innerHTML = w.slice(-14).map(x => `<span>${esc(x)}</span>`).join(' ') + `<b>${w.length} words</b>`; }); } catch { mic = null; }
+  try { RA = await import('./readalong.js?v=2'); if (RA.supported()) mic = RA.listen(t => { const w = RA.wordsOf(t), el = $('#vwords'); if (el) el.innerHTML = w.slice(-14).map(x => `<span>${esc(x)}</span>`).join(' ') + `<b>${w.length} words</b>`; }); } catch { mic = null; }
   const stop = {}, tick = setInterval(() => { if (ticks) goal(Math.round(talking / ticks * 100), L.target, '% talking (live estimate)'); }, 300);
   const how = await countdown(L.seconds, run, stop); clearInterval(tick); live = false;
   const words = mic ? RA.wordsOf(await mic.stop()).length : null;

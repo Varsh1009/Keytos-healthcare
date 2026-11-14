@@ -997,6 +997,23 @@ body.r-gym #caption, body.r-play #caption { bottom: 120px; max-width: 340px; }
 @keyframes svslide { from { left: 0; } }
 .sv-lab { display: flex; justify-content: space-between; font-size: 11px; color: var(--mute); }
 .sv-cap { font-size: 14px; line-height: 1.5; margin: 12px 0 4px; }
+
+/* ---------- consent ---------- */
+.cs { z-index: 200; }
+.cs-modal { max-width: 520px; text-align: center; }
+.cs-lock { font-size: 46px; animation: bob 3s ease-in-out infinite; }
+.cs-modal h2 { margin: 6px 0 4px; font: 800 26px 'Space Grotesk'; }
+.cs-sub { color: #C9D0EE; margin: 0 0 16px; }
+.cs-row { display: flex; align-items: center; gap: 12px; text-align: left; padding: 12px 14px; margin: 8px 0; border-radius: 16px; background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.08); cursor: pointer; position: relative; }
+.cs-row > div { flex: 1; display: flex; flex-direction: column; } .cs-row b { color: #fff; font-size: 15px; } .cs-row small { color: #9AA3C7; font-size: 12.5px; line-height: 1.35; }
+.cs-ic { font-size: 24px; }
+.cs-row input { position: absolute; opacity: 0; pointer-events: none; }
+.cs-sw { flex: none; width: 46px; height: 26px; border-radius: 999px; background: rgba(255,255,255,.15); position: relative; transition: .2s; }
+.cs-sw::after { content: ''; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; transition: .2s; }
+.cs-row input:checked + .cs-sw { background: #3DDC97; } .cs-row input:checked + .cs-sw::after { left: 23px; }
+.cs-row.locked { cursor: default; opacity: .85; }
+.cs-go { width: 100%; margin-top: 14px; padding: 16px; font-size: 18px; }
+.cs-foot { display: block; margin-top: 10px; color: #9AA3C7; font-size: 12px; }
 /* Brain records: dropdown picker, line icons, big answer, read-aloud (records.js) */
 .ic { width: 1.15em; height: 1.15em; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; vertical-align: -0.2em; }
 .rx-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 270px)); gap: 12px; margin: 10px 0 16px; }
