@@ -9,6 +9,8 @@ from __future__ import annotations
 import os
 import shutil
 import threading
+import json
+import urllib.parse
 import urllib.request
 import sys
 from collections import Counter
@@ -607,7 +609,18 @@ def mri_samples() -> list[dict]:
     d = pd.read_csv(ART / "mri_cnn_predictions.csv").replace({np.nan: None})
     pick = pd.concat([d[d["status"] != "cognitively normal"].sample(8, random_state=1),
                       d[(d["status"] == "cognitively normal") & (d["session"] == "MR1")].sample(8, random_state=1)])
-    return pick[["ID", "file", "Age", "female", "CDR", "status", "brain_age"]].to_dict("records")
+    out = pick[["ID", "file", "Age", "female", "CDR", "status", "brain_age"]].to_dict("records")
+    for r in out:   # the scan list ships with the code, the ~400 MB of scans don't (data/download_data.py)
+        r["available"] = _sample_path(r["file"]) is not None
+    return out
+
+
+SAMPLES_MISSING = ("The sample scans aren't downloaded on this computer yet (about 400 MB from Kaggle). "
+                   "Set up a Kaggle API token, then run: python data/download_data.py")
+
+
+def _sample_path(file: str) -> Path | None:
+    return next((ROOT / "data" / "raw" / "oasis_mri").glob(f"**/{file}"), None)
 
 
 @app.post("/api/player/{name}/mri/sample")
@@ -618,7 +631,9 @@ def mri_sample(name: str, file: str = Form(...)) -> dict:
     row = d[d["file"] == file]
     if row.empty:
         raise HTTPException(404, "unknown sample")
-    f = next((ROOT / "data" / "raw" / "oasis_mri").glob(f"**/{file}"))
+    f = _sample_path(file)
+    if f is None:
+        raise HTTPException(503, SAMPLES_MISSING)
     v = np.asanyarray(nib.load(f).dataobj, dtype=np.float32)
     from neurotrail import mri
     fold = mri.heldout_fold(file) if row["status"].iloc[0] == "cognitively normal" else None
@@ -767,7 +782,110 @@ def wearables_get(name: str) -> dict:
     p = get(name)
     all_days = db.days(p.name)
     recent = dict(list(all_days.items())[-60:])
-    return {"days": recent, "summary": wearables.summary(all_days), "player": snapshot(p)}
+    return {"days": recent, "summary": wearables.summary(all_days), "player": snapshot(p),
+            "is_sample": db.day_sources(p.name) == {SAMPLE_SOURCE}}
+
+
+# Sample watch data: a made-up 90-day Apple Health export (data/samples/), loaded through the real importer.
+SAMPLE_SOURCE = "Sample Apple Watch data (made up)"
+SAMPLE_ZIP = ROOT / "data" / "samples" / "apple_health_sample.zip"
+
+
+@app.post("/api/player/{name}/wearables/sample")
+def wearables_sample(name: str) -> dict:
+    p = get(name)
+    if db.day_sources(p.name) - {SAMPLE_SOURCE}:
+        raise HTTPException(409, "You already have your own watch data, so the sample isn't loaded (we never mix them).")
+    days = wearables.parse_upload(SAMPLE_ZIP.read_bytes(), SAMPLE_ZIP.name)
+    shift = date.today() - date.fromisoformat(max(days))           # make the sample end today
+    days = {(date.fromisoformat(d) + shift).isoformat(): v for d, v in days.items()}
+    db.delete_days(p.name, SAMPLE_SOURCE)
+    n = db.put_days(p.name, days, SAMPLE_SOURCE)
+    return wearables_get(name) | {"imported_days": n}
+
+
+@app.delete("/api/player/{name}/wearables/sample")
+def wearables_sample_remove(name: str) -> dict:
+    p = get(name)
+    return wearables_get(name) | {"removed_days": db.delete_days(p.name, SAMPLE_SOURCE)}
+
+
+# Live sync: the iPhone (Health Auto Export app or an iOS Shortcut) POSTs JSON here.
+@app.get("/api/player/{name}/wearables/sync")
+def sync_setup(name: str, request: Request, rotate: bool = False) -> dict:
+    p = get(name)
+    t = db.sync_token(p.name, rotate=rotate)
+    base = str(request.base_url).rstrip("/")
+    return {"url": f"{base}/api/player/{urllib.parse.quote(p.name)}/wearables/sync", "header": "X-Sync-Token",
+            "token": t["token"], "last_sync": t["last_sync"],
+            "reachable_from_phone": not any(h in base for h in ("127.0.0.1", "localhost")),
+            "fields": list(wearables.FIELDS)}
+
+
+@app.post("/api/player/{name}/wearables/sync")
+async def sync_push(name: str, request: Request) -> dict:
+    p = get(name)
+    tok = request.headers.get("x-sync-token") or request.query_params.get("token", "")
+    if not db.check_sync_token(p.name, tok):
+        raise HTTPException(401, "Wrong or missing sync token. Copy it again from My data → Live sync.")
+    body = await request.body()
+    if len(body) > 50 * 1024 * 1024:
+        raise HTTPException(413, "Too much at once: send at most a few months per sync")
+    try:
+        days = wearables.parse_json(json.loads(body))
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    if not days:
+        raise HTTPException(422, "No usable days in that JSON.")
+    n = db.put_days(p.name, days, "live sync")
+    return {"imported_days": n, "from": min(days), "to": max(days)}
+
+
+# ====================================================================== EEG (resting rhythm)
+EEG_SAMPLES = ROOT / "data" / "raw" / "eeg_samples"
+
+
+@app.get("/api/eeg/samples")
+def eeg_samples() -> list[dict]:
+    """Real resting, eyes-closed EEGs from healthy volunteers (PhysioNet EEG Motor Movement/Imagery, run 2)."""
+    return [{"id": f.stem, "file": f.name, "label": f"Volunteer {f.stem[1:4].lstrip('0')} · 1 min, eyes closed"}
+            for f in sorted(EEG_SAMPLES.glob("*.edf"))]
+
+
+def _eeg_result(p: Player, data: bytes, source: str) -> dict:
+    from neurotrail import eeg
+    try:
+        r = eeg.analyze(data)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    db.add_eeg(p.name, source, r)
+    hist = [h for h in db.eegs(p.name) if h["source"].startswith("upload")]
+    return r | {"history": hist, "player": snapshot(p)}
+
+
+@app.post("/api/player/{name}/eeg/sample")
+def eeg_sample(name: str, file: str = Form(...)) -> dict:
+    p = get(name)
+    f = EEG_SAMPLES / Path(file).name
+    if not f.exists():
+        raise HTTPException(503, "The sample EEGs aren't downloaded yet. Run: python setup_neurotrail.py")
+    return _eeg_result(p, f.read_bytes(), f"PhysioNet sample {f.stem}") | {"sample": True}
+
+
+@app.post("/api/player/{name}/eeg/upload")
+async def eeg_upload(name: str, file: UploadFile = File(...)) -> dict:
+    p = get(name)
+    data = await file.read()
+    if len(data) > 200 * 1024 * 1024:
+        raise HTTPException(400, "File too large (200 MB max)")
+    return _eeg_result(p, data, f"upload {file.filename}")
+
+
+# ====================================================================== Progress (every source)
+@app.get("/api/player/{name}/overview")
+def overview(name: str) -> dict:
+    from neurotrail import progress as prog
+    return prog.build(get(name))
 
 
 if __name__ == "__main__":
@@ -780,4 +898,5 @@ if __name__ == "__main__":
             print("speech model not loaded:", e)
     import threading
     threading.Thread(target=_warm_speech, daemon=True).start()
-    uvicorn.run(app, host="127.0.0.1", port=int(os.environ.get("PORT", "8600")), log_level="warning")
+    # HOST=0.0.0.0 lets a phone on the same Wi-Fi reach the live-sync endpoint
+    uvicorn.run(app, host=os.environ.get("HOST", "127.0.0.1"), port=int(os.environ.get("PORT", "8600")), log_level="warning")

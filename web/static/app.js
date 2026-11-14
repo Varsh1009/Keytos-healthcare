@@ -8,6 +8,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { pageGym, pageGame, pageMRI, railHTML, boardHTML, startDemo } from './gym.js?v=12';
 import { pageHands } from './hands.js?v=7';
 import { initDock } from './dock.js?v=1';
+import { pageEEG } from './records.js?v=1';
 import { pageHome as pageHome2, pageVoice, pageData, plainLever, plainAmount, buddy } from './ui2.js?v=5';
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -228,13 +229,13 @@ function caption(id) {
 
 // ================================================================ ROUTER
 const homeRoute = () => { SEL = null; paintRegions(); caption(null); goHomeCam(); return pageHome2(); };
-const routes = { home: homeRoute, gym: pageGym, game: pageGame, sprint: pageSprint, voice: pageVoice, hands: pageHands, data: pageData, mri: pageMRI, progress: pageProgress, coach: pageCoach, levers: pageLevers, science: pageScience };
+const routes = { home: homeRoute, gym: pageGym, game: pageGame, sprint: pageSprint, voice: pageVoice, hands: pageHands, data: pageData, mri: pageMRI, eeg: pageEEG, progress: pageProgress, coach: pageCoach, levers: pageLevers, science: pageScience };
 async function route() {
   if (!ME?.onboarded) return;
   const [, r = 'home', arg] = (location.hash || '#/').split('/');
   ROUTE = routes[r] ? r : 'home';
   document.body.className = 'r-' + ROUTE;
-  const tab = { game: 'gym', sprint: 'gym', hands: 'gym', voice: 'gym', mri: 'data', levers: 'data' }[ROUTE] || ROUTE;
+  const tab = { game: 'gym', sprint: 'gym', hands: 'gym', voice: 'gym', mri: 'records', eeg: 'records', levers: 'data' }[ROUTE] || ROUTE;
   $$('#tabs a').forEach(a => a.classList.toggle('on', a.dataset.r === tab));
   $$('.page').forEach(p => p.classList.toggle('on', p.id === 'p-' + ROUTE));
   stage.classList.toggle('dim', !['home', 'gym'].includes(ROUTE) || (ROUTE === 'home' && innerWidth < 1150));
@@ -328,44 +329,80 @@ async function endGame() {
   $('#againBtn').onclick = startGame; G = null;
 }
 
-// ================================================================ PROGRESS
+// ================================================================ PROGRESS (one combined picture)
+function pfmt(v, unit) {
+  if (v == null) return '–';
+  if (unit === 'steps') return Math.round(v).toLocaleString();
+  if (unit === 'share') return Math.round(v * 100) + '%';
+  const a = Math.abs(v);
+  return a >= 100 ? String(Math.round(v)) : a >= 10 ? v.toFixed(1) : v.toFixed(2).replace(/\.?0+$/, '');
+}
+const PWORD = { 'much better': ['🌟', '#3DDC97'], better: ['😊', '#3DDC97'], 'a little better': ['🙂', '#8BE3B5'],
+  'about the same': ['😐', '#59F0FF'], 'a little lower': ['😕', '#FFC83D'], lower: ['😟', '#FF9F43'], 'much lower': ['😟', '#FF7A6E'] };
+const AREA_ICON = { movement: '🚶', sleep_heart: '🌙', thinking: '🧩', speech_hands: '🎙️', hearing: '👂', brain_scan: '🩻' };
+function feedHTML(U) {
+  if (!U?.length) return '';
+  const day = ts => { const d = ts.slice(0, 10), t = new Date(), y = new Date(t - 864e5), iso = x => x.toISOString().slice(0, 10);
+    return d === iso(t) ? 'Today' : d === iso(y) ? 'Yesterday' : new Date(d + 'T12:00').toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }); };
+  let last = '', rows = '';
+  for (const u of U) {
+    const d = day(u.ts);
+    if (d !== last) { rows += `<div class="pf-day">${d}</div>`; last = d; }
+    rows += `<div class="pf-row"><span class="pf-ic">${u.icon}</span><span class="pf-tx">${esc(u.text)}${u.tags.map(t => `<em class="pf-tag ${/cleared|best/.test(t) ? 'win' : ''}">${esc(t)}</em>`).join('')}</span><span class="pf-tm">${u.ts.slice(11, 16) === '23:59' ? '' : u.ts.slice(11, 16)}</span></div>`;
+  }
+  return `<div class="glass pfeed"><b>Latest updates</b><div class="muted">Everything you've done, newest first</div>${rows}</div>`;
+}
 async function pageProgress() {
-  const [P, GS, GC] = await Promise.all([api(`/api/player/${enc(ME.name)}/progress?days=30`), api(`/api/player/${enc(ME.name)}/games`), api('/api/games')]), T = P.totals;
-  const short = d => d.slice(5);
-  const empty = (msg) => `<div class="empty">${msg}</div>`;
-  $('#p-progress').innerHTML = `<div class="scrollpage"><div class="wrap">
-    <div class="h1">Your progress</div><div class="sub">Everything you log is stored locally in a SQLite database <span class="dbnote">🗄 data/neurotrail.db</span> and charted here.</div>
-    <div class="kpis5">
-      <div class="kpi"><div class="v">${T.quests}</div><div class="l">quests completed</div></div>
-      <div class="kpi"><div class="v">${T.sparks.toLocaleString()}</div><div class="l">sparks earned</div></div>
-      <div class="kpi"><div class="v">${T.streak}</div><div class="l">day streak</div></div>
-      <div class="kpi"><div class="v">${T.active_days}</div><div class="l">active days</div></div>
-      <div class="kpi"><div class="v">${P.speed.length ? Math.max(...P.speed.map(s => s.correct)) : '–'}</div><div class="l">Speed Sprint best</div></div></div>
-    <div class="charts">
-      <div class="glass chartcard"><h4>⚡ Sparks per day</h4><div class="muted">last 30 days</div><canvas id="cSparks"></canvas></div>
-      <div class="glass chartcard"><h4>🗓 Consistency</h4><div class="muted">each square is a day; brighter = more quests</div>
-        <div class="heat">${P.days.map((d, i) => `<div title="${d}: ${P.quests_per_day[i]} quests" style="background:${P.quests_per_day[i] ? `rgba(89,240,255,${.2 + P.quests_per_day[i] / 9 * .8})` : 'rgba(255,255,255,.06)'}"></div>`).join('')}</div></div>
-      <div class="glass chartcard"><h4>🩺 Blood pressure</h4><div class="muted">average of your two readings · SPRINT MIND target 120</div>${P.bp.length ? '<canvas id="cBP"></canvas>' : empty('Log Pressure Point to start your BP trend.')}</div>
-      <div class="glass chartcard"><h4>👟 Steps</h4><div class="muted">UK Biobank doses: 3,826 (HR 0.75) · 9,826 (HR 0.49)</div>${P.steps.length ? '<canvas id="cSteps"></canvas>' : empty('Log Step Street to start your steps chart.')}</div>
-      <div class="glass chartcard"><h4>🌙 Sleep</h4><div class="muted">hours per night · 7–8 h band</div>${P.sleep.length ? '<canvas id="cSleep"></canvas>' : empty('Log Sleep Station to see your sleep.')}</div>
-      <div class="glass chartcard"><h4>⚡ Speed Sprint rounds</h4><div class="muted">correct answers in 90 s (your own trend only)</div>${P.speed.length ? '<canvas id="cSpeed"></canvas>' : empty('Play a Speed Sprint round.')}</div>
-      <div class="glass chartcard"><h4>🎛 Lever score over time</h4><div class="muted">NHANES model re-run on your rolling 7-day values (lower is better)</div>${P.lever.length ? '<canvas id="cLever"></canvas>' : empty('Complete quests to build this history.')}</div>
-      <div class="glass chartcard"><h4>🧠 Quest mix</h4><div class="muted">all-time completions</div>${Object.keys(P.quest_counts).length ? '<canvas id="cMix"></canvas>' : empty('No quests yet.')}</div>
-    </div>
-    <div class="glass chartcard" style="margin-top:16px"><h4>🧩 Brain Gym</h4><div class="muted">every game you've played (stored in game_results)</div>
-      <div class="gymgrid" style="grid-template-columns:repeat(auto-fill,minmax(200px,1fr));margin-top:10px">${GC.games.map(g => { const s = GS[g.id]; return `<a class="qtile" href="${g.id === 'speed' ? '#/sprint' : '#/game/' + g.id}" style="--c:${g.color};display:block">
-        <div style="display:flex;gap:10px;align-items:center"><span style="font-size:22px">${g.icon}</span><b>${g.title}</b></div>
-        <div class="muted" style="margin-top:6px">${s.plays} plays · best ${s.best ?? '–'} ${g.unit}</div></a>`; }).join('')}</div></div>
-    <div class="glass chartcard" style="margin-top:16px"><h4>📜 Activity log</h4><div class="muted">newest first, straight from the database</div>
-      ${P.log.length ? `<table class="t"><tr><th>When</th><th>Quest</th><th>Value</th><th>Sparks</th></tr>${P.log.map(l => `<tr><td>${l.ts.replace('T', ' ')}</td><td>${QMAP[l.quest]?.icon} ${QMAP[l.quest]?.title}</td><td>${l.value ?? ''} ${l.activity ? '· ' + esc(l.activity) : ''}${l.who ? '· ' + esc(l.who) : ''}${l.path ? esc(l.path) : ''}</td><td>+${l.sparks}</td></tr>`).join('')}</table>` : empty('Your log is empty. Play a quest!')}</div>
+  const O = await api(`/api/player/${enc(ME.name)}/overview`), C = O.combined;
+  const missing = O.coverage.filter(c => !c.ok);
+  const change = c => c.from != null && c.to != null && c.unit ? ` <span class="muted">(${pfmt(c.from, c.unit)} → ${pfmt(c.to, c.unit)}${c.unit === 'share' ? '' : ' ' + esc(c.unit)})</span>` : '';
+  let body;
+  if (C.overall == null) {
+    body = `<div class="glass pverdict"><div class="pv-emoji">🌱</div><div><h2>We're still learning your starting point</h2>
+      <p>Play any game 3 times, or add about a month of watch data, and this page draws one line showing how you're doing compared with when you started. Everything you do already shows in <b>Latest updates</b> below.</p>
+      ${C.collecting.length ? `<p class="muted">Collecting now: ${C.collecting.slice(0, 6).map(esc).join(', ')}${C.collecting.length > 6 ? '…' : ''}</p>` : ''}</div></div>`;
+  } else {
+    const [emo, col] = PWORD[C.word];
+    body = `<div class="glass pverdict" style="--c:${col}"><div class="pv-emoji">${emo}</div><div>
+        <h2>Overall, you're doing <span style="color:${col}">${C.word}</span>${C.word === 'about the same' ? ' as' : ' than'} when you started</h2>
+        <p class="muted">Based on ${C.n_measures} things we track from ${esc(C.sources)}.</p></div></div>
+      <div class="glass pchart"><div class="pc-head"><b>Your progress over time</b><label class="pc-tog"><input type="checkbox" id="pAreas"> show each area</label></div>
+        <div class="pc-box"><canvas id="pLine"></canvas></div></div>
+      <div class="pareas">${C.areas.map(a => { const [e, c] = PWORD[a.word] || ['⏳', '#9AA3C7']; return `<div class="parea glass" style="--c:${c}"><span>${AREA_ICON[a.id]}</span><b>${a.name}</b><em>${e} ${a.hint ? esc(a.hint) + ' to compare' : a.word}</em></div>`; }).join('')}</div>
+      ${C.gains.length || C.drops.length ? `<div class="glass pchanges"><b>What changed most</b>
+        ${C.gains.map(c => `<p>⬆️ <b>${esc(c.label)}</b> is better than when you started${change(c)}</p>`).join('')}
+        ${C.drops.map(c => `<p>⬇️ <b>${esc(c.label)}</b> is lower than when you started${change(c)}</p>`).join('')}</div>` : ''}`;
+  }
+  $('#p-progress').innerHTML = `<div class="scrollpage"><div class="wrap pwrap">
+    <div class="h1">Your progress</div>
+    <div class="sub">Everything you do in NeuroTrail, put together and compared with <b>your own</b> starting point.</div>
+    ${body}
+    ${(() => { const T = O.totals, k = [[T.plays, 'game plays', '🧩'], [T.games_tried, 'games tried', '🎮'], [T.levels, 'levels cleared', '🏅'], [T.watch_days, 'days of watch data', '⌚'], [T.voice + T.hands, 'voice & hand checks', '🎙️'], [T.scans, 'scans & recordings', '🧠'], [T.checkins, 'check-ins', '✅']].filter(x => x[0]);
+      return k.length ? `<div class="ptotals">${k.map(([n, l, i]) => `<div><b>${i} ${n}</b><span>${l}</span></div>`).join('')}</div>` : ''; })()}
+    ${feedHTML(O.updates)}
+    ${O.sample_watch ? `<p class="caveat">⌚ Your watch data here is <b>made-up sample data</b>. Remove it on <a href="#/data">My data</a> when you add your own.</p>` : ''}
+    ${missing.length ? `<p class="padd">Add more for a fuller picture: ${missing.map(c => `<a href="${c.link}">${c.icon} ${c.label}</a>`).join(' · ')}</p>` : ''}
+    <details class="phow"><summary>How is this worked out?</summary><ul>
+      <li>Each thing we track (steps, sleep, each game, voice, hands, hearing, MRI) is compared with <b>your own</b> first weeks or first plays, never with other people.</li>
+      <li>Your normal ups and downs are taken into account, so one good or bad day doesn't swing the line.</li>
+      <li>Each area counts equally, so having many games doesn't outweigh your watch.</li>
+      <li>The first plays of each game are skipped: everyone gets better at first just from learning the game.</li>
+      <li>Game levels are never mixed, so moving to a harder level doesn't look like getting worse.</li>
+      <li>This shows change, not a diagnosis. Talk to a doctor about any health worry.</li></ul></details>
   </div></div>`;
-  chart('cSparks', { type: 'bar', data: { labels: P.days.map(short), datasets: [{ label: 'sparks', data: P.sparks_per_day, backgroundColor: 'rgba(255,200,61,.7)', borderRadius: 6 }] }, options: chartOpts({ plugins: { legend: { display: false } } }) });
-  if (P.bp.length) chart('cBP', { type: 'line', data: { labels: P.bp.map(b => short(b.date)), datasets: [{ label: 'systolic', data: P.bp.map(b => b.value), borderColor: '#FF5A6E', backgroundColor: 'rgba(255,90,110,.15)', fill: true, tension: .3 }, { label: 'target 120', data: P.bp.map(() => 120), borderColor: 'rgba(61,220,151,.8)', borderDash: [6, 6], pointRadius: 0 }] }, options: chartOpts() });
-  if (P.steps.length) chart('cSteps', { type: 'bar', data: { labels: P.steps.map(b => short(b.date)), datasets: [{ type: 'bar', label: 'steps', data: P.steps.map(b => b.value), backgroundColor: 'rgba(61,220,151,.7)', borderRadius: 6 }, { type: 'line', label: '3,826', data: P.steps.map(() => 3826), borderColor: '#FFC83D', borderDash: [5, 5], pointRadius: 0 }, { type: 'line', label: '9,826', data: P.steps.map(() => 9826), borderColor: '#59F0FF', borderDash: [5, 5], pointRadius: 0 }] }, options: chartOpts() });
-  if (P.sleep.length) chart('cSleep', { type: 'line', data: { labels: P.sleep.map(b => short(b.date)), datasets: [{ label: 'hours', data: P.sleep.map(b => b.value), borderColor: '#7C8CFF', backgroundColor: 'rgba(124,140,255,.15)', fill: true, tension: .3 }, { label: '7 h', data: P.sleep.map(() => 7), borderColor: 'rgba(255,255,255,.3)', borderDash: [4, 4], pointRadius: 0 }, { label: '8 h', data: P.sleep.map(() => 8), borderColor: 'rgba(255,255,255,.3)', borderDash: [4, 4], pointRadius: 0 }] }, options: chartOpts() });
-  if (P.speed.length) chart('cSpeed', { type: 'line', data: { labels: P.speed.map((_, i) => `#${i + 1}`), datasets: [{ label: 'correct', data: P.speed.map(s => s.correct), borderColor: '#FFC83D', backgroundColor: 'rgba(255,200,61,.15)', fill: true, tension: .3 }] }, options: chartOpts({ plugins: { legend: { display: false } } }) });
-  if (P.lever.length) chart('cLever', { type: 'line', data: { labels: P.lever.map(l => short(l.date)), datasets: [{ label: 'years', data: P.lever.map(l => l.years), borderColor: '#9B7BFF', backgroundColor: 'rgba(155,123,255,.15)', fill: true, tension: .3 }] }, options: chartOpts({ plugins: { legend: { display: false } } }) });
-  if (Object.keys(P.quest_counts).length) chart('cMix', { type: 'doughnut', data: { labels: Object.keys(P.quest_counts), datasets: [{ data: Object.values(P.quest_counts), backgroundColor: Object.keys(P.quest_counts).map(t => QUESTS.find(q => q.title === t)?.color || '#888'), borderWidth: 0 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'right', labels: { color: '#C9D0EE' } } } } });
+  if (C.overall == null) return;
+  const W = C.weeks.filter(w => w.overall != null), lab = W.map(w => new Date(w.week + 'T12:00').toLocaleDateString(undefined, { month: 'short', day: 'numeric' }));
+  const m = Math.max(1, ...W.map(w => Math.abs(w.overall)), ...W.flatMap(w => Object.values(w.areas).map(Math.abs))) * 1.15;
+  const AREA_COL = { movement: '#3DDC97', sleep_heart: '#9B7BFF', thinking: '#FFC83D', speech_hands: '#FF7AC8', hearing: '#59F0FF', brain_scan: '#FF9F43' };
+  const draw = showAreas => chart('pLine', { type: 'line', data: { labels: lab, datasets: [
+      { label: 'Overall', data: W.map(w => w.overall), borderColor: '#EEF1FF', backgroundColor: 'rgba(89,240,255,.12)', fill: { target: { value: 0 }, above: 'rgba(61,220,151,.18)', below: 'rgba(255,159,67,.18)' }, borderWidth: 4, tension: .35, pointRadius: W.length > 20 ? 0 : 3 },
+      { label: 'Your start', data: W.map(() => 0), borderColor: 'rgba(255,255,255,.35)', borderDash: [6, 6], pointRadius: 0, borderWidth: 1.5 },
+      ...(showAreas ? C.areas.map(a => ({ label: a.name, data: W.map(w => w.areas[a.id] ?? null), borderColor: AREA_COL[a.id], borderWidth: 1.5, tension: .35, pointRadius: 0, spanGaps: true })) : [])] },
+    options: chartOpts({ plugins: { legend: { display: showAreas, labels: { color: '#C9D0EE', boxWidth: 12 } }, tooltip: { callbacks: { label: c => c.dataset.label === 'Your start' ? 'Your start' : `${c.dataset.label}: ${c.parsed.y >= 0.15 ? 'better' : c.parsed.y <= -0.15 ? 'lower' : 'about the same'}` } } },
+      scales: { x: { ticks: { color: '#9AA3C7', maxRotation: 0, autoSkip: true }, grid: { display: false } },
+        y: { min: -m, max: m, grid: { color: c => c.tick.value === 0 ? 'rgba(255,255,255,.15)' : 'transparent' }, afterBuildTicks: ax => { ax.ticks = [{ value: -m * .8 }, { value: 0 }, { value: m * .8 }]; },
+          ticks: { color: '#C9D0EE', font: { weight: 600 }, callback: v => v > 0 ? 'Better ↑' : v < 0 ? 'Worse ↓' : 'Your start' } } } }) });
+  draw(false); $('#pAreas').onchange = e => draw(e.target.checked);
 }
 
 // ================================================================ COACH (AI agent)
@@ -585,7 +622,8 @@ async function startAs(n) {
   await boot();
 }
 $('#startBtn').onclick = () => { const n = $('#newName').value.trim(); if (!n) { $('#newName').focus(); return toast('Drop a name first 👆 (or go guest)'); } startAs(n); };
-$('#newName').onkeydown = e => e.key === 'Enter' && $('#startBtn').click();
+// Braces matter: a handler that returns false cancels the key press, which blocked typing.
+$('#newName').onkeydown = e => { if (e.key === 'Enter') $('#startBtn').click(); };
 $('#guestBtn').onclick = async () => { const ps = await api('/api/players').catch(() => []); let i = 1; while (ps.some(p => p.name === `Guest ${i}`)) i++; startAs(`Guest ${i}`); };
 // The start page always comes first. If you've been here before it's one tap to carry on.
 async function showWelcome() {

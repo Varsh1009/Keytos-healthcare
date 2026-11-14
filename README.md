@@ -10,30 +10,28 @@ brain health. NeuroTrail turns the habits with the strongest evidence into a dai
 
 ## Quick start (fresh clone)
 
-All trained models are in the repo, so nothing needs retraining. You only download the public data.
+One command sets everything up: Python environment, requirements, and all the public data.
+No Kaggle or other account needed.
 
 ```bash
-# 1. Python 3.12 and Git installed
+# Python 3.10+ and Git installed
 git clone https://github.com/Varsh1009/Keytos-healthcare.git
 cd Keytos-healthcare
-git checkout brainage-accuracy         # skip once this branch is merged into main
-
-# 2. Python environment
-python -m venv .venv
-.venv\Scripts\activate                 # Mac/Linux: source .venv/bin/activate
-pip install -r requirements.txt
-# optional, NVIDIA GPU: pip install torch --index-url https://download.pytorch.org/whl/cu126
-
-# 3. Free Kaggle API key: kaggle.com > Settings > API > Create New Token,
-#    save kaggle.json in C:\Users\<you>\.kaggle\ (Mac/Linux: ~/.kaggle/)
-
-# 4. Public data: CDC NHANES (direct) + OASIS-1 tables and 436 MRI scans (Kaggle), ~1.6 GB
-python data/download_data.py
-
-# 5. Run
-python web/server.py                   # open http://localhost:8600
-pytest -q                              # optional: 35 tests
+python setup_neurotrail.py             # ~2 GB, 5-10 min. Add --skip-mri to skip the 1.5 GB MRI scans
+.venv/bin/python web/server.py         # Windows: .venv\Scripts\python web\server.py
+# open http://localhost:8600
 ```
+
+What's where:
+
+| | In the repo (comes with `git pull`) | Downloaded by `setup_neurotrail.py` (too big for GitHub) |
+|---|---|---|
+| Models | all trained models (`models/artifacts/`) | |
+| Sample data | made-up 90-day Apple Watch export (`data/samples/`) | 436 real OASIS MRI scans (Kaggle, ~1.5 GB) |
+| Training data | | CDC NHANES 2011-2014, PhysioNet NHANES step counts, OASIS table |
+
+Run it again any time: finished downloads are skipped. Optional NVIDIA GPU:
+`pip install torch --index-url https://download.pytorch.org/whl/cu126`.
 
 - `CERTIFICATE_VERIFY_FAILED` while downloading or installing (antivirus / proxy): `pip install pip-system-certs`, then retry.
 - AI coach: works offline by default; set `ANTHROPIC_API_KEY` for the Claude agent.
@@ -118,9 +116,13 @@ Audio is never stored.
 
 ## Phone & watch import (`neurotrail/wearables.py`)
 
-- **Apple Health** `export.zip` / `export.xml`: daily steps (de-duplicated across iPhone and Watch),
-  sleep (asleep stages only), resting heart rate, heart-rate variability, walking speed.
-- **Any CSV** with `date` plus any of `steps`, `sleep_hours`, `resting_hr`, `hrv_ms`, `walking_speed`.
+- **Apple Health** `export.zip` / `export.xml`: steps (de-duplicated across iPhone and Watch), sleep
+  (asleep stages only), resting heart rate, HRV, walking speed / steadiness / asymmetry, VO₂ max,
+  exercise minutes, daylight, blood oxygen, breathing rate, headphone + noise levels, AirPods hearing tests.
+- **Fitbit** Google Takeout zip; **any CSV / JSON** with `date` plus field names from `wearables.FIELDS`.
+- **Live sync** from the iPhone (Health Auto Export app or an iOS Shortcut) with a per-player token.
+- **No watch?** My data → "Try 90 days of sample Apple Watch data" (made up, clearly labelled, removable).
+- Watch model: `python models/train_wearable.py` (NHANES 2011-2014 wrist tracker + PhysioNet steps, adults 60+).
 - Your 14-day sleep average replaces the sleep answer you gave at sign-up in your lever score.
 
 ## Brain Gym (7 games)

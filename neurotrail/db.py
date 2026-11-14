@@ -12,6 +12,7 @@ Tables
   mri_results    MRI brain-age analyses (scan files are never stored)
   voice_results  voice-check speech measures (audio is never stored)
   wearable_days  daily steps / sleep / heart data imported from a phone or watch
+  sync_tokens    one secret per player so their iPhone can push Health data (live sync)
 """
 from __future__ import annotations
 
@@ -56,6 +57,11 @@ CREATE TABLE IF NOT EXISTS voice_results (
 CREATE TABLE IF NOT EXISTS wearable_days (
   player TEXT NOT NULL, date TEXT NOT NULL, source TEXT NOT NULL, data TEXT NOT NULL,
   PRIMARY KEY(player, date));
+CREATE TABLE IF NOT EXISTS eeg_results (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, player TEXT NOT NULL, source TEXT NOT NULL, metrics TEXT NOT NULL,
+  ts TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS sync_tokens (
+  player TEXT PRIMARY KEY, token TEXT NOT NULL, created_at TEXT NOT NULL, last_sync TEXT);
 CREATE TABLE IF NOT EXISTS plans (
   id INTEGER PRIMARY KEY AUTOINCREMENT, player TEXT NOT NULL, created_at TEXT NOT NULL,
   title TEXT NOT NULL, items TEXT NOT NULL, source TEXT);
@@ -241,7 +247,54 @@ def put_days(player: str, days: dict, source: str) -> int:
     return len(days)
 
 
+def day_sources(player: str) -> set[str]:
+    with conn() as c:
+        return {r["source"] for r in c.execute("SELECT DISTINCT source FROM wearable_days WHERE player=?", (player,))}
+
+
+def delete_days(player: str, source: str) -> int:
+    with conn() as c:
+        return c.execute("DELETE FROM wearable_days WHERE player=? AND source=?", (player, source)).rowcount
+
+
 def days(player: str) -> dict[str, dict]:
     with conn() as c:
         rows = c.execute("SELECT date,data FROM wearable_days WHERE player=? ORDER BY date", (player,)).fetchall()
     return {r["date"]: json.loads(r["data"]) for r in rows}
+
+
+# ------------------------------------------------------------------ live-sync tokens
+def sync_token(player: str, rotate: bool = False) -> dict:
+    import secrets
+    with conn() as c:
+        row = c.execute("SELECT token,created_at,last_sync FROM sync_tokens WHERE player=?", (player,)).fetchone()
+        if row and not rotate:
+            return dict(row)
+        tok = secrets.token_urlsafe(24)
+        c.execute("""INSERT INTO sync_tokens VALUES (?,?,?,NULL) ON CONFLICT(player)
+                     DO UPDATE SET token=excluded.token, created_at=excluded.created_at, last_sync=NULL""",
+                  (player, tok, now()))
+    return {"token": tok, "created_at": now(), "last_sync": None}
+
+
+def check_sync_token(player: str, token: str) -> bool:
+    import hmac
+    with conn() as c:
+        row = c.execute("SELECT token FROM sync_tokens WHERE player=?", (player,)).fetchone()
+        ok = bool(row) and hmac.compare_digest(row["token"], token or "")
+        if ok:
+            c.execute("UPDATE sync_tokens SET last_sync=? WHERE player=?", (now(), player))
+    return ok
+
+
+# ------------------------------------------------------------------ EEG
+def add_eeg(player: str, source: str, metrics: dict) -> None:
+    keep = {k: v for k, v in metrics.items() if k not in ("spectrum", "plain")}
+    with conn() as c:
+        c.execute("INSERT INTO eeg_results(player,source,metrics,ts) VALUES (?,?,?,?)", (player, source, json.dumps(keep), now()))
+
+
+def eegs(player: str) -> list[dict]:
+    with conn() as c:
+        rows = c.execute("SELECT source,metrics,ts FROM eeg_results WHERE player=? ORDER BY id", (player,)).fetchall()
+    return [{"source": r["source"], "ts": r["ts"], **json.loads(r["metrics"])} for r in rows]

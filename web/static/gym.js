@@ -1,4 +1,5 @@
 // Brain Gym (8 games) + MRI page. Uses helpers exposed by app.js on window.NTX.
+import { recordsTabs } from './records.js?v=1';
 const X = () => window.NTX;
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -510,9 +511,8 @@ export async function pageMRI() {
   RUN++;
   const [m, samples] = await Promise.all([X().api('/api/mri/metrics'), X().api('/api/mri/samples')]);
   const cv = m.clinical_validity, tr = m.test_retest;
-  $('#p-mri').innerHTML = `<div class="scrollpage"><div class="wrap">
-    <div class="h1">🩻 MRI brain age</div>
-    <div class="sub">3D convolutional neural networks trained on <b>${m.n_volumes} real MRI scans</b> from Kaggle (OASIS-1, ${m.data.split(':')[0]}), joined to each person's real age and dementia rating.${m.active_model ? ` Active model: <b>${m.active_model === 'ensemble' ? `ensemble of ${Object.entries(m.n_models).map(([k, n]) => `${n} × ${k}`).join(' + ')}` : m.active_model}</b>${m.interval_coverage_95 != null ? `; its 95% intervals contain the true age of ${(m.interval_coverage_95 * 100).toFixed(0)}% of cognitively normal people` : ''}.` : ''}</div>
+  $('#p-mri').innerHTML = `<div class="scrollpage"><div class="wrap">${recordsTabs('mri')}
+    <div class="sub" style="margin-top:14px"><b>MRI brain age.</b> 3D convolutional neural networks trained on <b>${m.n_volumes} real MRI scans</b> from Kaggle (OASIS-1, ${m.data.split(':')[0]}), joined to each person's real age and dementia rating.${m.active_model ? ` Active model: <b>${m.active_model === 'ensemble' ? `ensemble of ${Object.entries(m.n_models).map(([k, n]) => `${n} × ${k}`).join(' + ')}` : m.active_model}</b>${m.interval_coverage_95 != null ? `; its 95% intervals contain the true age of ${(m.interval_coverage_95 * 100).toFixed(0)}% of cognitively normal people` : ''}.` : ''}</div>
     <div class="kpis"><div class="kpi"><div class="v">${m.mae.toFixed(1)} yrs</div><div class="l">MAE on ${m.n_normal} cognitively normal people, 5-fold CV split by subject (r = ${m.r.toFixed(2)}). Volume-only model: ${m.nwbv_model_mae.toFixed(1)}.</div></div>
       <div class="kpi"><div class="v">AUC ${cv.auc.toFixed(2)}</div><div class="l">brain-age gap separates dementia (n=${m.n_dementia}) from age-matched normals · 95% CI ${cv.auc_ci[0].toFixed(2)}–${cv.auc_ci[1].toFixed(2)}</div></div>
       <div class="kpi"><div class="v">ICC ${tr.icc.toFixed(2)}</div><div class="l">${tr.n_pairs} people scanned twice: mean difference ${tr.mean_abs_diff.toFixed(1)} yrs</div></div>
@@ -521,7 +521,8 @@ export async function pageMRI() {
       <div class="glass card">
         <div class="eyebrow">1 · TRY A REAL OASIS SCAN</div>
         <select id="msel" style="margin:10px 0">${samples.map(s => `<option value="${s.file}">${s.ID} · ${s.Age} y · ${s.female ? 'F' : 'M'} · ${s.status}${s.CDR != null ? ` (CDR ${s.CDR})` : ''}</option>`).join('')}</select>
-        <button class="cta" id="mrun" style="width:100%">🧠 Analyze this scan</button>
+        <button class="cta" id="mrun" style="width:100%" ${samples.some(s => s.available) ? '' : 'disabled'}>🧠 Analyze this scan</button>
+        ${samples.some(s => s.available) ? '' : `<p class="caveat">⚠ The sample scans aren't downloaded on this computer yet (about 400 MB). To try them: make a free Kaggle account → Settings → <i>Create New API Token</i> → put the downloaded <code>kaggle.json</code> in <code>~/.kaggle/</code>, then run <code>python data/download_data.py</code> and restart. You can still upload your own scan below.</p>`}
         <div class="eyebrow" style="margin-top:22px">2 · OR UPLOAD YOUR OWN</div>
         <label class="drop" id="drop"><input type="file" id="mfile" accept=".nii,.gz" hidden>
           <div style="font-size:34px">⬆</div><b>Drop a .nii / .nii.gz T1 scan</b><span class="muted">or click to choose a file</span></label>

@@ -13,6 +13,9 @@ Download every real dataset NeuroTrail uses. Nothing here is synthetic.
 3. OASIS-1 real T1 MRI volumes (via Kaggle: ninadaithal/oasis-1-shinohara): 436 skull-stripped,
    MNI 2 mm scans used to train the 3D CNN brain-age model.
 
+4. NHANES 2011-2014 wrist-tracker days (PAXDAY) and step counts from PhysioNet: used to train
+   the watch model (models/train_wearable.py).
+
 Run:  python data/download_data.py
 """
 from __future__ import annotations
@@ -44,6 +47,16 @@ NHANES_FILES = {
     "HDL": "HDL cholesterol lab",
     "AUQ": "audiometry / hearing questionnaire",
     "MCQ": "medical conditions (stroke, heart disease)",
+    "PAXDAY": "wrist accelerometer, one row per day (wear, sleep, MIMS)",
+    "PAXHD": "wrist accelerometer header (device, wear hand)",
+}
+# 4. Steps from the same NHANES wrist trackers (open, no login): PhysioNet, Koffman & Muschelli,
+#    doi:10.13026/d7sw-f662. Minute-level steps (stepcount SSL algorithm) + wake/sleep/non-wear.
+PHYSIONET = "https://physionet.org/files/minute-level-step-count-nhanes/1.0.2/"
+PHYSIONET_FILES = {  # path -> sha256 published in SHA256SUMS.txt
+    "csv/nhanes_1440_scsslsteps.csv.xz": "348d7be60203dbae4f3987358820282b192f596952223c51b1889198c2f7eb86",
+    "csv/nhanes_1440_PAXPREDM.csv.xz": "073f9df54185f411e86a062cabf55b497870e77d85b3d68c697d62491ae122cf",
+    "subject-info.csv": "f3b76a9b163ac5b55f3969c88ccf51fbd004b2c17216f2eebe3d398ad260564e",
 }
 CYCLES = {"G": "2011", "H": "2013"}
 BASE = "https://wwwn.cdc.gov/Nchs/Data/Nhanes/Public/{year}/DataFiles/{stem}_{sfx}.xpt"
@@ -73,6 +86,39 @@ def download_nhanes() -> None:
                 print(f"  MISSING {stem}_{sfx}: HTTP {e.code} (module not released this cycle)")
 
 
+def download_physionet_steps() -> None:
+    import hashlib
+    print("PhysioNet NHANES minute-level step counts (~41 MB)")
+    out = RAW / "physionet_steps"
+    out.mkdir(exist_ok=True)
+    for path, sha in PHYSIONET_FILES.items():
+        dest = out / path.rsplit("/", 1)[-1]
+        fetch(PHYSIONET + path, dest)
+        if hashlib.sha256(dest.read_bytes()).hexdigest() != sha:
+            dest.unlink()
+            raise RuntimeError(f"checksum mismatch for {dest.name}; deleted, run again")
+
+
+def download_eeg_samples() -> None:
+    """Resting, eyes-closed EEG (run 2) from 8 healthy volunteers: PhysioNet EEG Motor Movement/Imagery
+    Dataset (Schalk et al. 2004, doi:10.13026/C28G6P), open access, ~1.3 MB each."""
+    import hashlib
+    print("PhysioNet resting EEG samples (~10 MB)")
+    base = "https://physionet.org/files/eegmmidb/1.0.0/"
+    out = RAW / "eeg_samples"
+    out.mkdir(exist_ok=True)
+    sums = out / "SHA256SUMS.txt"
+    fetch(base + "SHA256SUMS.txt", sums)
+    want = dict(reversed(l.split(maxsplit=1)) for l in sums.read_text().splitlines() if l.strip())
+    for i in range(1, 9):
+        name = f"S{i:03d}/S{i:03d}R02.edf"
+        dest = out / name.split("/")[1]
+        fetch(base + name, dest)
+        if hashlib.sha256(dest.read_bytes()).hexdigest() != want.get(name):
+            dest.unlink()
+            raise RuntimeError(f"checksum mismatch for {dest.name}; deleted, run again")
+
+
 def download_oasis() -> None:
     print("OASIS-1 cross-sectional MRI table (Kaggle jboysen/mri-and-alzheimers)")
     out = RAW / "oasis"
@@ -80,11 +126,7 @@ def download_oasis() -> None:
         print("  have oasis_cross-sectional.csv")
         return
     out.mkdir(exist_ok=True)
-    subprocess.run(
-        ["kaggle", "datasets", "download", "-d", "jboysen/mri-and-alzheimers",
-         "-p", str(out), "--unzip"],
-        check=True,
-    )
+    _kaggle("jboysen/mri-and-alzheimers", out)
 
 
 def download_oasis_mri() -> None:
@@ -94,16 +136,30 @@ def download_oasis_mri() -> None:
         print("  have MRI volumes")
         return
     out.mkdir(exist_ok=True)
-    subprocess.run(["kaggle", "datasets", "download", "-d", "ninadaithal/oasis-1-shinohara",
-                    "-p", str(out), "--unzip"], check=True)
+    _kaggle("ninadaithal/oasis-1-shinohara", out)
+
+
+def _kaggle(slug: str, out: Path) -> None:
+    """Public Kaggle dataset → out. kagglehub needs no Kaggle login; the kaggle CLI (needs a token) is the fallback."""
+    try:
+        import shutil
+        import kagglehub
+        src = Path(kagglehub.dataset_download(slug))
+        shutil.copytree(src, out, dirs_exist_ok=True)
+        shutil.rmtree(src, ignore_errors=True)       # don't keep a second copy in the cache
+    except ImportError:
+        subprocess.run(["kaggle", "datasets", "download", "-d", slug, "-p", str(out), "--unzip"], check=True)
 
 
 if __name__ == "__main__":
     download_nhanes()
+    download_physionet_steps()
+    download_eeg_samples()
     try:
         download_oasis()
-        download_oasis_mri()
-    except Exception as e:  # Kaggle needs ~/.kaggle credentials
+        if "--skip-mri" not in sys.argv:
+            download_oasis_mri()
+    except Exception as e:
         print(f"OASIS download failed: {e}", file=sys.stderr)
         sys.exit(1)
     print("done")
