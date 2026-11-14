@@ -13,15 +13,16 @@ const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
 async function catalog() { if (!CAT) { const c = await X().api('/api/games'); CAT = c.games; BONUS = c.level_up_sparks ?? 10; } return CAT; }
 
-// ============================================================ GAMES HUB: one obvious "Up next", then big cards by skill
+// ============================================================ GAMES HUB: live "Up next", a skills radar, big cards by skill
 const KIND_ICON = { Memory: '🧠', Speed: '⚡', Attention: '🎯', Language: '💬', 'Self-control': '🛑', Reflexes: '👆' };
 const playHref = g => g.id === 'speed' ? '#/sprint' : '#/game/' + g.id;
 const TAG = { speed: 'Match symbols', recall: 'Remember words', fluency: 'Name animals', trails: 'Connect the dots', stroop: 'Tap the ink color',
   corsi: 'Repeat the pattern', reaction: 'Tap on green', readaloud: 'Read out loud', voice: 'Just talk' };
-const GROUPS = [['⚡', 'Speed & reflexes', ['speed', 'reaction']], ['🧠', 'Memory', ['recall', 'corsi']], ['🎯', 'Focus', ['trails', 'stroop']],
-  ['💬', 'Language & voice', ['fluency', 'readaloud', 'voice']]];
+const GROUPS = [['⚡', 'Speed', 'Speed & reflexes', ['speed', 'reaction'], '#FFC83D'], ['🧠', 'Memory', 'Memory', ['recall', 'corsi'], '#B388FF'],
+  ['🎯', 'Focus', 'Focus', ['trails', 'stroop'], '#59F0FF'], ['💬', 'Language', 'Language & voice', ['fluency', 'readaloud', 'voice'], '#3DDC97']];
 const CHECKS = [{ href: '#/hands', icon: '✋', title: 'Hand check', tag: 'Tremor & taps', color: '#FF8FB1', meta: 'camera · 30 s' },
   { href: '#/voice', icon: '🎙️', title: 'Pace & pauses', tag: 'How you speak', color: '#8FD3FF', meta: 'mic · 1 min' }];
+let SKILL_CHART = null;
 
 export async function pageGym(id) {
   RUN++;
@@ -37,27 +38,57 @@ export async function pageGym(id) {
     Object.fromEntries(games.map(x => [x.region, x.color])), g.region, `<span style="color:${g.color}">●</span> ${g.title} · ${Q[g.region].region_name}`, g.region_why);
   light(focus);
 
-  const lv = g => STATS[g.id]?.levels?.level ?? 1;
-  const card = g => { const s = STATS[g.id] || {}; return `<a class="gc ${s.played_today ? 'done' : ''} ${g.id === focus.id ? 'focus' : ''}" href="${playHref(g)}" data-id="${g.id}" style="--c:${g.color}">
+  const L = g => STATS[g.id]?.levels || { level: 1, top: 8, passed: 0 };
+  const prog = g => Math.round(L(g).passed / L(g).top * 100);
+  // skill score = share of levels cleared across that skill's games
+  const skills = GROUPS.map(([ic, short, , ids, col]) => { const gs = ids.filter(i => byId[i]).map(i => byId[i]);
+    return { ic, short, col, pct: gs.length ? Math.round(gs.reduce((n, g) => n + prog(g), 0) / gs.length) : 0, today: gs.filter(g => STATS[g.id]?.played_today).length, n: gs.length }; });
+  let k = 0;
+  const card = g => { const s = STATS[g.id] || {}, lv = L(g); return `<a class="gc ${s.played_today ? 'done' : ''} ${g.id === focus.id ? 'focus' : ''}" href="${playHref(g)}" data-id="${g.id}" style="--c:${g.color};--i:${k++}">
       <span class="gc-ico">${g.icon}</span><b>${esc(g.title)}</b><small>${TAG[g.id] || esc(g.domain)}</small>
-      <span class="gc-meta">Lv ${lv(g)}</span><span class="gc-badge">${s.played_today ? '✓' : '+15⚡'}</span></a>`; };
+      <div class="gc-lv"><span>Lv ${lv.level}<i>/${lv.top}</i></span><div class="gc-bar"><i style="width:${prog(g)}%"></i></div></div>
+      <span class="gc-badge">${s.played_today ? '✓' : '+15⚡'}</span></a>`; };
   const pct = Math.round(played / games.length * 100);
-  $('#p-gym').innerHTML = `<div class="play"><div class="left glass gh">
+  const anyProgress = skills.some(s => s.pct > 0);
+  $('#p-gym').innerHTML = `<div class="play gh-wide"><div class="left glass gh">
     <div class="gh-top"><div><h1>🎮 Games</h1><small>Tap a game · about 1 minute each</small></div>
       <div class="gh-ring" style="--p:${pct}"><b>${played}/${games.length}</b><small>today</small></div></div>
     ${next ? `<a class="gh-next" href="${playHref(next)}" style="--c:${next.color}" data-id="${next.id}">
-      <span class="gc-ico big">${next.icon}</span><div><small>UP NEXT</small><b>${esc(next.title)}</b><span>${TAG[next.id] || ''} · Level ${lv(next)}</span></div>
-      <span class="gh-play">▶ Play</span></a>`
+      <div class="gh-next-info"><small>UP NEXT</small><b>${next.icon} ${esc(next.title)}</b><span>${TAG[next.id] || ''} · Level ${L(next).level}</span>
+        <span class="gh-play">▶ Play</span></div>
+      <div class="demo gh-demo" id="ghDemo"></div></a>`
       : `<div class="gh-done">🎉 All ${games.length} played today. Replay any game to beat your best.</div>`}
-    ${GROUPS.map(([ic, name, ids]) => `<div class="gh-sec"><h3>${ic} ${name}</h3><div class="gh-grid">${ids.filter(i => byId[i]).map(i => card(byId[i])).join('')}</div></div>`).join('')}
-    <div class="gh-sec"><h3>🩺 Health checks</h3><div class="gh-grid">${CHECKS.map(c => `<a class="gc" href="${c.href}" style="--c:${c.color}">
+    <div class="gh-skills glass-in"><div class="gh-radar"><canvas id="skillRadar"></canvas>${anyProgress ? '' : '<span class="gh-radar-empty">Play to grow<br>your radar</span>'}</div>
+      <div class="gh-skill-list"><h3>Your brain skills</h3>${skills.map(s => `<div class="gh-skill" style="--c:${s.col}"><span>${s.ic} ${s.short}</span>
+        <div class="gc-bar"><i style="width:${s.pct}%"></i></div><b>${s.pct}%</b></div>`).join('')}<small>levels cleared in each skill</small></div></div>
+    ${GROUPS.map(([ic, , name, ids], gi) => `<div class="gh-sec"><h3>${ic} ${name}<span>${skills[gi].today}/${skills[gi].n} today</span></h3>
+      <div class="gh-grid">${ids.filter(i => byId[i]).map(i => card(byId[i])).join('')}</div></div>`).join('')}
+    <div class="gh-sec"><h3>🩺 Health checks</h3><div class="gh-grid">${CHECKS.map(c => `<a class="gc" href="${c.href}" style="--c:${c.color};--i:${k++}">
       <span class="gc-ico">${c.icon}</span><b>${c.title}</b><small>${c.tag}</small><span class="gc-meta">${c.meta}</span></a>`).join('')}</div></div>
   </div><div></div></div>`;
+  if (next) startDemo($('#ghDemo'), next.id);
+  drawSkills(skills);
   // hover or focus a card → the brain shows the area that game trains
   let t = null, shown = focus.id;
   $$('#p-gym [data-id]').forEach(a => {
     const show = () => { clearTimeout(t); t = setTimeout(() => { if (shown !== a.dataset.id) { shown = a.dataset.id; light(byId[shown]); } }, 180); };
     a.addEventListener('mouseenter', show); a.addEventListener('focus', show);
+  });
+}
+function drawSkills(skills) {
+  const el = $('#skillRadar'); if (!el || !window.Chart) return;
+  SKILL_CHART?.destroy();
+  SKILL_CHART = new Chart(el, {
+    type: 'radar',
+    data: { labels: skills.map(s => s.short), datasets: [{ data: skills.map(s => s.pct), borderColor: '#59F0FF', borderWidth: 2,
+      pointBackgroundColor: skills.map(s => s.col), pointBorderColor: '#fff', pointRadius: 4,
+      backgroundColor: c => { const { ctx, chartArea: A } = c.chart; if (!A) return 'rgba(89,240,255,.2)';
+        const g = ctx.createRadialGradient((A.left + A.right) / 2, (A.top + A.bottom) / 2, 0, (A.left + A.right) / 2, (A.top + A.bottom) / 2, (A.right - A.left) / 2);
+        g.addColorStop(0, 'rgba(155,123,255,.15)'); g.addColorStop(1, 'rgba(89,240,255,.45)'); return g; } }] },
+    options: { responsive: true, maintainAspectRatio: false, animation: { duration: 900, easing: 'easeOutBack' }, layout: { padding: 4 },
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: it => `${skills[it.dataIndex].pct}% of levels cleared` } } },
+      scales: { r: { min: 0, max: 100, ticks: { display: false, stepSize: 25 }, grid: { color: 'rgba(255,255,255,.08)' }, angleLines: { color: 'rgba(255,255,255,.08)' },
+        pointLabels: { color: skills.map(s => s.col), font: { size: 11, weight: '700' }, padding: 4 } } } },
   });
 }
 function spark(h, better) {
