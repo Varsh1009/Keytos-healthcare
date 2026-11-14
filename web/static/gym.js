@@ -1,5 +1,5 @@
 // Brain Gym (8 games) + MRI page. Uses helpers exposed by app.js on window.NTX.
-import { recordsTabs } from './records.js?v=1';
+import { recordsTabs } from './records.js?v=4';
 const X = () => window.NTX;
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
