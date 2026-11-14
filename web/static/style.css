@@ -496,3 +496,22 @@ ul.plain { padding-left: 18px; line-height: 1.6; color: #DDE2FA; font-size: 14px
 @media (max-width: 700px) { .hx-title { font-size: 32px; } .hx-move { padding: 16px 6px 12px; } .hx-move b { font-size: 14px; }
   .hx-demo { width: 48px; height: 48px; font-size: 42px; line-height: 48px; } .hx-tile b { font-size: 26px; } .hx-tile em { font-size: 12px; } }
 @media (max-width: 420px) { .hx-tiles { grid-template-columns: 1fr; } }
+
+/* ---------------------------------------------------------------- start page */
+.wl { text-align: center; padding: 34px 30px 26px; }
+.wl-logo { font: 700 20px 'Space Grotesk'; margin-bottom: 18px; }
+.wl-logo b { color: var(--cyan); }
+.wl h1 { font-size: 42px; margin: 0 0 10px; }
+.wl-sub { font-size: 18px; margin: 0 0 22px !important; }
+.wl-continue { width: 100%; font-size: 18px; padding: 18px; }
+.wl-continue b { font-weight: 800; }
+.wl-or { color: var(--mute); font-size: 13px; margin: 12px 0 10px; }
+.wl-row { display: flex; gap: 10px; }
+.wl-row input { flex: 1; font-size: 17px; padding: 14px 16px; }
+.wl-link { margin-top: 12px; background: none; border: 0; color: var(--mute); font-size: 14px; text-decoration: underline; cursor: pointer; }
+.wl-link:hover { color: var(--ink); }
+.wl-others { margin-top: 14px; color: var(--mute); font-size: 13px; }
+.wl-others summary { cursor: pointer; list-style: none; }
+.wl-others summary::after { content: ' ▾'; }
+.wl-others #existing { justify-content: center; }
+@media (max-width: 520px) { .wl h1 { font-size: 32px; } .wl-row { flex-direction: column; } }
