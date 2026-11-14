@@ -688,13 +688,20 @@ $('#playerBtn').onclick = async (e) => {
   $('#addP').onclick = () => { $('#playerBtn').classList.remove('open'); localStorage.removeItem('nt_player'); showWelcome(); };
 };
 async function startAs(n) {
-  try { const p = await api('/api/players', { name: n }); localStorage.setItem('nt_player', p.name); closeOv('welcome'); await boot(); }
-  catch (e) { toast(`Couldn't reach the NeuroTrail server (${e.message}). Start it with: python3 web/server.py`, 6000); }
+  let p;
+  try { p = await api('/api/players', { name: n }); }
+  catch (e) {
+    // a network failure is a TypeError; anything else is the server explaining what's wrong with the name
+    return toast(e instanceof TypeError ? 'Couldn\'t reach the NeuroTrail server. Start it with: python3 web/server.py' : (typeof e.message === 'string' && !e.message.includes('[object') ? e.message : 'That name didn\'t work. Try another.'), 6000);
+  }
+  localStorage.setItem('nt_player', p.name); closeOv('welcome');
+  if (p.name !== n.trim()) toast(`You're in as ${p.name}`);
+  await boot();
 }
 $('#startBtn').onclick = () => { const n = $('#newName').value.trim(); if (!n) { $('#newName').focus(); return toast('Type your name, or use Play as Guest'); } startAs(n); };
 $('#newName').onkeydown = e => e.key === 'Enter' && $('#startBtn').click();
 $('#guestBtn').onclick = async () => { const ps = await api('/api/players').catch(() => []); let i = 1; while (ps.some(p => p.name === `Guest ${i}`)) i++; startAs(`Guest ${i}`); };
-$('#promptBtn').onclick = () => { const n = (prompt('Your name') || '').trim().slice(0, 24); if (n) startAs(n); };
+$('#promptBtn').onclick = () => { const n = (prompt('Your name') || '').trim(); if (n) startAs(n); };
 async function showWelcome() {
   openOv('welcome'); setTimeout(() => $('#newName').focus(), 50);
   const ps = await api('/api/players').catch(() => []);

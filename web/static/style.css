@@ -143,7 +143,8 @@ details.ev a { color: var(--cyan); }
 .cta:hover { transform: translateY(-2px); box-shadow: 0 0 46px rgba(89,240,255,.6); }
 .ghost { padding: 14px 18px; border-radius: 14px; background: transparent; color: var(--mute); border: 1px solid var(--line); font-weight: 600; }
 .close { position: absolute; top: 16px; right: 16px; width: 38px; height: 38px; border-radius: 12px; border: 1px solid var(--line); background: rgba(255,255,255,.05); color: var(--ink); font-size: 16px; z-index: 2; }
-#existing { margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap; }
+#existing { margin-top: 14px; display: flex; gap: 8px; flex-wrap: wrap; max-height: 150px; overflow-y: auto; }   /* a long player list scrolls; the name box never leaves the screen */
+.hero-modal { max-height: calc(100vh - 32px); overflow-y: auto; }
 .dots { display: flex; gap: 6px; margin-bottom: 18px; }
 .dots i { flex: 1; height: 4px; border-radius: 4px; background: rgba(255,255,255,.1); transition: .4s; }
 .dots i.on { background: linear-gradient(90deg, var(--cyan), var(--violet)); box-shadow: 0 0 10px var(--cyan); }

@@ -158,12 +158,25 @@ def players() -> list[dict]:
 
 
 class NewPlayer(BaseModel):
-    name: str = Field(min_length=1, max_length=24)
+    name: str = Field(min_length=1, max_length=200)
+
+
+NAME_MAX = 40
+
+
+def clean_name(raw: str) -> str:
+    """Any name works: accents, Chinese, emoji, punctuation. We only tidy what would break the app:
+    extra spaces are collapsed, "/" becomes a look-alike slash (a real one would split the page address),
+    and names made only of dots (which browsers treat as "go up a folder") are refused."""
+    name = " ".join(raw.split()).replace("/", "\u2215")[:NAME_MAX].strip()
+    if not name or not name.strip("."):
+        raise HTTPException(422, "Pick a name with at least one letter or number.")
+    return name
 
 
 @app.post("/api/players")
 def add_player(body: NewPlayer) -> dict:
-    name = body.name.strip()
+    name = clean_name(body.name)
     p = Player.load(name) or Player.create(name)
     return snapshot(p)
 
