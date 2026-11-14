@@ -1,4 +1,5 @@
 // Friendly Home, Voice check and My Data pages. Helpers come from app.js via window.NTX.
+import * as RA from './readalong.js?v=1';
 const X = () => window.NTX;
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -22,7 +23,6 @@ export function plainLever(L) {
   const how = `How we know: in a CDC health survey of ${L.n.toLocaleString()} adults aged 60+, people with habits like yours scored on a thinking-speed test the way people ${amt ? amt + (L.years > 0 ? ' older' : ' younger') : 'your age'} usually do. It's a pattern in real data, not a diagnosis.`;
   return { head, why, how, top };
 }
-const QUEST_FOR = { 'Blood pressure': 'bp', 'Mood (PHQ-9)': 'joy', 'Sleep (distance from 7 h)': 'sleep', 'Smoking': 'smoke', 'Diabetes': 'labs' };
 
 // ------------------------------------------------------------ cute brain buddy
 export const buddy = (mood = 'happy', size = 120) => `<svg class="buddy" width="${size}" height="${size}" viewBox="0 0 120 120">
@@ -40,28 +40,27 @@ function greeting() { const h = new Date().getHours(); return h < 12 ? 'Good mor
 // ------------------------------------------------------------ HOME
 export async function pageHome() {
   const M = me(), L = M.lever, P = plainLever(L);
-  const [GS, games, VH] = await Promise.all([X().api(`/api/player/${enc(M.name)}/games`), X().api('/api/games'), X().api(`/api/player/${enc(M.name)}/voice`)]);
-  // Today's plan: 1) the mission for your biggest lever, 2) voice check, 3) the game you've played least
-  const q1 = (P.top && QUEST_FOR[P.top.label]) || Object.keys(M.trail).find(k => M.trail[k] !== 'done') || 'steps';
-  const Q = X().QMAP(), q = Q[q1];
-  const voiceDone = VH.history.some(v => v.date === new Date().toISOString().slice(0, 10)) || GS.voice?.played_today;
-  const g = games.games.filter(x => x.id !== 'speed').sort((a, b) => (GS[a.id]?.plays ?? 0) - (GS[b.id]?.plays ?? 0))[0];
-  const plan = [
-    { n: 1, icon: q.icon, color: q.color, title: q.title, why: P.top ? `Your biggest lever is ${P.top.label.toLowerCase()}.` : q.steps[0], time: '5 min', href: `#/play/${q.id}`, done: M.trail[q.id] === 'done' },
-    { n: 2, icon: '🎙️', color: '#59F0FF', title: 'Voice check', why: 'Read a short paragraph out loud. We measure your speaking pace and pauses.', time: '1 min', href: '#/voice', done: voiceDone },
-    { n: 3, icon: g.icon, color: g.color, title: g.title, why: `${g.domain}: ${g.how}`, time: '2 min', href: `#/game/${g.id}`, done: GS[g.id]?.played_today },
-  ];
-  const done = plan.filter(p => p.done).length, next = plan.find(p => !p.done);
+  const [GS, games] = await Promise.all([X().api(`/api/player/${enc(M.name)}/games`), X().api('/api/games')]);
+  // Today's plan: 1) Speed Sprint (the one game with trial evidence), 2) Read Aloud, 3) the game you've played least
+  const G = Object.fromEntries(games.games.map(x => [x.id, x]));
+  const g = games.games.filter(x => x.id !== 'speed' && x.id !== 'readaloud').sort((a, b) => (GS[a.id]?.plays ?? 0) - (GS[b.id]?.plays ?? 0))[0];
+  const item = (x, why, time, href) => x && { icon: x.icon, color: x.color, title: x.title, why, time, href, done: GS[x.id]?.played_today };
+  const plan = [   // skip any game this server doesn't have (e.g. an older server still running), never crash
+    item(G.speed, 'Match symbols to numbers, fast. Play twice for the booster round.', '1 min', '#/sprint'),
+    item(G.readaloud, 'Read a short passage out loud. Each word lights up as you say it.', '1 min', '#/game/readaloud'),
+    g && item(g, `${g.domain}: ${g.how}`, '2 min', `#/game/${g.id}`),
+  ].filter(Boolean).map((p, i) => ({ ...p, n: i + 1 }));
+  const done = plan.filter(p => p.done).length, next = plan.find(p => !p.done), N = plan.length;
   const Lv = M.level, frac = Lv.next_at ? (M.sparks - Lv.floor) / (Lv.next_at - Lv.floor) : 1;
-  const mood = done === 3 ? 'wow' : 'happy';
+  const mood = done === N ? 'wow' : 'happy';
   $('#p-home').innerHTML = `<div class="scrollpage"><div class="home2">
     <section class="hello glass">
       <div class="buddywrap">${buddy(mood, 132)}</div>
       <div><div class="eyebrow">${greeting().toUpperCase()}</div><div class="hi">Hi ${esc(M.name)}!</div>
-        <div class="bubble2">${done === 3 ? "You did everything today. Your brain buddy is proud! 🎉 Come back tomorrow." : done ? `Nice, ${done} of 3 done! Next: <b>${next.title}</b>.` : `Here's your plan for today: <b>3 small things</b>, about 8 minutes. Tap the first one to start.`}</div></div>
+        <div class="bubble2">${done === N ? "You did everything today. Your brain buddy is proud! 🎉 Come back tomorrow." : done ? `Nice, ${done} of ${N} done! Next: <b>${next.title}</b>.` : `Here's your plan for today: <b>${N} quick games</b>, about 5 minutes. Tap the first one to start.`}</div></div>
     </section>
 
-    <section class="glass plan"><div class="sec-h"><span>📋 Today's plan</span><span class="muted">${done}/3 done</span></div>
+    <section class="glass plan"><div class="sec-h"><span>📋 Today's plan</span><span class="muted">${done}/${N} done</span></div>
       ${plan.map(p => `<a class="pcard ${p.done ? 'done' : ''} ${next === p ? 'next' : ''}" href="${p.href}" style="--c:${p.color}">
         <div class="pnum">${p.done ? '✓' : p.n}</div><div class="picon">${p.icon}</div>
         <div class="ptxt"><b>${p.title}</b><span>${p.why}</span></div>
@@ -70,7 +69,7 @@ export async function pageHome() {
 
     <section class="glass insight"><div class="sec-h"><span>🧠 What your habits say</span><a href="#/levers" class="muted">try "what if" →</a></div>
       <div class="ins-head">${P.head}</div>
-      ${P.why ? `<div class="ins-why">${P.why} ${P.top ? `<a href="#/play/${QUEST_FOR[P.top.label] || 'bp'}">Work on it →</a>` : ''}</div>` : ''}
+      ${P.why ? `<div class="ins-why">${P.why} ${P.top ? `<a href="#/levers">See what changes it →</a>` : ''}</div>` : ''}
       <div class="meterbar"><div class="mtrack"><i style="left:${Math.max(2, Math.min(98, 50 + L.years / 4 * 50))}%"></i></div>
         <div class="mlabels"><span>younger</span><span>on target</span><span>older</span></div></div>
       <details class="ev"><summary>What does this mean?</summary><div class="evb"><p>${P.how}</p><p>The range is ${X().fmt(L.ci[0])} to ${X().fmt(L.ci[1])} years (95% confidence). Only habits with a clear link in the data count.</p></div></details>
@@ -82,7 +81,7 @@ export async function pageHome() {
       <div class="glass st"><div class="stv">Lv ${Lv.index}</div><div class="stl">${Lv.name}${Lv.next_at ? ` · ${Lv.next_at - M.sparks} to go` : ''}</div><div class="lvbar"><i style="width:${frac * 100}%"></i></div></div>
     </section>
 
-    <section class="explore">${[['✅', 'All missions', '#/play', 'Every daily mission'], ['🧩', 'Games', '#/gym', '7 brain games'], ['🎙️', 'Voice', '#/voice', 'How you speak'], ['📱', 'My data', '#/data', 'Watch, MRI, what-ifs'], ['🤖', 'Coach', '#/coach', 'Ask anything'], ['📈', 'Progress', '#/progress', 'Your charts']]
+    <section class="explore">${[['🧩', 'Games', '#/gym', `${games.games.length} brain games`], ['🎙️', 'Voice', '#/voice', 'How you speak'], ['📱', 'My data', '#/data', 'Watch, MRI, what-ifs'], ['🤖', 'Coach', '#/coach', 'Ask anything'], ['📈', 'Progress', '#/progress', 'Your charts']]
       .map(([i, t, h, s]) => `<a class="tile glass" href="${h}"><span>${i}</span><b>${t}</b><small>${s}</small></a>`).join('')}</section>
   </div></div>`;
 }
@@ -97,25 +96,31 @@ export async function pageVoice() {
     <div class="cr-grid">
       <div class="glass card">
         <div class="chips" style="margin-bottom:12px"><button class="chip on" data-t="reading">📖 Read aloud</button><button class="chip" data-t="free">💬 Tell a story</button></div>
-        <div class="vprompt" id="vprompt">${esc(T.reading)}</div>
+        <div class="vprompt" id="vprompt">${RA.spans(T.reading)}</div>
         <div class="recwrap"><button class="recbtn" id="rec"><span>🎙️</span></button><canvas id="wave" width="600" height="80"></canvas><div class="muted" id="rstat">Tap the mic, read the text at your normal pace, then tap again to stop.</div></div>
         <p class="muted">Why: in a 2018 study, people with early memory problems spoke more slowly and paused more than healthy peers (Tóth et al., <a href="${T.evidence}" target="_blank" style="color:var(--cyan)">source ↗</a>). Here you only compare with <b>yourself</b> over time. It's not a diagnosis.</p>
-        <p class="muted">Mic not working in this window? Open <b>http://localhost:8600/#/voice</b> in Chrome.</p>
+        <p class="muted">While you read, each word lights up as it's heard (your browser's speech recognition; in Chrome that runs on Google's servers). Mic not working in this window? Open <b>http://localhost:8600/#/voice</b> in Chrome.</p>
+        <a class="ghost" href="#/game/readaloud" style="text-decoration:none;display:inline-block">📖 Make it a game: Read Aloud levels →</a>
       </div>
       <div class="glass card" id="vout">${VH.history.length ? '' : '<div class="empty">Your results show up here after your first recording.</div>'}</div>
     </div></div></div>`;
   let task = 'reading';
-  $$('#p-voice [data-t]').forEach(b => b.onclick = () => { task = b.dataset.t; $$('#p-voice [data-t]').forEach(x => x.classList.toggle('on', x === b)); $('#vprompt').textContent = task === 'reading' ? T.reading : T.free; });
-  $('#rec').onclick = () => REC ? stopRec(task) : startRec();
+  $$('#p-voice [data-t]').forEach(b => b.onclick = () => { task = b.dataset.t; $$('#p-voice [data-t]').forEach(x => x.classList.toggle('on', x === b)); if (task === 'reading') $('#vprompt').innerHTML = RA.spans(T.reading); else $('#vprompt').textContent = T.free; });
+  $('#rec').onclick = () => REC ? stopRec(task) : startRec(task);
   if (VH.history.length) renderVoiceHistory(VH.history.map(v => ({ ts: v.ts, task: v.task, ...v.metrics })));
 }
-async function startRec() {
+async function startRec(task) {
   let stream;
   try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false } }); }
   catch (e) { X().toast('Microphone blocked: allow mic access (or open the app in Chrome).', 5000); return; }
   const ctx = new AudioContext(), src = ctx.createMediaStreamSource(stream), proc = ctx.createScriptProcessor(4096, 1, 1), chunks = [];
-  const SR = window.SpeechRecognition || window.webkitSpeechRecognition; let words = 0, sr = null;
-  if (SR) { try { sr = new SR(); sr.continuous = true; sr.onresult = e => { words = 0; for (const r of e.results) words += r[0].transcript.trim().split(/\s+/).filter(Boolean).length; }; sr.start(); } catch { sr = null; } }
+  // Live transcript: counts words (story mode) and lights up each word of the passage as it's read.
+  let words = 0, sr = null;
+  if (RA.supported()) {
+    const box = $('#vprompt'), passage = task === 'reading' ? RA.wordsOf(box.textContent) : null; let A = null;
+    if (passage) { box.innerHTML = RA.spans(box.textContent); A = RA.align(passage, ''); RA.paint(box, A); }
+    try { sr = RA.listen(text => { words = RA.wordsOf(text).length; if (passage) { A = RA.align(passage, text, A); RA.paint(box, A); } }); } catch { sr = null; }
+  }
   const cv = $('#wave'), g = cv.getContext('2d'), t0 = performance.now();
   proc.onaudioprocess = e => { const d = new Float32Array(e.inputBuffer.getChannelData(0)); chunks.push(d);
     g.fillStyle = 'rgba(10,14,40,.35)'; g.fillRect(0, 0, cv.width, cv.height); g.strokeStyle = '#59F0FF'; g.beginPath();
@@ -190,7 +195,7 @@ export async function pageData() {
     <div class="explore" style="margin-top:16px">
       <a class="tile glass" href="#/mri"><span>🩻</span><b>MRI brain age</b><small>Upload a scan or try a real one</small></a>
       <a class="tile glass" href="#/levers"><span>🎛</span><b>What if…</b><small>Move sliders, see the effect</small></a>
-      <a class="tile glass" href="#/progress"><span>📈</span><b>All my charts</b><small>Missions, games, trends</small></a></div>
+      <a class="tile glass" href="#/progress"><span>📈</span><b>All my charts</b><small>Games, voice, trends</small></a></div>
   </div></div>`;
   if (days.length) X().chart('wch', { type: 'bar', data: { labels: days.map(d => d[0].slice(5)), datasets: [{ label: 'steps', data: days.map(d => d[1].steps ?? null), backgroundColor: 'rgba(61,220,151,.7)', borderRadius: 4, yAxisID: 'y' }, { type: 'line', label: 'sleep (h)', data: days.map(d => d[1].sleep_hours ?? null), borderColor: '#7C8CFF', yAxisID: 'y1', tension: .3, spanGaps: true }] }, options: X().chartOpts({ scales: { y: { ticks: { color: '#9AA3C7' } }, y1: { position: 'right', ticks: { color: '#9AA3C7' }, grid: { display: false } }, x: { ticks: { color: '#9AA3C7' } } } }) });
   const up = async f => { $('#wmsg').innerHTML = '<p class="muted">Reading your file… (big Apple exports can take a minute)</p>';

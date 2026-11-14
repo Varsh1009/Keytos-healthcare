@@ -52,13 +52,14 @@ def get(name: str) -> Player:
 
 def snapshot(p: Player) -> dict:
     rounds = db.rounds(p.name)
+    sp = gym.speed_summary(rounds)
     return {
         "name": p.name, "onboarded": p.onboarded, "profile": p.profile(), "sparks": p.sparks,
         "level": p.level(), "streak": p.streak(), "week": p.week(), "trail": p.trail_status(),
         "steps": {q.id: p.steps_today(q.id) for q in p.active_quests()},
         "lever": scoring.lever_age(p.profile()) if p.onboarded else None,
         "support": p.phq9 >= 10 or p.phq_item9 > 0,
-        "best_speed": max((r["correct"] for r in rounds), default=None),
+        "best_speed": sp["best"], "speed": sp,
         "rounds_today": sum(r["date"] == today() for r in rounds),
     }
 
@@ -185,16 +186,29 @@ class SpeedRound(BaseModel):
 
 @app.post("/api/player/{name}/speed")
 def speed_round(name: str, body: SpeedRound) -> dict:
-    """Record a round. Round 1 ticks steps 1-2; a second round today ticks the booster step."""
+    """Record a 15-second round at the player's current level (the server decides the level, not the
+    browser). Round 1 ticks steps 1-2; a second round today ticks the booster step."""
     p = get(name)
-    db.add_round(p.name, today(), body.correct, body.wrong, body.best_combo)
+    before = gym.speed_summary(db.rounds(p.name))
+    level = before["level"]
+    db.add_round(p.name, today(), body.correct, body.wrong, body.best_combo, level)
     n = sum(r["date"] == today() for r in db.rounds(p.name))
     p.set_step("speed", 0, True)
     p.set_step("speed", 1, True)
     if n >= 2:
         p.set_step("speed", 2, True)
     snap = snapshot(p)
-    snap["history"] = [r["correct"] for r in db.rounds(p.name)][-30:]
+    snap["history"] = [r["correct"] for r in db.rounds(p.name) if r["level"]][-30:]
+    passed = gym.speed_passed({"level": level, "correct": body.correct, "wrong": body.wrong})
+    new_clear = passed and level > before["passed"]
+    bonus = level_up_bonus(p, "speed", level) if new_clear else 0
+    if bonus:
+        snap = snapshot(p) | {"history": snap["history"]}
+    snap["round"] = {"level": level, "target": gym.SPEED_LEVELS[level - 1]["target"], "passed": passed,
+                     "unlocked": snap["speed"]["level"] if snap["speed"]["level"] > level else None,
+                     "new_clear": new_clear}
+    snap["level_bonus"] = bonus
+    snap["leaderboard"] = leaderboard("speed", p.name)
     return snap
 
 
@@ -227,7 +241,7 @@ def progress(name: str, days: int = 30) -> dict:
         "sparks_per_day": [sparks_day.get(d, 0) for d in span],
         "quest_counts": Counter(QUEST_BY_ID[l["quest"]].title for l in p.logs),
         "bp": series("bp"), "steps": series("steps"), "sleep": series("sleep"), "joy": series("joy"),
-        "speed": db.rounds(p.name), "lever": lever_hist,
+        "speed": [r for r in db.rounds(p.name) if r["level"]], "lever": lever_hist,
         "totals": {"quests": len(p.logs), "sparks": p.sparks, "streak": p.streak(),
                    "active_days": len({l["date"] for l in p.logs})},
         "log": list(reversed(p.logs))[:40],
@@ -300,13 +314,40 @@ def science() -> dict:
 # ====================================================================== Brain Gym
 @app.get("/api/games")
 def games_catalog() -> dict:
-    return {"games": gym.GAMES, "sparks": gym.GAME_SPARKS}
+    return {"games": gym.GAMES, "sparks": gym.GAME_SPARKS, "level_up_sparks": gym.LEVEL_UP_SPARKS}
 
 
 @app.get("/api/games/recall-words")
-def recall_words() -> dict:
-    words = random.choice(gym.WORD_LISTS)
-    return {"words": words, "distractors": random.sample(gym.DISTRACTORS, 10)}
+def recall_words(n: int | None = None) -> dict:
+    """Classic test: one 10-word list + 10 distractors. Level mode (?n=4): n words + n look-alikes."""
+    if n is None:
+        return {"words": random.choice(gym.WORD_LISTS), "distractors": random.sample(gym.DISTRACTORS, 10)}
+    pool = sorted({w for lst in gym.WORD_LISTS for w in lst} | set(gym.DISTRACTORS))
+    pick = random.sample(pool, 2 * max(1, min(n, 20)))
+    return {"words": pick[:len(pick) // 2], "distractors": pick[len(pick) // 2:]}
+
+
+@app.get("/api/games/read-passage")
+def read_passage(level: int = 1) -> dict:
+    """Read Aloud: a random passage at least as long as this level asks for."""
+    return gym.read_passage(level)
+
+
+@app.post("/api/games/voice-analyze")
+async def voice_analyze(file: UploadFile = File(...)) -> dict:
+    """Voice Check game: measure speech timing in a short WAV (same analysis as the Voice page).
+    Nothing is stored here; the game saves its score through /api/player/{name}/game."""
+    data = await file.read()
+    if len(data) > 8_000_000:
+        raise HTTPException(413, "recording too long")
+    try:
+        x, sr = vox.load_wav(data)
+        m = vox.analyze(x, sr)
+    except ValueError as e:
+        raise HTTPException(422, str(e))
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(400, f"Couldn't read the recording: {e}")
+    return {"metrics": m, "plain": vox.plain_summary(m), "flow": round((1 - m["silent_pause_ratio"]) * 100)}
 
 
 class FluencyIn(BaseModel):
@@ -318,6 +359,23 @@ def fluency_score(body: FluencyIn) -> dict:
     return gym.score_fluency(body.entries)
 
 
+@app.post("/api/games/fluency-audio")
+def fluency_audio(file: UploadFile = File(...)) -> dict:
+    """Animal Naming by voice: the browser uploads a WAV and a Whisper model (neurotrail/speech.py) transcribes
+    it on the server, which hears far more words than the browser's built-in recognizer."""
+    try:
+        from neurotrail import speech
+    except ImportError:
+        raise HTTPException(503, "speech model not installed (pip install faster-whisper)")
+    if not speech.available():
+        raise HTTPException(503, "speech model not installed (pip install faster-whisper)")
+    data = file.file.read()
+    if len(data) > 8_000_000:
+        raise HTTPException(413, "recording too long")
+    t = speech.transcribe_animals(data)
+    return gym.score_fluency(t["entries"]) | {"text": t["text"], "model": t.get("model"), "device": t.get("device")}
+
+
 class GameIn(BaseModel):
     game: str
     score: float
@@ -327,13 +385,45 @@ class GameIn(BaseModel):
 def game_stats(p: Player, gid: str) -> dict:
     g = gym.GAME_BY_ID[gid]
     if gid == "speed":
-        rows = [{"date": r["date"], "score": r["correct"], "ts": r["ts"], "detail": {}} for r in db.rounds(p.name)]
+        rows = [{"date": r["date"], "score": r["correct"], "ts": r["ts"], "detail": {"level": r["level"]}}
+                for r in db.rounds(p.name) if r["level"]]   # 15-second rounds only (old 90 s rounds aren't comparable)
+        lv = gym.speed_summary(db.rounds(p.name))
     else:
         rows = db.games(p.name, gid)
-    scores = [r["score"] for r in rows]
+        lv = gym.level_summary(gid, rows)
+    scores = [r["score"] for r in rows if gid == "speed" or r["detail"].get("level")]   # levelled rounds only
     best = (max if g["better"] == "higher" else min)(scores) if scores else None
     return {"id": gid, "plays": len(rows), "best": best, "last": scores[-1] if scores else None,
-            "history": scores[-20:], "played_today": any(r["date"] == today() for r in rows)}
+            "history": scores[-20:], "played_today": any(r["date"] == today() for r in rows), "levels": lv}
+
+
+def leaderboard(gid: str, me: str) -> dict:
+    """Everyone on this device who has played this game: most levels cleared, then best score there."""
+    rows = []
+    for n in db.list_players():
+        s = gym.speed_summary(db.rounds(n)) if gid == "speed" else gym.level_summary(gid, db.games(n, gid))
+        if s["plays"]:
+            rows.append({"name": n, "level": s["level"], "passed": s["passed"], "best": s["best_played"],
+                         "best_level": s["top_played"],
+                         "plays": s["plays"], "you": n == me, "_k": gym.rank_key(gid, s)})
+    rows.sort(key=lambda r: r["_k"], reverse=True)
+    for i, r in enumerate(rows):
+        r["rank"] = i + 1
+        r.pop("_k")
+    you = next((r for r in rows if r["you"]), None)
+    return {"rows": rows[:10], "n": len(rows), "you": you}
+
+
+@app.get("/api/games/{gid}/leaderboard")
+def game_leaderboard(gid: str, player: str = "") -> dict:
+    if gid not in gym.LEVELS and gid != "speed":
+        raise HTTPException(404, "unknown game")
+    return leaderboard(gid, player)
+
+
+def level_up_bonus(p: Player, gid: str, level: int) -> int:
+    db.add_game(p.name, "levelup", today(), level, {"game": gid, "level": level}, gym.LEVEL_UP_SPARKS)
+    return gym.LEVEL_UP_SPARKS
 
 
 @app.get("/api/player/{name}/games")
@@ -348,10 +438,23 @@ def play_game(name: str, body: GameIn) -> dict:
     g = gym.GAME_BY_ID.get(body.game)
     if g is None or body.game == "speed":
         raise HTTPException(400, "unknown game (Speed Sprint records via /speed)")
-    first_today = not any(r["date"] == today() for r in db.games(p.name, g["id"]))
+    rows = db.games(p.name, g["id"])
+    first_today = not any(r["date"] == today() for r in rows)
     sparks = gym.GAME_SPARKS if first_today else 0
-    db.add_game(p.name, g["id"], today(), body.score, body.detail, sparks)
-    out = {"sparks_gained": sparks, "stats": game_stats(p, g["id"]), "player": snapshot(p)}
+    detail, rnd, bonus = dict(body.detail), None, 0
+    if not detail.get("classic") and g["id"] in gym.LEVELS:   # level mode (the classic clinical tests have no level)
+        before = gym.level_summary(g["id"], rows)
+        level = before["level"]
+        passed = gym.level_passed(g["id"], level, body.score, detail)
+        detail.update(level=level, passed=passed)
+        rnd = {"level": level, "passed": passed, "target": before["rule"]["target"], "rule": before["rule"],
+               "unlocked": level + 1 if passed and level == before["passed"] + 1 and level < before["top"] else None,
+               "new_clear": passed and level > before["passed"]}
+    db.add_game(p.name, g["id"], today(), body.score, detail, sparks)
+    if rnd and rnd["new_clear"]:
+        bonus = level_up_bonus(p, g["id"], rnd["level"])
+    out = {"sparks_gained": sparks, "level_bonus": bonus, "round": rnd, "stats": game_stats(p, g["id"]),
+           "player": snapshot(p), "leaderboard": leaderboard(g["id"], p.name)}
     norm_col = body.detail.get("norm_col") or g["norm"]
     if norm_col and body.detail.get("comparable", False):
         out["nhanes"] = gym.nhanes_percentile(norm_col, body.score, p.age, p.female)
@@ -543,4 +646,13 @@ def wearables_get(name: str) -> dict:
 
 
 if __name__ == "__main__":
+    def _warm_speech() -> None:   # load Whisper in the background so the first Animal Naming round isn't slow
+        try:
+            from neurotrail import speech
+            if speech.available():
+                speech._load()
+        except Exception as e:  # noqa: BLE001 - speech is optional; typing mode still works
+            print("speech model not loaded:", e)
+    import threading
+    threading.Thread(target=_warm_speech, daemon=True).start()
     uvicorn.run(app, host="127.0.0.1", port=8600, log_level="warning")
