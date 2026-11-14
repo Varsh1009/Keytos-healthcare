@@ -22,6 +22,7 @@
   <a class="brand" href="#/"><span class="logo">◉</span> Neuro<b>Trail</b></a>
   <nav class="tabs" id="tabs">
     <a href="#/" data-r="home">🏠 Home</a>
+    <a href="#/hands" data-r="hands">✋ Hands</a>
     <a href="#/gym" data-r="gym">🧩 Games</a>
     <a href="#/voice" data-r="voice">🎙️ Voice</a>
     <a href="#/data" data-r="data">📱 My data</a>
@@ -46,6 +47,7 @@
   <section class="page" id="p-sprint"></section>
   <section class="page" id="p-mri"></section>
   <section class="page" id="p-voice"></section>
+  <section class="page" id="p-hands"></section>
   <section class="page" id="p-data"></section>
   <section class="page" id="p-progress"></section>
   <section class="page" id="p-coach"></section>
@@ -57,14 +59,14 @@
   <div class="cap-note">Real template brain (FreeSurfer fsaverage, average of 40 MRIs) · Destrieux atlas regions · a game board, not a scan of you</div></div>
 <div id="toast"></div>
 
-<div class="overlay" id="welcome"><div class="modal hero-modal">
-  <div class="eyebrow">BRAIN-HEALTH QUESTS</div>
-  <h1>No chip in your head.<br><span class="grad">No scan required.</span></h1>
-  <p>Daily quests chosen and weighted by real evidence, scored by models trained on real data
-     (CDC NHANES, n=3,014; OASIS MRI, n=416), coached by an AI agent that reads only your own logs.</p>
-  <div class="row"><input id="newName" placeholder="Your name" maxlength="24" autocomplete="off"><button class="cta" id="startBtn">Enter →</button></div>
-  <div class="row" style="margin-top:10px"><button class="ghost" id="guestBtn">▶ Play as Guest (no typing)</button><button class="ghost" id="promptBtn">✎ Name in a pop-up</button></div>
-  <div id="existing"></div>
+<div class="overlay" id="welcome"><div class="modal hero-modal wl">
+  <div class="wl-logo"><span class="logo">◉</span> Neuro<b>Trail</b></div>
+  <h1>No chip. No scan.<br><span class="grad">Just a sharper brain.</span></h1>
+  <p class="wl-sub">3 mins a day. Real science. 🧠⚡</p>
+  <div id="wlBack"></div>
+  <div class="wl-row"><input id="newName" placeholder="Your name" maxlength="40" autocomplete="off" enterkeyhint="go"><button class="cta" id="startBtn">Let's go →</button></div>
+  <button class="wl-link" id="guestBtn">or jump in as a guest</button>
+  <details class="wl-others" id="wlOthers" hidden><summary>Switch player</summary><div id="existing"></div></details>
 </div></div>
 
 <div class="overlay" id="onboard"><div class="modal wide">
@@ -77,6 +79,7 @@
   <p id="luText"></p><button class="cta" data-close="levelup">Keep going →</button>
 </div></div>
 
+<script src="/static/typing.js?v=__V__"></script>
 <script type="module" src="/static/app.js?v=__V__"></script>
 </body>
 </html>

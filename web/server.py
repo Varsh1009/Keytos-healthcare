@@ -6,6 +6,10 @@ Run:  python web/server.py   then open http://localhost:8600
 """
 from __future__ import annotations
 
+import os
+import shutil
+import threading
+import urllib.request
 import sys
 from collections import Counter
 from datetime import date, timedelta
@@ -18,8 +22,10 @@ import base64
 import random
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -32,6 +38,63 @@ WEB = Path(__file__).resolve().parent
 ART = ROOT / "models" / "artifacts"
 app = FastAPI(title="NeuroTrail")
 app.mount("/static", StaticFiles(directory=WEB / "static"), name="static")
+
+# ---------------------------------------------------------------- hand-tracking model files, served locally
+# The hand check needs MediaPipe's runtime (~9 MB) and hand model (~8 MB). Fetching them from the CDN and
+# Google on every visit was slow (Google only lets browsers cache the model for an hour), so the server
+# downloads each file once into data/mediapipe/ (in the background at startup) and serves it with a
+# one-year cache. Only this fixed list can be fetched.
+MP_DIR = ROOT / "data" / "mediapipe"
+_MP_CDN = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14"
+MP_FILES = {
+    "vision_bundle.mjs": f"{_MP_CDN}/vision_bundle.mjs",
+    "wasm/vision_wasm_internal.js": f"{_MP_CDN}/wasm/vision_wasm_internal.js",
+    "wasm/vision_wasm_internal.wasm": f"{_MP_CDN}/wasm/vision_wasm_internal.wasm",
+    "wasm/vision_wasm_nosimd_internal.js": f"{_MP_CDN}/wasm/vision_wasm_nosimd_internal.js",
+    "wasm/vision_wasm_nosimd_internal.wasm": f"{_MP_CDN}/wasm/vision_wasm_nosimd_internal.wasm",
+    "hand_landmarker.task": "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+}
+_MP_LOCK = threading.Lock()
+
+
+def mp_file(name: str) -> Path:
+    """Local copy of an allowed MediaPipe file, downloading it the first time."""
+    dest = MP_DIR / name
+    if dest.exists():
+        return dest
+    with _MP_LOCK:
+        if not dest.exists():
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            tmp = dest.with_suffix(dest.suffix + ".part")
+            with urllib.request.urlopen(MP_FILES[name], timeout=60) as r, open(tmp, "wb") as f:
+                shutil.copyfileobj(r, f)
+            tmp.replace(dest)
+    return dest
+
+
+def _mp_prefetch() -> None:
+    for name in ("vision_bundle.mjs", "wasm/vision_wasm_internal.js", "wasm/vision_wasm_internal.wasm", "hand_landmarker.task"):
+        try:
+            mp_file(name)
+        except Exception:   # offline: the page falls back to the CDN
+            return
+
+
+@app.on_event("startup")
+def _start_mp_prefetch() -> None:
+    threading.Thread(target=_mp_prefetch, daemon=True).start()
+
+
+@app.get("/mp/{name:path}")
+def mediapipe_file(name: str):
+    if name not in MP_FILES:
+        raise HTTPException(404)
+    try:
+        path = mp_file(name)
+    except Exception:
+        raise HTTPException(502, "couldn't fetch the hand-tracking files")
+    kind = "application/wasm" if name.endswith(".wasm") else "text/javascript" if name.endswith((".js", ".mjs")) else "application/octet-stream"
+    return FileResponse(path, media_type=kind, headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
 
 @app.middleware("http")
@@ -96,12 +159,25 @@ def players() -> list[dict]:
 
 
 class NewPlayer(BaseModel):
-    name: str = Field(min_length=1, max_length=24)
+    name: str = Field(min_length=1, max_length=200)
+
+
+NAME_MAX = 40
+
+
+def clean_name(raw: str) -> str:
+    """Any name works: accents, Chinese, emoji, punctuation. We only tidy what would break the app:
+    extra spaces are collapsed, "/" becomes a look-alike slash (a real one would split the page address),
+    and names made only of dots (which browsers treat as "go up a folder") are refused."""
+    name = " ".join(raw.split()).replace("/", "\u2215")[:NAME_MAX].strip()
+    if not name or not name.strip("."):
+        raise HTTPException(422, "Pick a name with at least one letter or number.")
+    return name
 
 
 @app.post("/api/players")
 def add_player(body: NewPlayer) -> dict:
-    name = body.name.strip()
+    name = clean_name(body.name)
     p = Player.load(name) or Player.create(name)
     return snapshot(p)
 
@@ -461,6 +537,55 @@ def play_game(name: str, body: GameIn) -> dict:
     return out
 
 
+# ====================================================================== Hand check (camera)
+class HandTask(BaseModel):
+    t: list[float] = Field(max_length=2000)                     # ms timestamps
+    lm: list[list[list[float]] | None] = Field(max_length=2000)  # per frame: 21 [x, y] points, or null if no hand
+    wl: list[list[list[float]] | None] | None = Field(None, max_length=2000)  # same frames: 21 [x, y, z] 3D points (metres)
+
+
+class HandsIn(BaseModel):
+    hand: Literal["left", "right"]
+    aspect: float = Field(4 / 3, gt=0.2, lt=5)
+    tasks: dict[Literal["steady", "fist", "tap"], HandTask]
+    fps: float | None = None
+
+
+def _hand_row(r: dict) -> dict:
+    d = r["detail"]
+    return {"date": r["date"], "ts": r["ts"], "hand": d.get("hand"), "tap_rate": r["score"],
+            "results": d.get("results", {}), "flags": d.get("flags", [])}
+
+
+@app.post("/api/player/{name}/hands")
+def hand_check(name: str, body: HandsIn) -> dict:
+    """The browser sends raw hand landmarks; all the analysis happens here (neurotrail/handcheck.py)."""
+    from neurotrail import handcheck
+    p = get(name)
+    out = handcheck.analyze(body.model_dump())
+    if not out["results"]:
+        raise HTTPException(422, next(iter(out["errors"].values()), "No hand data"))
+    # keep the numbers, not the raw signals
+    keep = {k: {kk: vv for kk, vv in v.items() if kk not in ("signal", "spectrum", "amplitudes")} for k, v in out["results"].items()}
+    first_today = not any(r["date"] == today() for r in db.games(p.name, "hands"))
+    sparks = gym.GAME_SPARKS if first_today else 0
+    tap_rate = out["results"].get("tap", {}).get("rate_hz", 0.0)
+    db.add_game(p.name, "hands", today(), tap_rate, {"hand": body.hand, "results": keep, "flags": out["flags"],
+                                                      "errors": out["errors"], "fps": body.fps}, sparks)
+    hist = [_hand_row(r) for r in db.games(p.name, "hands")]
+    same = [h for h in hist[:-1] if h["hand"] == body.hand]
+    other = [h for h in hist if h["hand"] != body.hand]
+    out |= {"sparks_gained": sparks, "player": snapshot(p),
+            "previous": same[-1] if same else None, "other_hand": other[-1] if other else None}
+    return out
+
+
+@app.get("/api/player/{name}/hands")
+def hand_history(name: str) -> dict:
+    p = get(name)
+    return {"history": [_hand_row(r) for r in db.games(p.name, "hands")]}
+
+
 # ====================================================================== MRI brain age (real 3D CNN)
 def _mri_payload(p: Player | None, v, age, source: str, only: int | None = None) -> dict:
     from neurotrail import brainage_ensemble as be, mri
@@ -655,4 +780,4 @@ if __name__ == "__main__":
             print("speech model not loaded:", e)
     import threading
     threading.Thread(target=_warm_speech, daemon=True).start()
-    uvicorn.run(app, host="127.0.0.1", port=8600, log_level="warning")
+    uvicorn.run(app, host="127.0.0.1", port=int(os.environ.get("PORT", "8600")), log_level="warning")

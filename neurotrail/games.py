@@ -200,6 +200,8 @@ GAMES = [
 GAME_BY_ID = {g["id"]: g for g in GAMES}
 # Level-up bonuses are stored as their own rows (game "levelup") so they never mix with game scores.
 GAME_BY_ID["levelup"] = {"id": "levelup", "title": "Level up", "better": "higher", "norm": None}
+# The hand check (✋ Hands tab) stores one row per hand per check; score = finger taps per second.
+GAME_BY_ID["hands"] = {"id": "hands", "title": "Hand check", "better": "higher", "norm": None}
 
 WORD_LISTS = [
     ["candle", "river", "garden", "ticket", "mirror", "button", "saddle", "forest", "pencil", "island"],
@@ -283,3 +285,4 @@ def score_fluency(entries: list[str]) -> dict:
             if w:
                 invalid.append(raw.strip())
     return {"score": len(valid), "valid": valid, "unrecognized": invalid}
+

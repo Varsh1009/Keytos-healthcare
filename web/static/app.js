@@ -5,8 +5,9 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { pageGym, pageGame, pageMRI, railHTML, boardHTML, startDemo } from './gym.js?v=10';
-import { pageHome as pageHome2, pageVoice, pageData, plainLever, plainAmount, buddy } from './ui2.js?v=3';
+import { pageGym, pageGame, pageMRI, railHTML, boardHTML, startDemo } from './gym.js?v=11';
+import { pageHands } from './hands.js?v=6';
+import { pageHome as pageHome2, pageVoice, pageData, plainLever, plainAmount, buddy } from './ui2.js?v=4';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -142,7 +143,7 @@ function paintRegions(hover) {
   }
 }
 let flight = null, SPLIT = 0, VIEW_X = 0, VIEW_TARGET = 0;
-function regionPoint(qid, h = 'left') { return toWorld(...META.centroids[qid][h]).sub(brain.userData.center).add(new THREE.Vector3(h === 'left' ? -3 : 3, 0, 0)); }
+function regionPoint(qid, h = 'left') { if (!META || !brain.userData.center) return new THREE.Vector3(); return toWorld(...META.centroids[qid][h]).sub(brain.userData.center).add(new THREE.Vector3(h === 'left' ? -3 : 3, 0, 0)); }
 function flyTo(qid) {
   if (!META?.centroids?.[qid]) return;
   const pL = regionPoint(qid), medial = Math.abs(pL.x) < 22;
@@ -200,7 +201,8 @@ function update(dt) {
   }
   controls.update();
 }
-function frame() { update(Math.min(clock.getDelta(), .05)); composer.render(); requestAnimationFrame(frame); }
+// The 3D brain is decoration: pause it on the hand check so the GPU is free for hand tracking.
+function frame() { const dt = Math.min(clock.getDelta(), .05); if (ROUTE !== 'hands' && !document.hidden) { update(dt); composer.render(); } requestAnimationFrame(frame); }
 addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight); });
 
 // ================================================================ HUD
@@ -225,7 +227,7 @@ function caption(id) {
 
 // ================================================================ ROUTER
 const homeRoute = () => { SEL = null; paintRegions(); caption(null); goHomeCam(); return pageHome2(); };
-const routes = { home: homeRoute, gym: pageGym, game: pageGame, sprint: pageSprint, voice: pageVoice, data: pageData, mri: pageMRI, progress: pageProgress, coach: pageCoach, levers: pageLevers, science: pageScience };
+const routes = { home: homeRoute, gym: pageGym, game: pageGame, sprint: pageSprint, voice: pageVoice, hands: pageHands, data: pageData, mri: pageMRI, progress: pageProgress, coach: pageCoach, levers: pageLevers, science: pageScience };
 async function route() {
   if (!ME?.onboarded) return;
   const [, r = 'home', arg] = (location.hash || '#/').split('/');
@@ -513,33 +515,33 @@ async function pageScience() {
 
 // ================================================================ ONBOARDING
 const PHQ = ['Little interest or pleasure in doing things', 'Feeling down, depressed, or hopeless', 'Trouble falling or staying asleep, or sleeping too much', 'Feeling tired or having little energy', 'Poor appetite or overeating', 'Feeling bad about yourself, or that you are a failure', 'Trouble concentrating on things', 'Moving or speaking slowly, or being fidgety or restless', 'Thoughts that you would be better off dead, or of hurting yourself'];
-const PHQO = ['Not at all', 'Several days', 'More than half the days', 'Nearly every day'];
+const PHQO = ['Not at all', 'Several days', 'Over half the days', 'Nearly every day'];
 const EDU = ['Less than 9th grade', '9–11th grade', 'High school / GED', 'Some college / AA', 'College graduate+'];
 let OB = null, obStep = 0;
 function openOnboard() { OB = { age: 65, female: true, educ: 4, income_pir: 2.5, sbp: 130, diabetes: false, current_smoker: false, active_min_week: 90, sedentary_min_day: 420, sleep_hours: 7, phq: Array(9).fill(0) }; obStep = 0; openOv('onboard'); renderOb(); }
 function stepper(k, min, max, step, unit = '') { return `<div class="toggle" style="align-items:center"><button class="chip" data-dec="${k}" data-st="${step}" data-min="${min}">−</button><b style="font:700 22px 'Space Grotesk';min-width:90px;text-align:center" id="ob_${k}">${OB[k]}${unit}</b><button class="chip" data-inc="${k}" data-st="${step}" data-max="${max}">+</button></div>`; }
 function renderOb() {
   const pages = [
-    () => `<div class="eyebrow">BASE CAMP · 1 OF 5</div><h2>About you</h2><p class="muted">The same questions CDC's NHANES asked 3,014 adults aged 60+. Stored only in your local database.</p>
+    () => `<div class="eyebrow">VIBE CHECK · 1/5</div><h2>About you 👋</h2><p class="muted">30 secs. Stays on this device.</p>
       <div class="q-grid ob"><div><label>Age</label>${stepper('age', 18, 100, 1)}</div>
       <div><label>Sex</label><div class="toggle"><button class="chip ${OB.female ? 'on' : ''}" data-b="female" data-v="1">Female</button><button class="chip ${!OB.female ? 'on' : ''}" data-b="female" data-v="0">Male</button></div></div>
-      <div><label>Education</label><select data-k="educ">${EDU.map((e, i) => `<option value="${i + 1}" ${OB.educ === i + 1 ? 'selected' : ''}>${e}</option>`).join('')}</select></div>
-      <div><label>Household income vs poverty line: <b>${OB.income_pir}×</b></label><input type="range" min="0" max="5" step=".1" data-k="income_pir" value="${OB.income_pir}"></div></div>`,
-    () => `<div class="eyebrow">BASE CAMP · 2 OF 5</div><h2>Heart & metabolism</h2>
-      <div class="q-grid ob"><div><label>Systolic BP (top number)</label>${stepper('sbp', 80, 220, 2, ' mmHg')}</div><div></div>
-      <div><label>Diagnosed diabetes?</label><div class="toggle"><button class="chip ${OB.diabetes ? 'on' : ''}" data-b="diabetes" data-v="1">Yes</button><button class="chip ${!OB.diabetes ? 'on' : ''}" data-b="diabetes" data-v="0">No</button></div></div>
-      <div><label>Currently smoke?</label><div class="toggle"><button class="chip ${OB.current_smoker ? 'on' : ''}" data-b="current_smoker" data-v="1">Yes</button><button class="chip ${!OB.current_smoker ? 'on' : ''}" data-b="current_smoker" data-v="0">No</button></div></div></div>`,
-    () => `<div class="eyebrow">BASE CAMP · 3 OF 5</div><h2>Daily life</h2>
-      <div class="q-grid ob"><div><label>Active minutes / week (vigorous ×2): <b>${OB.active_min_week}</b></label><input type="range" min="0" max="900" step="10" data-k="active_min_week" value="${OB.active_min_week}"></div>
-      <div><label>Sitting minutes / day: <b>${OB.sedentary_min_day}</b></label><input type="range" min="0" max="1140" step="10" data-k="sedentary_min_day" value="${OB.sedentary_min_day}"></div>
-      <div><label>Usual sleep on weeknights: <b>${OB.sleep_hours} h</b></label><input type="range" min="2" max="12" step=".5" data-k="sleep_hours" value="${OB.sleep_hours}"></div></div>`,
-    () => `<div class="eyebrow">BASE CAMP · 4 OF 5</div><h2>Mood check (PHQ-9)</h2><p class="muted">Over the last 2 weeks, how often have you been bothered by…</p>
+      <div><label>School</label><select data-k="educ">${EDU.map((e, i) => `<option value="${i + 1}" ${OB.educ === i + 1 ? 'selected' : ''}>${e}</option>`).join('')}</select></div>
+      <div><label>Income vs poverty line: <b>${OB.income_pir}×</b></label><input type="range" min="0" max="5" step=".1" data-k="income_pir" value="${OB.income_pir}"></div></div>`,
+    () => `<div class="eyebrow">VIBE CHECK · 2/5</div><h2>Heart stuff ❤️</h2>
+      <div class="q-grid ob"><div><label>Blood pressure (top number)</label>${stepper('sbp', 80, 220, 2, ' mmHg')}</div><div></div>
+      <div><label>Diabetes?</label><div class="toggle"><button class="chip ${OB.diabetes ? 'on' : ''}" data-b="diabetes" data-v="1">Yes</button><button class="chip ${!OB.diabetes ? 'on' : ''}" data-b="diabetes" data-v="0">No</button></div></div>
+      <div><label>Smoke?</label><div class="toggle"><button class="chip ${OB.current_smoker ? 'on' : ''}" data-b="current_smoker" data-v="1">Yes</button><button class="chip ${!OB.current_smoker ? 'on' : ''}" data-b="current_smoker" data-v="0">No</button></div></div></div>`,
+    () => `<div class="eyebrow">VIBE CHECK · 3/5</div><h2>Your days ☀️</h2>
+      <div class="q-grid ob"><div><label>Workout mins / week: <b>${OB.active_min_week}</b></label><input type="range" min="0" max="900" step="10" data-k="active_min_week" value="${OB.active_min_week}"></div>
+      <div><label>Sitting mins / day: <b>${OB.sedentary_min_day}</b></label><input type="range" min="0" max="1140" step="10" data-k="sedentary_min_day" value="${OB.sedentary_min_day}"></div>
+      <div><label>Sleep / night: <b>${OB.sleep_hours} h</b></label><input type="range" min="2" max="12" step=".5" data-k="sleep_hours" value="${OB.sleep_hours}"></div></div>`,
+    () => `<div class="eyebrow">VIBE CHECK · 4/5</div><h2>Mood 🫶</h2><p class="muted">Last 2 weeks, how often…</p>
       <div class="phq">${PHQ.map((q, i) => `<div class="pq"><div>${i + 1}. ${q}</div><div class="chips">${PHQO.map((o, j) => `<button class="chip ${OB.phq[i] === j ? 'on' : ''}" data-phq="${i}" data-v="${j}">${o}</button>`).join('')}</div></div>`).join('')}</div>`,
-    () => `<div class="reveal"><div class="eyebrow">BASE CAMP · 5 OF 5</div><h2>Your starting levers</h2><div id="revealBody"><p class="muted">Running the NHANES model…</p></div></div>`,
+    () => `<div class="reveal"><div class="eyebrow">VIBE CHECK · 5/5</div><h2>Your brain age gap 🧠</h2><div id="revealBody"><p class="muted">Crunching…</p></div></div>`,
   ];
   $('#obDots').innerHTML = pages.map((_, i) => `<i class="${i <= obStep ? 'on' : ''}"></i>`).join('');
   $('#obBody').innerHTML = pages[obStep]();
-  $('#obBack').style.visibility = obStep ? 'visible' : 'hidden'; $('#obNext').textContent = obStep === 4 ? 'Start playing →' : 'Next →';
+  $('#obBack').style.visibility = obStep ? 'visible' : 'hidden'; $('#obNext').textContent = obStep === 4 ? 'Let\'s go 🚀' : 'Next →';
   $$('#obBody [data-k]').forEach(el => el.oninput = () => { OB[el.dataset.k] = +el.value; if (el.type === 'range') el.previousElementSibling.querySelector('b').textContent = el.value + (el.dataset.k === 'income_pir' ? '×' : el.dataset.k === 'sleep_hours' ? ' h' : ''); });
   $$('#obBody [data-b]').forEach(el => el.onclick = () => { OB[el.dataset.b] = el.dataset.v === '1'; renderOb(); });
   $$('#obBody [data-inc],[data-dec]').forEach(el => el.onclick = () => { const k = el.dataset.inc || el.dataset.dec, st = +el.dataset.st;
@@ -548,9 +550,10 @@ function renderOb() {
   if (obStep === 4) (async () => {
     const r = await api('/api/lever', { ...OB, phq9: OB.phq.reduce((a, b) => a + b, 0) });
     const top = Object.values(r.per_factor).filter(f => f.years > .05 && f.significant).slice(0, 3);
-    $('#revealBody').innerHTML = `<div class="yrs grad">${Math.abs(r.years).toFixed(1)} yrs</div><p>Your modifiable factors are associated with processing speed like someone <b>${Math.abs(r.years).toFixed(1)} years ${r.years >= 0 ? 'older' : 'younger'}</b> than you'd be at every healthy target (95% CI ${fmt(r.ci[0])} to ${fmt(r.ci[1])}).</p>
-      ${top.length ? `<p class="muted">Biggest levers: ${top.map(f => `<b style="color:#FFC83D">${f.label}</b> (${fmt(f.years)} yrs)`).join(', ')}.</p>` : '<p class="muted">You\'re at or near target on the factors with significant associations. Quests keep you there.</p>'}
-      <p class="muted">Survey-weighted NHANES model (n=${r.n.toLocaleString()}); counts only factors with a significant association. An association, not a diagnosis.</p>`;
+    $('#revealBody').innerHTML = `<div class="yrs grad">${Math.abs(r.years).toFixed(1)} yrs ${r.years >= 0 ? 'older' : 'younger'}</div>
+      <p>That's how your habits make your brain speed look. ${r.years > 0.05 ? 'Fixable 💪' : 'Keep it up 🔥'}</p>
+      ${top.length ? `<p>Biggest wins: ${top.map(f => `<b style="color:#FFC83D">${f.label}</b>`).join(', ')}</p>` : ''}
+      <p class="muted tiny-note">CDC data on ${r.n.toLocaleString()} people. A link, not a diagnosis.</p>`;
   })();
 }
 $('#obBack').onclick = () => { obStep = Math.max(0, obStep - 1); renderOb(); };
@@ -570,17 +573,31 @@ $('#playerBtn').onclick = async (e) => {
   $('#addP').onclick = () => { $('#playerBtn').classList.remove('open'); localStorage.removeItem('nt_player'); showWelcome(); };
 };
 async function startAs(n) {
-  try { const p = await api('/api/players', { name: n }); localStorage.setItem('nt_player', p.name); closeOv('welcome'); await boot(); }
-  catch (e) { toast(`Couldn't reach the NeuroTrail server (${e.message}). Start it with: python3 web/server.py`, 6000); }
+  let p;
+  try { p = await api('/api/players', { name: n }); }
+  catch (e) {
+    // a network failure is a TypeError; anything else is the server explaining what's wrong with the name
+    return toast(e instanceof TypeError ? 'Couldn\'t reach the NeuroTrail server. Start it with: python3 web/server.py' : (typeof e.message === 'string' && !e.message.includes('[object') ? e.message : 'That name didn\'t work. Try another.'), 6000);
+  }
+  localStorage.setItem('nt_player', p.name); closeOv('welcome');
+  if (p.name !== n.trim()) toast(`You're in as ${p.name}`);
+  await boot();
 }
-$('#startBtn').onclick = () => { const n = $('#newName').value.trim(); if (!n) { $('#newName').focus(); return toast('Type your name, or use Play as Guest'); } startAs(n); };
+$('#startBtn').onclick = () => { const n = $('#newName').value.trim(); if (!n) { $('#newName').focus(); return toast('Drop a name first 👆 (or go guest)'); } startAs(n); };
 $('#newName').onkeydown = e => e.key === 'Enter' && $('#startBtn').click();
 $('#guestBtn').onclick = async () => { const ps = await api('/api/players').catch(() => []); let i = 1; while (ps.some(p => p.name === `Guest ${i}`)) i++; startAs(`Guest ${i}`); };
-$('#promptBtn').onclick = () => { const n = (prompt('Your name') || '').trim().slice(0, 24); if (n) startAs(n); };
+// The start page always comes first. If you've been here before it's one tap to carry on.
 async function showWelcome() {
-  openOv('welcome'); setTimeout(() => $('#newName').focus(), 50);
+  openOv('welcome');
+  const last = localStorage.getItem('nt_player');
   const ps = await api('/api/players').catch(() => []);
-  $('#existing').innerHTML = ps.length ? `<div class="tiny" style="width:100%">OR CONTINUE AS</div>` + ps.map(p => `<button class="chip" data-p="${esc(p.name)}">${esc(p.name)} · ${p.sparks} ⚡</button>`).join('') : '';
+  const mine = last && ps.find(p => p.name === last);
+  $('#wlBack').innerHTML = mine ? `<button class="cta wl-continue" id="contBtn">Continue as <b></b> →</button><div class="wl-or">or start fresh</div>` : '';
+  if (mine) { $('#contBtn b').textContent = mine.name; $('#contBtn').onclick = () => { closeOv('welcome'); boot(); }; $('#contBtn').focus(); }
+  else setTimeout(() => $('#newName').focus(), 50);
+  const others = ps.filter(p => p.name !== last);
+  $('#wlOthers').hidden = !others.length;
+  $('#existing').innerHTML = others.map(p => `<button class="chip" data-p="${esc(p.name)}">${esc(p.name)} · ${p.sparks} ⚡</button>`).join('');
   $$('#existing [data-p]').forEach(b => b.onclick = () => { localStorage.setItem('nt_player', b.dataset.p); closeOv('welcome'); boot(); });
 }
 function enter() { renderHUD(); paintRegions(); if (!location.hash || location.hash === '#') location.hash = '#/'; route(); }
@@ -597,6 +614,8 @@ async function boot() {
   try { QUESTS = await api('/api/quests'); } catch { toast('NeuroTrail server not reachable. Start it with: python3 web/server.py', 10000); return; }
   QMAP = Object.fromEntries(QUESTS.map(q => [q.id, q]));
   window.NTX = { api, toast, chart, chartOpts, renderHUD, fmt, gameBrain, QMAP: () => QMAP, getME: () => ME, setME: (m) => { ME = m; } };
-  frame(); await loadBrain(); await boot();
+  // Show the page first; build the 3D brain (2 MB, a few seconds of work) afterwards. It used to block every page.
+  frame(); await showWelcome();
+  (window.requestIdleCallback || (f => setTimeout(f, 50)))(() => loadBrain().catch(() => { }));
   window.NT = { camera, hemis, step: (dt, n = 1) => { for (let i = 0; i < n; i++) update(dt); composer.render(); }, get me() { return ME; } };
 })();
