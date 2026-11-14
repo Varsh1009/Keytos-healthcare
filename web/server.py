@@ -609,7 +609,18 @@ def mri_samples() -> list[dict]:
     d = pd.read_csv(ART / "mri_cnn_predictions.csv").replace({np.nan: None})
     pick = pd.concat([d[d["status"] != "cognitively normal"].sample(8, random_state=1),
                       d[(d["status"] == "cognitively normal") & (d["session"] == "MR1")].sample(8, random_state=1)])
-    return pick[["ID", "file", "Age", "female", "CDR", "status", "brain_age"]].to_dict("records")
+    out = pick[["ID", "file", "Age", "female", "CDR", "status", "brain_age"]].to_dict("records")
+    for r in out:   # the scan list ships with the code, the ~400 MB of scans don't (data/download_data.py)
+        r["available"] = _sample_path(r["file"]) is not None
+    return out
+
+
+SAMPLES_MISSING = ("The sample scans aren't downloaded on this computer yet (about 400 MB from Kaggle). "
+                   "Set up a Kaggle API token, then run: python data/download_data.py")
+
+
+def _sample_path(file: str) -> Path | None:
+    return next((ROOT / "data" / "raw" / "oasis_mri").glob(f"**/{file}"), None)
 
 
 @app.post("/api/player/{name}/mri/sample")
@@ -620,7 +631,9 @@ def mri_sample(name: str, file: str = Form(...)) -> dict:
     row = d[d["file"] == file]
     if row.empty:
         raise HTTPException(404, "unknown sample")
-    f = next((ROOT / "data" / "raw" / "oasis_mri").glob(f"**/{file}"))
+    f = _sample_path(file)
+    if f is None:
+        raise HTTPException(503, SAMPLES_MISSING)
     v = np.asanyarray(nib.load(f).dataobj, dtype=np.float32)
     from neurotrail import mri
     fold = mri.heldout_fold(file) if row["status"].iloc[0] == "cognitively normal" else None

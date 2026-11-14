@@ -519,7 +519,8 @@ export async function pageMRI() {
       <div class="glass card">
         <div class="eyebrow">1 · TRY A REAL OASIS SCAN</div>
         <select id="msel" style="margin:10px 0">${samples.map(s => `<option value="${s.file}">${s.ID} · ${s.Age} y · ${s.female ? 'F' : 'M'} · ${s.status}${s.CDR != null ? ` (CDR ${s.CDR})` : ''}</option>`).join('')}</select>
-        <button class="cta" id="mrun" style="width:100%">🧠 Analyze this scan</button>
+        <button class="cta" id="mrun" style="width:100%" ${samples.some(s => s.available) ? '' : 'disabled'}>🧠 Analyze this scan</button>
+        ${samples.some(s => s.available) ? '' : `<p class="caveat">⚠ The sample scans aren't downloaded on this computer yet (about 400 MB). To try them: make a free Kaggle account → Settings → <i>Create New API Token</i> → put the downloaded <code>kaggle.json</code> in <code>~/.kaggle/</code>, then run <code>python data/download_data.py</code> and restart. You can still upload your own scan below.</p>`}
         <div class="eyebrow" style="margin-top:22px">2 · OR UPLOAD YOUR OWN</div>
         <label class="drop" id="drop"><input type="file" id="mfile" accept=".nii,.gz" hidden>
           <div style="font-size:34px">⬆</div><b>Drop a .nii / .nii.gz T1 scan</b><span class="muted">or click to choose a file</span></label>

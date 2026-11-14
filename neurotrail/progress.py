@@ -173,6 +173,7 @@ def _var(vid, group, label, unit, source, points, better, floor, kind, practice=
          "points": [{"date": d, "value": round(x, 3)} for d, x in sorted(points, key=lambda x: x[0])][-120:], "note": note}
     v |= _trend(points, better, floor, kind, practice, word)
     v |= extra
+    v["_spec"] = (kind, sorted(points, key=lambda x: x[0]), better, floor, practice)   # for the combined line
     return v
 
 
@@ -239,7 +240,7 @@ def build(p) -> dict:
         pts = list(series.get(f, {}).items())
         if not pts:
             continue
-        label, unit = ("Sleep regularity (night-to-night spread)", "h") if f == "sleep_sd" else FIELD_INFO[f][1:]
+        label, unit = ("Steady sleep hours (night-to-night change)", "h") if f == "sleep_sd" else FIELD_INFO[f][1:]
         n_watch = len(from_watch.get(f, ())) if f != "sleep_sd" else None
         src = "watch" if n_watch == len(pts) else "check-ins" if not n_watch else "watch + check-ins"
         if f == "sleep_sd":
@@ -329,7 +330,8 @@ def build(p) -> dict:
         v = {"id": "mri_gap", "group": "brain_scan", "label": "Brain age minus real age", "unit": "years",
              "source": "MRI upload", "n": len(pts), "latest": pts[-1][1], "latest_date": pts[-1][0],
              "points": [{"date": d, "value": round(x, 2)} for d, x in pts], "error": round(mae, 1), "link": "#/mri",
-             "note": f"Model error is about ±{mae:.1f} years, so small gaps mean nothing on their own."}
+             "note": f"Model error is about ±{mae:.1f} years, so small gaps mean nothing on their own.",
+             "_spec": ("test", pts, "lower", mae, 0)}
         far = [x for d, x in pts if (date.fromisoformat(pts[-1][0]) - date.fromisoformat(d)).days >= 180]
         if far:
             ch = pts[-1][1] - far[0]
@@ -354,7 +356,10 @@ def build(p) -> dict:
         c = {s: sum(1 for v in gv if v["status"] == s) for s in ("improving", "steady", "slipping")}
         groups.append({"id": gid, "title": title, "sub": sub, "counts": c, "n": len(gv),
                        "has_data": any(v.get("n") for v in gv)})
-    return {"groups": groups, "variables": vars_, "summary": summary, "coverage": _coverage(p, days, voices, hands, scans),
+    comb = combined(vars_)
+    for v in vars_:
+        v.pop("_spec", None)
+    return {"combined": comb, "groups": groups, "variables": vars_, "summary": summary, "coverage": _coverage(p, days, voices, hands, scans),
             "links": _links(series, p), "rules": RULES, "model": _model_card(wm)}
 
 
@@ -455,3 +460,108 @@ RULES = [
     "Sample MRI scans belong to research volunteers and are never counted as yours.",
     "Patterns between sources (sleep vs games) are clues in your own data, not proof.",
 ]
+
+
+# ====================================================================== the combined picture
+AREA_NAMES = {"movement": "Moving", "sleep_heart": "Sleep & heart", "thinking": "Thinking games",
+              "speech_hands": "Speech & hands", "hearing": "Hearing", "brain_scan": "Brain scan"}
+CARRY_WEEKS = 6        # a measure keeps counting for this long after its last reading
+
+
+def _week(d: str) -> date:
+    x = date.fromisoformat(d[:10])
+    return x - timedelta(days=x.weekday())
+
+
+def _personal_scores(spec) -> list[tuple[str, float]] | None:
+    """Each reading as 'how far from YOUR starting point', in units of your own normal wobble,
+    flipped so up = better. This is what lets steps, game scores and sleep share one line.
+    None until the measure has a starting point AND at least one reading after it."""
+    kind, pts, better, floor, practice = spec
+    if kind == "daily":
+        first = date.fromisoformat(pts[0][0][:10])
+        base = [(d, v) for d, v in pts if date.fromisoformat(d[:10]) < first + timedelta(days=DAY_BASE)]
+        if len(base) < DAY_MIN or len(base) == len(pts):
+            return None
+    elif kind == "test":
+        if len(pts) < 2:
+            return None
+        base = pts[:1]
+    else:
+        pts = pts[practice:]
+        if len(pts) < 4:
+            return None
+        base = pts[:3]
+    tb = [_score_for(better, v) for _, v in base]
+    b = st.median(tb)
+    scale = floor if kind == "test" else max(st.pstdev(tb), floor, 0.05 * abs(b), 1e-6)
+    return [(d, max(-3.0, min(3.0, (_score_for(better, v) - b) / scale))) for d, v in pts]
+
+
+def combined(vars_: list[dict], today: date | None = None) -> dict:
+    """One line for everything: per week, each measure's distance from your start → averaged within its
+    area → areas averaged equally (so 9 games can't outvote your watch). 0 = where you started."""
+    today = today or date.today()
+    scored, collecting = {}, []
+    for v in vars_:
+        spec = v.get("_spec")
+        sc = _personal_scores(spec) if spec else None
+        if sc:
+            scored[v["id"]] = (v, sc)
+        elif v.get("n"):
+            collecting.append(v["label"])
+    if not scored:
+        return {"weeks": [], "overall": None, "areas": [], "changes": [], "collecting": collecting, "n_measures": 0}
+    start = min(_week(sc[0][0]) for _, sc in scored.values())
+    weeks = []
+    w = start
+    while w <= _week(today.isoformat()):
+        weeks.append(w)
+        w += timedelta(days=7)
+    by_var_week = {}
+    for vid, (_, sc) in scored.items():
+        wk = {}
+        for d, x in sc:
+            wk.setdefault(_week(d), []).append(x)
+        by_var_week[vid] = {k: sum(x) / len(x) for k, x in wk.items()}
+    series, latest_var = [], {}
+    for w in weeks:
+        areas = {}
+        for vid, (v, _) in scored.items():
+            known = [k for k in by_var_week[vid] if k <= w and (w - k).days <= 7 * CARRY_WEEKS]
+            if known:
+                val = by_var_week[vid][max(known)]
+                areas.setdefault(v["group"], []).append(val)
+                latest_var[vid] = val
+            else:
+                latest_var.pop(vid, None)
+        a = {g: sum(x) / len(x) for g, x in areas.items()}
+        series.append({"week": w.isoformat(), "overall": round(sum(a.values()) / len(a), 3) if a else None,
+                       "areas": {g: round(x, 3) for g, x in a.items()}})
+    while series and series[0]["overall"] is None:
+        series.pop(0)
+    last = next((s for s in reversed(series) if s["overall"] is not None), None)
+    areas = [{"id": g, "name": AREA_NAMES[g], "value": last["areas"][g], "word": _word(last["areas"][g]),
+              "n": sum(1 for v, _ in scored.values() if v["group"] == g)} for g in AREA_NAMES if last and g in last["areas"]]
+    changes = sorted(({"id": vid, "label": scored[vid][0]["label"], "icon": scored[vid][0].get("icon", ""),
+                       "value": round(x, 2), "unit": scored[vid][0].get("unit"),
+                       "from": scored[vid][0].get("baseline"), "to": scored[vid][0].get("recent", scored[vid][0].get("latest"))}
+                      for vid, x in latest_var.items()), key=lambda c: -abs(c["value"]))
+    # only changes that pass the "bigger than your normal ups and downs" rule are listed
+    status = {vid: v["status"] for vid, (v, _) in scored.items()}
+    return {"weeks": series, "overall": last["overall"] if last else None, "word": _word(last["overall"]) if last else None,
+            "areas": areas, "gains": [c for c in changes if status[c["id"]] == "improving" and c["value"] > 0][:3],
+            "drops": [c for c in changes if status[c["id"]] == "slipping" and c["value"] < 0][:3],
+            "collecting": collecting, "n_measures": len(scored), "sources": _sources(scored)}
+
+
+def _sources(scored) -> str:
+    names = {"watch": "your watch", "watch + check-ins": "your watch", "check-ins": "your check-ins", "game": "games",
+             "voice check": "voice checks", "hand check": "hand checks", "MRI upload": "your MRI scans"}
+    got = list(dict.fromkeys(names.get(v["source"], v["source"]) for v, _ in scored.values()))
+    return got[0] if len(got) == 1 else ", ".join(got[:-1]) + " and " + got[-1]
+
+
+def _word(x: float) -> str:
+    return ("much better" if x >= 1 else "better" if x >= 0.4 else "a little better" if x >= 0.15 else
+            "about the same" if x > -0.15 else "a little lower" if x > -0.4 else "lower" if x > -1 else "much lower")
