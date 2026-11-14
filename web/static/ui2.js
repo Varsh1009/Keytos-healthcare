@@ -1,11 +1,13 @@
 // Friendly Home, Voice check and My Data pages. Helpers come from app.js via window.NTX.
 import * as RA from './readalong.js?v=1';
+import { icon, tile } from './icons.js?v=1';
 const X = () => window.NTX;
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const me = () => X().getME();
 const enc = encodeURIComponent;
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+const dot = col => `<i style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${col};margin:0 6px 1px 0"></i>`;
 
 // ------------------------------------------------------------ plain language
 export function plainAmount(y) {
@@ -16,9 +18,9 @@ export function plainAmount(y) {
 }
 export function plainLever(L) {
   const amt = plainAmount(L.years), top = Object.values(L.per_factor).filter(f => f.in_total && f.years > 0.05).sort((a, b) => b.years - a.years)[0];
-  const head = !amt ? 'Your habits are right on the healthy targets 🎉'
+  const head = !amt ? 'Your habits are right on the healthy targets'
     : L.years > 0 ? `Your habits look like a brain about ${amt} older than it could be`
-      : `Your habits are even better than the healthy targets 🎉`;
+      : `Your habits are even better than the healthy targets`;
   const why = top ? `Biggest reason: <b>${top.label.toLowerCase()}</b> (yours ${Math.round(top.value * 10) / 10}, healthy target ${top.target}).` : '';
   const how = `How we know: in a CDC health survey of ${L.n.toLocaleString()} adults aged 60+, people with habits like yours scored on a thinking-speed test the way people ${amt ? amt + (L.years > 0 ? ' older' : ' younger') : 'your age'} usually do. It's a pattern in real data, not a diagnosis.`;
   return { head, why, how, top };
@@ -56,17 +58,17 @@ export async function pageHome() {
   const done = plan.filter(p => p.done).length, next = plan.find(p => !p.done), N = plan.length;
   const Lv = M.level, frac = Lv.next_at ? (M.sparks - Lv.floor) / (Lv.next_at - Lv.floor) : 1;
   const mood = done === N ? 'wow' : 'happy';
-  const cta = next ? { href: next.href, txt: `▶ ${done ? 'Next' : 'Start'}: ${next.title}` } : { href: '#/progress', txt: '📈 See your progress' };
+  const cta = next ? { href: next.href, txt: `${icon('play')} ${done ? 'Next' : 'Start'}: ${next.title}` } : { href: '#/progress', txt: `${icon('chart')} See your progress` };
   const ageTxt = !amt ? 'on target' : L.years > 0 ? `+${amt}` : `${amt} younger`;
   $('#p-home').innerHTML = `<div class="scrollpage"><div class="home3">
     <section class="h3 glass">
-      <button class="h3-buddy" id="h3Buddy" title="Tap me to chat">${buddy(mood, 132)}<span class="h3-tap">Tap me to chat 💬</span></button>
+      <button class="h3-buddy" id="h3Buddy" title="Tap me to chat">${buddy(mood, 132)}<span class="h3-tap">${icon('message')} Tap me to chat</span></button>
       <div class="h3-hi">Hi ${esc(M.name)}!</div>
-      <div class="h3-sub">${done === N ? 'All done today 🎉' : done ? `${done} of ${N} done` : 'Your 3-minute brain check'}</div>
+      <div class="h3-sub">${done === N ? 'All done today. See you tomorrow' : done ? `${done} of ${N} done` : 'Your 3-minute brain check'}</div>
       <div class="h3-steps">${plan.map((p, i) => `${i ? '<i class="h3-line ' + (plan[i - 1].done ? 'on' : '') + '"></i>' : ''}<a class="h3-step ${p.done ? 'done' : ''} ${next === p ? 'next' : ''}" href="${p.href}" style="--c:${p.color}" title="${esc(p.title)} · ${p.time}">
-        <span>${p.done ? '✓' : p.icon}</span><small>${esc(p.title)}</small></a>`).join('')}</div>
+        <span>${p.done ? icon('check') : icon(p.icon)}</span><small>${esc(p.title)}</small></a>`).join('')}</div>
       <a class="h3-cta" href="${cta.href}">${cta.txt}</a>
-      <div class="h3-chips"><a href="#/levers">🧠 Brain age <b>${ageTxt}</b></a><a href="#/progress">📈 Progress</a></div>
+      <div class="h3-chips"><a href="#/levers">${icon('brain')} Brain age <b>${ageTxt}</b></a><a href="#/progress">${icon('chart')} Progress</a></div>
     </section>
   </div></div>`;
   $('#h3Buddy').onclick = () => document.getElementById('fabBtn')?.click();
@@ -78,21 +80,21 @@ export async function pageVoice() {
   const [T, VH] = await Promise.all([X().api('/api/voice/tasks'), X().api(`/api/player/${enc(me().name)}/voice`)]);
   $('#p-voice').innerHTML = `<div class="scrollpage"><div class="wrap">
     <a href="#/gym" class="ghost" style="text-decoration:none;display:inline-block;margin-bottom:10px">← Back to Games</a>
-    <div class="h1">🎙️ Voice check</div>
+    <div class="h1">Voice check</div>
     <div class="sub">Speak for about a minute. We measure <b>how</b> you talk (your pace, pauses and pitch), not what you say. Audio is analyzed and then thrown away; only the numbers are saved.</div>
     <div class="cr-grid">
       <div class="glass card">
-        <div class="chips" style="margin-bottom:12px"><button class="chip on" data-t="reading">📖 Read aloud</button><button class="chip" data-t="free">💬 Tell a story</button></div>
-        <div class="vprompt" id="vprompt">${RA.spans(T.reading)}</div>
-        <div class="recwrap"><button class="recbtn" id="rec"><span>🎙️</span></button><canvas id="wave" width="600" height="80"></canvas><div class="muted" id="rstat">Tap the mic, read the text at your normal pace, then tap again to stop.</div></div>
+        <div class="chips" style="margin-bottom:12px"><button class="chip on" data-t="reading">${icon('book')} Read aloud</button><button class="chip" data-t="free">${icon('message')} Tell a story</button></div>
+        <div class="vprompt" id="vprompt">${esc(T.reading)}</div>
+        <div class="recwrap"><button class="recbtn" id="rec"><span>${icon('mic')}</span></button><canvas id="wave" width="600" height="80"></canvas><div class="muted" id="rstat">Tap the mic, read the text at your normal pace, then tap again to stop.</div></div>
         <p class="muted">Why: in a 2018 study, people with early memory problems spoke more slowly and paused more than healthy peers (Tóth et al., <a href="${T.evidence}" target="_blank" style="color:var(--cyan)">source ↗</a>). Here you only compare with <b>yourself</b> over time. It's not a diagnosis.</p>
-        <p class="muted">While you read, each word lights up as it's heard (your browser's speech recognition; in Chrome that runs on Google's servers). Mic not working in this window? Open <b>http://localhost:8600/#/voice</b> in Chrome.</p>
-        <a class="ghost" href="#/game/readaloud" style="text-decoration:none;display:inline-block">📖 Make it a game: Read Aloud levels →</a>
+        <p class="muted">Mic not working in this window? Open <b>http://localhost:8600/#/voice</b> in Chrome.</p>
+        <a class="ghost" href="#/game/readaloud" style="text-decoration:none;display:inline-block">${icon('book')} Make it a game: Read Aloud levels →</a>
       </div>
       <div class="glass card" id="vout">${VH.history.length ? '' : '<div class="empty">Your results show up here after your first recording.</div>'}</div>
     </div></div></div>`;
   let task = 'reading';
-  $$('#p-voice [data-t]').forEach(b => b.onclick = () => { task = b.dataset.t; $$('#p-voice [data-t]').forEach(x => x.classList.toggle('on', x === b)); if (task === 'reading') $('#vprompt').innerHTML = RA.spans(T.reading); else $('#vprompt').textContent = T.free; });
+  $$('#p-voice [data-t]').forEach(b => b.onclick = () => { task = b.dataset.t; $$('#p-voice [data-t]').forEach(x => x.classList.toggle('on', x === b)); $('#vprompt').textContent = task === 'reading' ? T.reading : T.free; });
   $('#rec').onclick = () => REC ? stopRec(task) : startRec(task);
   if (VH.history.length) renderVoiceHistory(VH.history.map(v => ({ ts: v.ts, task: v.task, ...v.metrics })));
 }
@@ -101,12 +103,10 @@ async function startRec(task) {
   try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false } }); }
   catch (e) { X().toast('Microphone blocked: allow mic access (or open the app in Chrome).', 5000); return; }
   const ctx = new AudioContext(), src = ctx.createMediaStreamSource(stream), proc = ctx.createScriptProcessor(4096, 1, 1), chunks = [];
-  // Live transcript: counts words (story mode) and lights up each word of the passage as it's read.
+  // Story mode only: count the words spoken (for words per minute). Read-aloud mode doesn't listen for words.
   let words = 0, sr = null;
-  if (RA.supported()) {
-    const box = $('#vprompt'), passage = task === 'reading' ? RA.wordsOf(box.textContent) : null; let A = null;
-    if (passage) { box.innerHTML = RA.spans(box.textContent); A = RA.align(passage, ''); RA.paint(box, A); }
-    try { sr = RA.listen(text => { words = RA.wordsOf(text).length; if (passage) { A = RA.align(passage, text, A); RA.paint(box, A); } }); } catch { sr = null; }
+  if (task === 'free' && RA.supported()) {
+    try { sr = RA.listen(text => { words = RA.wordsOf(text).length; }); } catch { sr = null; }
   }
   const cv = $('#wave'), g = cv.getContext('2d'), t0 = performance.now();
   proc.onaudioprocess = e => { const d = new Float32Array(e.inputBuffer.getChannelData(0)); chunks.push(d);
@@ -128,9 +128,9 @@ async function stopRec(task) {
   const fd = new FormData(); fd.append('file', new Blob([wav], { type: 'audio/wav' }), 'voice.wav'); fd.append('task', task);
   if (R.sr && task === 'free' && R.words()) fd.append('words', R.words());
   const r = await fetch(`/api/player/${enc(me().name)}/voice`, { method: 'POST', body: fd }); const j = await r.json();
-  if (!r.ok) { $('#rstat').textContent = '⚠ ' + (j.detail || 'Could not analyze'); return; }
+  if (!r.ok) { $('#rstat').textContent = j.detail || 'Could not analyze'; return; }
   X().setME(j.player); X().renderHUD();
-  $('#rstat').textContent = j.sparks_gained ? `Done! +${j.sparks_gained} ⚡` : 'Done! (today\'s sparks already earned)';
+  $('#rstat').textContent = j.sparks_gained ? `Done! +${j.sparks_gained} sparks` : 'Done! (today\'s sparks already earned)';
   renderVoiceResult(j);
 }
 function toWav(chunks, rate) {
@@ -146,7 +146,7 @@ function cmp(now, base, key, better, unit, label) {
   if (!base || base[key] == null) return '';
   const d = now[key] - base[key]; if (Math.abs(d) < 1e-9) return `<li>${label}: same as your first check.</li>`;
   const good = better === 'higher' ? d > 0 : d < 0;
-  return `<li>${label}: ${d > 0 ? 'up' : 'down'} ${Math.abs(d).toFixed(unit === '%' ? 0 : 2)}${unit} vs your first check ${good ? '🟢' : '🟡'}</li>`;
+  return `<li>${label}: ${d > 0 ? 'up' : 'down'} ${Math.abs(d).toFixed(unit === '%' ? 0 : 2)}${unit} vs your first check ${dot(good ? '#3DDC97' : '#FFC83D')}</li>`;
 }
 function renderVoiceResult(j) {
   const m = j.metrics, b = j.baseline;
@@ -163,7 +163,7 @@ function renderVoiceHistory(h) {
 }
 
 // ------------------------------------------------------------ MY DATA
-const DEVICES = [['Apple Watch', '⌚'], ['Fitbit', '💠'], ['Garmin', '🧭'], ['Samsung Galaxy Watch', '🌀'], ['Google Pixel Watch', '⭕'], ['Oura Ring', '💍']];
+const DEVICES = [['Apple Watch', 'watch'], ['Fitbit', 'activity'], ['Garmin', 'gauge'], ['Samsung Galaxy Watch', 'watch'], ['Google Pixel Watch', 'watch'], ['Oura Ring', 'moon']];   // icon names (icons.js)
 const devName = () => { try { return localStorage.getItem('nt_device') || 'Apple Watch'; } catch { return 'Apple Watch'; } };
 // 5-second progress ring with changing status lines, shown in #wmsg. Resolves when done.
 function ring(steps, ms = 5000) {
@@ -186,28 +186,28 @@ function ring(steps, ms = 5000) {
 export async function pageData() {
   const W = await X().api(`/api/player/${enc(me().name)}/wearables`), S = W.summary, days = Object.entries(W.days);
   $('#p-data').innerHTML = `<div class="scrollpage"><div class="wrap">
-    <div class="h1">📱 My data</div><div class="sub">Connect your watch or upload a file. Everything stays on this computer.</div>
+    <div class="h1">My data</div><div class="sub">Connect your watch or upload a file. Everything stays on this computer.</div>
     <div class="cr-grid">
       <div class="glass card"><div class="eyebrow">PHONE & WATCH</div>
-        ${W.is_sample ? `<div class="wconn"><div class="wconn-ico">${(DEVICES.find(x => x[0] === devName()) || DEVICES[0])[1]}</div><div><b>${esc(devName())} connected</b><span class="muted">Demo connection · showing sample watch data</span></div>
+        ${W.is_sample ? `<div class="wconn"><div class="wconn-ico">${icon((DEVICES.find(x => x[0] === devName()) || DEVICES[0])[1])}</div><div><b>${esc(devName())} connected</b><span class="muted">Demo connection · showing sample watch data</span></div>
             <button class="chip" id="wsampleDel">Disconnect</button></div>`
         : `<div class="muted" style="margin:4px 0 8px">Pick your device</div>
-          <div class="wdevs">${DEVICES.map(([n, i]) => `<button class="wdev" data-dev="${esc(n)}"><span>${i}</span><b>${esc(n)}</b></button>`).join('')}</div>
+          <div class="wdevs">${DEVICES.map(([n, i]) => `<button class="wdev" data-dev="${esc(n)}"><span>${icon(i)}</span><b>${esc(n)}</b></button>`).join('')}</div>
           <div class="wor">or</div>
-          <label class="wbig" id="wdrop"><input type="file" id="wfile" accept=".zip,.xml,.csv,.json" hidden><span>📤</span><b>Upload a file</b><small>Apple Health, Fitbit or any CSV</small></label>
+          <label class="wbig" id="wdrop"><input type="file" id="wfile" accept=".zip,.xml,.csv,.json" hidden><span>${icon('upload')}</span><b>Upload a file</b><small>Apple Health, Fitbit or any CSV</small></label>
           <details class="phow"><summary>How do I get the file?</summary><p class="muted"><b>Apple Watch / iPhone:</b> Health app → your photo (top right) → <i>Export All Health Data</i> → drop the zip here.<br>
           <b>Fitbit:</b> Google Takeout → Fitbit → drop the zip.<br>
           <b>Garmin, Samsung, Oura…</b> a CSV with a <code>date</code> column and any of <code>steps</code>, <code>sleep_hours</code>, <code>resting_hr</code>, <code>hrv_ms</code>, <code>vo2max</code>, <code>walking_speed</code>.</p></details>`}
         <div id="wmsg"></div></div>
       <div class="glass card">${S.days_with_data ? `<div class="eyebrow">YOUR LAST ${S.window_days} DAYS (${S.days_with_data} days imported, ${S.from} → ${S.to})</div>
         <div class="vstats">${S.steps != null ? `<div><b>${Math.round(S.steps).toLocaleString()}</b><span>steps / day</span></div>` : ''}${S.sleep_hours != null ? `<div><b>${S.sleep_hours.toFixed(1)} h</b><span>sleep / night</span></div>` : ''}${S.resting_hr != null ? `<div><b>${Math.round(S.resting_hr)}</b><span>resting heart rate</span></div>` : ''}${S.hrv_ms != null ? `<div><b>${Math.round(S.hrv_ms)} ms</b><span>heart-rate variability</span></div>` : ''}${S.vo2max != null ? `<div><b>${S.vo2max.toFixed(1)}</b><span>VO₂ max</span></div>` : ''}${S.walking_speed != null ? `<div><b>${S.walking_speed.toFixed(2)} m/s</b><span>walking speed</span></div>` : ''}${S.hearing_pta_db != null ? `<div><b>${Math.round(S.hearing_pta_db)} dB</b><span>hearing threshold</span></div>` : ''}${S.headphone_db != null ? `<div><b>${Math.round(S.headphone_db)} dBA</b><span>headphone level</span></div>` : ''}</div>
-        <ul class="plain">${S.steps != null ? `<li>${S.steps >= 9826 ? '🟢 You average more than 9,826 steps, the "best dose" in a UK study of 78,430 people.' : S.steps >= 3826 ? `🟡 You're above the 3,826-step "minimum dose". ${Math.round(9826 - S.steps).toLocaleString()} more a day reaches the best dose.` : `🟠 ${Math.round(3826 - S.steps).toLocaleString()} more steps a day reaches the 3,826-step minimum dose.`}</li>` : ''}
+        <ul class="plain">${S.steps != null ? `<li>${S.steps >= 9826 ? `${dot('#3DDC97')}You average more than 9,826 steps, the "best dose" in a UK study of 78,430 people.` : S.steps >= 3826 ? `${dot('#FFC83D')}You're above the 3,826-step "minimum dose". ${Math.round(9826 - S.steps).toLocaleString()} more a day reaches the best dose.` : `${dot('#FFA54F')}${Math.round(3826 - S.steps).toLocaleString()} more steps a day reaches the 3,826-step minimum dose.`}</li>` : ''}
         ${S.sleep_hours != null ? `<li>Your sleep average (${S.sleep_hours.toFixed(1)} h) now feeds your "What your habits say" score instead of the number you typed at sign-up.</li>` : ''}</ul>
         <div style="height:200px"><canvas id="wch"></canvas></div>` : '<div class="empty">No watch data yet. Pick your device or upload a file to see your steps, sleep and heart here.</div>'}</div>
     </div>
     <div class="explore" style="margin-top:16px">
-      <a class="tile glass" href="#/mri"><span>🧠</span><b>Brain records</b><small>MRI and EEG: upload yours or try a sample</small></a>
-      <a class="tile glass" href="#/progress"><span>📈</span><b>All my charts</b><small>Games, voice, trends</small></a></div>
+      <a class="tile glass" href="#/mri"><span>${icon('brain')}</span><b>Brain records</b><small>MRI and EEG: upload yours or try a sample</small></a>
+      <a class="tile glass" href="#/progress"><span>${icon('chart')}</span><b>All my charts</b><small>Games, voice, trends</small></a></div>
   </div></div>`;
   if (days.length) X().chart('wch', { type: 'bar', data: { labels: days.map(d => d[0].slice(5)), datasets: [{ label: 'steps', data: days.map(d => d[1].steps ?? null), backgroundColor: 'rgba(61,220,151,.7)', borderRadius: 4, yAxisID: 'y' }, { type: 'line', label: 'sleep (h)', data: days.map(d => d[1].sleep_hours ?? null), borderColor: '#7C8CFF', yAxisID: 'y1', tension: .3, spanGaps: true }] }, options: X().chartOpts({ scales: { y: { ticks: { color: '#9AA3C7' } }, y1: { position: 'right', ticks: { color: '#9AA3C7' }, grid: { display: false } }, x: { ticks: { color: '#9AA3C7' } } } }) });
   const up = async f => {
@@ -215,15 +215,15 @@ export async function pageData() {
     const fd = new FormData(); fd.append('file', f);
     const [r] = await Promise.all([fetch(`/api/player/${enc(me().name)}/wearables`, { method: 'POST', body: fd }), busy]);
     const j = await r.json();
-    if (!r.ok) { $('#wmsg').innerHTML = `<p class="caveat">⚠ ${esc(j.detail)}</p>`; return; } X().setME(j.player); X().toast(`Imported ${j.imported_days} days ✓`); pageData(); };
+    if (!r.ok) { $('#wmsg').innerHTML = `<p class="caveat">${icon('alert')} ${esc(j.detail)}</p>`; return; } X().setME(j.player); X().toast(`Imported ${j.imported_days} days`); pageData(); };
   $('#wfile') && ($('#wfile').onchange = e => e.target.files[0] && up(e.target.files[0]));
   const sampleCall = async method => { const r = await fetch(`/api/player/${enc(me().name)}/wearables/sample`, { method }); const j = await r.json();
-    if (!r.ok) return X().toast(j.detail, 5000); X().setME(j.player); X().toast(method === 'POST' ? `${devName()} connected ✓ ${j.imported_days} days` : 'Disconnected'); pageData(); };
+    if (!r.ok) return X().toast(j.detail, 5000); X().setME(j.player); X().toast(method === 'POST' ? `${devName()} connected · ${j.imported_days} days` : 'Disconnected'); pageData(); };
   document.querySelectorAll('#p-data [data-dev]').forEach(b => b.onclick = async () => {
     const dev = b.dataset.dev;
     try { localStorage.setItem('nt_device', dev); } catch { }
     document.querySelectorAll('#p-data [data-dev]').forEach(x => x.disabled = true);
-    await ring([`Connecting to your ${dev}…`, 'Connected ✓ Reading steps…', 'Reading sleep…', 'Reading heart rate…', 'Almost done…']);
+    await ring([`Connecting to your ${dev}…`, 'Connected. Reading steps…', 'Reading sleep…', 'Reading heart rate…', 'Almost done…']);
     sampleCall('POST'); });
   $('#wsampleDel') && ($('#wsampleDel').onclick = () => sampleCall('DELETE'));
   const d = $('#wdrop'); if (d) { d.ondragover = e => { e.preventDefault(); d.classList.add('over'); }; d.ondragleave = () => d.classList.remove('over'); d.ondrop = e => { e.preventDefault(); d.classList.remove('over'); e.dataTransfer.files[0] && up(e.dataTransfer.files[0]); }; }
