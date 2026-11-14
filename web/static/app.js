@@ -7,9 +7,9 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { pageGym, pageGame, pageMRI, railHTML, boardHTML, startDemo } from './gym.js?v=20';
 import { pageHands } from './hands.js?v=7';
-import { initDock } from './dock.js?v=2';
+import { initDock } from './dock.js?v=3';
 import { pageEEG } from './records.js?v=4';
-import { pageHome as pageHome2, pageVoice, pageData, plainLever, plainAmount, buddy } from './ui2.js?v=10';
+import { pageHome as pageHome2, pageVoice, pageData, plainLever, plainAmount, buddy } from './ui2.js?v=12';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];

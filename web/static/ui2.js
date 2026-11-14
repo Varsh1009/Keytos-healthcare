@@ -53,32 +53,20 @@ export async function pageHome() {
   const done = plan.filter(p => p.done).length, next = plan.find(p => !p.done), N = plan.length;
   const Lv = M.level, frac = Lv.next_at ? (M.sparks - Lv.floor) / (Lv.next_at - Lv.floor) : 1;
   const mood = done === N ? 'wow' : 'happy';
-  $('#p-home').innerHTML = `<div class="scrollpage"><div class="home2">
-    <section class="hello glass">
-      <div class="buddywrap">${buddy(mood, 92)}</div>
-      <div><div class="hi">Hi ${esc(M.name)}! 👋</div>
-        <div class="hello-sub">${done === N ? 'All done today 🎉 See you tomorrow' : done ? `${done}/${N} done · keep going 🔥` : `${N} games · 5 min · let's go ⚡`}</div></div>
+  const cta = next ? { href: next.href, txt: `▶ ${done ? 'Next' : 'Start'}: ${next.title}` } : { href: '#/progress', txt: '📈 See your progress' };
+  const ageTxt = !amt ? 'on target' : L.years > 0 ? `+${amt}` : `${amt} younger`;
+  $('#p-home').innerHTML = `<div class="scrollpage"><div class="home3">
+    <section class="h3 glass">
+      <button class="h3-buddy" id="h3Buddy" title="Tap me to chat">${buddy(mood, 132)}<span class="h3-tap">Tap me to chat 💬</span></button>
+      <div class="h3-hi">Hi ${esc(M.name)}!</div>
+      <div class="h3-sub">${done === N ? 'All done today 🎉' : done ? `${done} of ${N} done` : 'Your 3-minute brain check'}</div>
+      <div class="h3-steps">${plan.map((p, i) => `${i ? '<i class="h3-line ' + (plan[i - 1].done ? 'on' : '') + '"></i>' : ''}<a class="h3-step ${p.done ? 'done' : ''} ${next === p ? 'next' : ''}" href="${p.href}" style="--c:${p.color}" title="${esc(p.title)} · ${p.time}">
+        <span>${p.done ? '✓' : p.icon}</span><small>${esc(p.title)}</small></a>`).join('')}</div>
+      <a class="h3-cta" href="${cta.href}">${cta.txt}</a>
+      <div class="h3-chips"><a href="#/levers">🧠 Brain age <b>${ageTxt}</b></a><a href="#/progress">📈 Progress</a></div>
     </section>
-
-    <section class="glass plan"><div class="sec-h"><span>Today</span><span class="muted">${done}/${N}</span></div>
-      ${plan.map(p => `<a class="pcard ${p.done ? 'done' : ''} ${next === p ? 'next' : ''}" href="${p.href}" style="--c:${p.color}">
-        <div class="pnum">${p.done ? '✓' : p.n}</div><div class="picon">${p.icon}</div>
-        <div class="ptxt"><b>${p.title}</b><span>${p.why}</span></div>
-        <div class="pgo">${p.done ? 'Done' : `${p.time} →`}</div></a>`).join('')}
-    </section>
-
-    <section class="glass insight"><div class="sec-h"><span>🧠 Brain age</span><a href="#/levers" class="muted">what if? →</a></div>
-      <div class="ins-big ${L.years > 0.05 ? '' : 'good'}">${!amt ? 'On target 🎉' : L.years > 0 ? `+${amt}` : `${amt} younger 🎉`}</div>
-      ${amt && L.years > 0 ? '<div class="ins-sub">older than it could be, from your habits</div>' : ''}
-      <div class="meterbar"><div class="mtrack"><i style="left:${Math.max(2, Math.min(98, 50 + L.years / 4 * 50))}%"></i></div>
-        <div class="mlabels"><span>younger</span><span>on target</span><span>older</span></div></div>
-      ${P.top ? `<a class="ins-fix" href="#/levers">Fix first: <b>${esc(P.top.label)}</b> ${Math.round(P.top.value * 10) / 10} → ${P.top.target} →</a>` : ''}
-      <details class="ev"><summary>How do we know?</summary><div class="evb"><p>${P.how}</p><p>The range is ${X().fmt(L.ci[0])} to ${X().fmt(L.ci[1])} years (95% confidence). Only habits with a clear link in the data count.</p></div></details>
-    </section>
-
-    <section class="explore">${[['🧩', 'Games', '#/gym', `${games.games.length + 2} brain games`], ['📱', 'My data', '#/data', 'Watch and health files'], ['🤖', 'Coach', '#/coach', 'Ask anything'], ['📈', 'Progress', '#/progress', 'Your charts']]
-      .map(([i, t, h, s]) => `<a class="tile glass" href="${h}"><span>${i}</span><b>${t}</b><small>${s}</small></a>`).join('')}</section>
   </div></div>`;
+  $('#h3Buddy').onclick = () => document.getElementById('fabBtn')?.click();
 }
 
 // ------------------------------------------------------------ VOICE CHECK

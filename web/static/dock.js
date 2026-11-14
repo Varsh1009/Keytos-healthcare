@@ -3,7 +3,7 @@
 // Buddy: bottom-right, opens a small chat with the same AI coach (/api/player/{name}/coach).
 // It can talk: replies are read aloud (browser speech synthesis) and you can speak your question
 // (browser speech recognition, Chrome/Edge/Safari). Both are optional and can be switched off.
-import { buddy } from './ui2.js?v=10';
+import { buddy } from './ui2.js?v=12';
 
 const X = () => window.NTX;
 const $ = s => document.querySelector(s);
@@ -13,7 +13,7 @@ const store = { get: (k, d) => { try { return localStorage.getItem(k) ?? d; } ca
                 set: (k, v) => { try { localStorage.setItem(k, v); } catch { } } };
 
 const SIZES = [['A', 1], ['A+', 1.15], ['A++', 1.3]];
-const HIDE_BUDDY_ON = ['coach', 'game', 'sprint', 'hands'];   // full-screen tasks: keep the buddy out of the way
+const HIDE_BUDDY_ON = ['home', 'coach', 'game', 'sprint', 'hands'];   // Home has its own big buddy (tap it to chat)   // full-screen tasks: keep the buddy out of the way
 const QUICK = ['How am I doing?', 'What should I do today?', 'What do my games say?'];
 const Speech = window.SpeechRecognition || window.webkitSpeechRecognition;
 let ready = false, talk = store.get('nt_talk', '1') === '1', loaded = false;
