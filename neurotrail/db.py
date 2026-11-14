@@ -40,7 +40,8 @@ CREATE TABLE IF NOT EXISTS step_progress (
   done INTEGER NOT NULL, PRIMARY KEY(player, date, quest, idx));
 CREATE TABLE IF NOT EXISTS speed_rounds (
   id INTEGER PRIMARY KEY AUTOINCREMENT, player TEXT NOT NULL, date TEXT NOT NULL,
-  correct INTEGER NOT NULL, wrong INTEGER NOT NULL, best_combo INTEGER NOT NULL, ts TEXT NOT NULL);
+  correct INTEGER NOT NULL, wrong INTEGER NOT NULL, best_combo INTEGER NOT NULL, ts TEXT NOT NULL,
+  level INTEGER);
 CREATE TABLE IF NOT EXISTS coach_messages (
   id INTEGER PRIMARY KEY AUTOINCREMENT, player TEXT NOT NULL, role TEXT NOT NULL,
   content TEXT NOT NULL, tools TEXT, source TEXT, ts TEXT NOT NULL);
@@ -78,6 +79,9 @@ def conn():
         c.row_factory = sqlite3.Row
         try:
             c.executescript(SCHEMA)
+            # databases made before Speed Sprint levels: add the column (old 90-second rounds keep level NULL)
+            if "level" not in {r[1] for r in c.execute("PRAGMA table_info(speed_rounds)")}:
+                c.execute("ALTER TABLE speed_rounds ADD COLUMN level INTEGER")
             yield c
             c.commit()
         finally:
@@ -145,15 +149,15 @@ def steps(player: str, date: str) -> dict[str, dict[int, bool]]:
 
 
 # ------------------------------------------------------------------ speed
-def add_round(player: str, date: str, correct: int, wrong: int, best_combo: int) -> None:
+def add_round(player: str, date: str, correct: int, wrong: int, best_combo: int, level: int | None = None) -> None:
     with conn() as c:
-        c.execute("INSERT INTO speed_rounds(player,date,correct,wrong,best_combo,ts) VALUES (?,?,?,?,?,?)",
-                  (player, date, correct, wrong, best_combo, now()))
+        c.execute("INSERT INTO speed_rounds(player,date,correct,wrong,best_combo,ts,level) VALUES (?,?,?,?,?,?,?)",
+                  (player, date, correct, wrong, best_combo, now(), level))
 
 
 def rounds(player: str) -> list[dict]:
     with conn() as c:
-        return [dict(r) for r in c.execute("SELECT date,correct,wrong,best_combo,ts FROM speed_rounds "
+        return [dict(r) for r in c.execute("SELECT date,correct,wrong,best_combo,ts,level FROM speed_rounds "
                                            "WHERE player=? ORDER BY ts", (player,))]
 
 

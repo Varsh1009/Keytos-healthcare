@@ -187,6 +187,38 @@ def _rolling_sleep_sd(days: dict[str, dict]) -> list[tuple[str, float]]:
     return out
 
 
+FORMAT_LABEL = {"classic": "classic test", "old": "older version of the game"}
+
+
+def game_rows(p, gid: str) -> list[tuple[str, float, str, int | None]]:
+    """(timestamp, score, format, level passed or None). Format = "classic", "level N" or "old".
+    Old = rounds saved before levels existed (e.g. 90-second Speed Sprint, the old voice-recording rows)."""
+    if gid == "speed":
+        return [(r["ts"], float(r["correct"]), f"level {r['level']}" if r.get("level") else "old",
+                 r["level"] if r.get("level") and gym.speed_passed(r) else None) for r in db.rounds(p.name)]
+    out = []
+    for r in db.games(p.name, gid):
+        d = r["detail"]
+        if gid == "voice" and "task" in d:       # voice-recording page rows (speech tempo), not the Voice Check game
+            continue
+        fmt = "classic" if d.get("classic") else f"level {d['level']}" if d.get("level") else "old"
+        out.append((r["ts"], float(r["score"]), fmt, d["level"] if d.get("level") and d.get("passed") else None))
+    return out
+
+
+def pick_format(rows) -> tuple[str, list[tuple[str, float]], int]:
+    """The format to trend: the classic test if it has enough plays (fixed difficulty, best for tracking),
+    otherwise the format played most. Practice plays are skipped only if this format includes the very
+    first plays of the game."""
+    count = {}
+    for _, _, f, _ in rows:
+        count[f] = count.get(f, 0) + 1
+    fmt = "classic" if count.get("classic", 0) >= GAME_PRACTICE + 5 else max(count, key=lambda f: (count[f], f == "classic"))
+    pts = [(t, v) for t, v, f, _ in rows if f == fmt]
+    practice = GAME_PRACTICE if rows[0][2] == fmt else 0
+    return fmt, pts, practice
+
+
 def build(p) -> dict:
     days = db.days(p.name)
     logs = p.logs
@@ -232,20 +264,27 @@ def build(p) -> dict:
         vars_.append(_var("bp", "sleep_heart", "Blood pressure (top number)", "mmHg", "check-ins", bp, "lower", 3,
                           "game", note="SPRINT MIND: aiming for 120 lowered mild memory problems by 19%.", word="reading"))
 
-    # ---------------- games (all 7)
+    # ---------------- games (every game; scores only compared within the same mode and level)
     for g in gym.GAMES:
-        if g["id"] == "speed":
-            pts = [(r["ts"], float(r["correct"])) for r in db.rounds(p.name)]
-        else:
-            pts = [(r["ts"], float(r["score"])) for r in db.games(p.name, g["id"])]
-        if not pts:
-            vars_.append({"id": "game_" + g["id"], "group": "thinking", "label": g["title"], "icon": g["icon"],
-                          "unit": g["unit"], "source": "game", "status": "none", "n": 0, "points": [],
-                          "link": "#/sprint" if g["id"] == "speed" else f"#/game/{g['id']}", "domain": g["domain"]})
+        link = "#/sprint" if g["id"] == "speed" else f"#/game/{g['id']}"
+        rows = game_rows(p, g["id"])
+        base = {"id": "game_" + g["id"], "group": "thinking", "label": g["title"], "icon": g.get("icon", ""),
+                "unit": g["unit"], "source": "game", "link": link, "domain": g.get("domain", "")}
+        if not rows:
+            vars_.append(base | {"status": "none", "n": 0, "points": []})
             continue
-        v = _var("game_" + g["id"], "thinking", g["title"], g["unit"], "game", pts, g["better"], 0, "game",
-                 practice=GAME_PRACTICE, icon=g["icon"], domain=g["domain"],
-                 link="#/sprint" if g["id"] == "speed" else f"#/game/{g['id']}")
+        fmt, pts, practice = pick_format(rows)
+        v = _var(base["id"], "thinking", g["title"], g["unit"], "game", pts, g["better"], 0, "game",
+                 practice=practice, icon=base["icon"], domain=base["domain"], link=link)
+        v["format"] = FORMAT_LABEL.get(fmt, fmt)
+        formats = {r[2] for r in rows}
+        if len(formats) > 1:
+            v["note"] = (f"Trend uses your {v['format']} only ({len(pts)} of {len(rows)} plays). Harder levels and "
+                         f"different versions give different scores, so they're never mixed.")
+        passed = [r[3] for r in rows if r[3]]
+        if passed:
+            v["level_reached"] = max(passed)
+            v["level_top"] = len(gym.SPEED_LEVELS) if g["id"] == "speed" else len(gym.LEVELS.get(g["id"], [])) or None
         vars_.append(v)
 
     # ---------------- voice + hands
@@ -340,15 +379,18 @@ def _coverage(p, days, voices, hands, scans) -> list[dict]:
 def _links(series: dict, p) -> list[dict]:
     """Within-person patterns: game performance after good vs short sleep, and on active vs quiet days."""
     sleep, steps = series.get("sleep_hours", {}), series.get("steps", {})
-    plays = []                                   # (date, z-score within that game, higher = better)
+    plays = []                                   # (date, z-score within that game AND format, higher = better)
     for g in gym.GAMES:
-        rows = ([(r["date"], float(r["correct"])) for r in db.rounds(p.name)] if g["id"] == "speed"
-                else [(r["date"], float(r["score"])) for r in db.games(p.name, g["id"])])[GAME_PRACTICE:]
-        if len(rows) < 4:
+        rows = game_rows(p, g["id"])
+        if not rows:
             continue
-        vals = [v for _, v in rows]
+        _, pts, practice = pick_format(rows)
+        pts = pts[practice:]
+        if len(pts) < 4:
+            continue
+        vals = [v for _, v in pts]
         m, s = st.mean(vals), st.pstdev(vals) or 1.0
-        plays += [(d, (v - m) / s * (1 if g["better"] == "higher" else -1)) for d, v in rows]
+        plays += [(d[:10], (v - m) / s * (1 if g["better"] == "higher" else -1)) for d, v in pts]
     out = []
     for name, cond, src in (("sleep", lambda d: sleep.get(d), "the night before"),
                             ("steps", lambda d: steps.get(d), "that day")):

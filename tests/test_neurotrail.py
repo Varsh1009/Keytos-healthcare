@@ -145,6 +145,49 @@ def test_api_flow():
     assert prog["totals"]["quests"] == 2 and prog["bp"][0]["value"] == 128 and len(prog["speed"]) == 2
 
 
+def test_speed_sprint_levels():
+    """15-second rounds: hitting the goal with >=80% accuracy unlocks the next level; old 90 s rounds don't count."""
+    from neurotrail import games
+    assert games.SPEED_SECONDS == 15
+    assert games.speed_summary([{"correct": 40, "wrong": 0, "level": None}])["level"] == 1   # legacy round ignored
+    from fastapi.testclient import TestClient
+    import web.server as srv
+    c = TestClient(srv.app)
+    c.post("/api/players", json={"name": "L"})
+    assert c.get("/api/player/L").json()["speed"]["level"] == 1
+    r = c.post("/api/player/L/speed", json={"correct": 6, "wrong": 3, "best_combo": 3}).json()   # 67% accuracy
+    assert r["round"] == {"level": 1, "target": 6, "passed": False, "unlocked": None, "new_clear": False}
+    assert r["speed"]["level"] == 1 and r["level_bonus"] == 0
+    sparks0 = r["sparks"]
+    r = c.post("/api/player/L/speed", json={"correct": 7, "wrong": 1, "best_combo": 5}).json()
+    assert r["round"]["passed"] and r["round"]["unlocked"] == 2 and r["speed"]["level"] == 2
+    assert r["speed"]["rule"]["symbols"] == 6 and r["rounds_today"] == 2
+    assert r["level_bonus"] == 10 and r["sparks"] == sparks0 + 10        # level-up reward
+    assert r["leaderboard"]["you"]["rank"] == 1 and r["leaderboard"]["n"] == 1
+
+
+def test_game_levels_rewards_and_leaderboard():
+    """Every game: the server picks the level, judges pass/fail, pays +10 per new level, ranks players."""
+    from fastapi.testclient import TestClient
+    import web.server as srv
+    c = TestClient(srv.app)
+    for n in ("A", "B"):
+        c.post("/api/players", json={"name": n})
+    r = c.post("/api/player/A/game", json={"game": "recall", "score": 3, "detail": {"errors": 2}}).json()
+    assert r["round"]["level"] == 1 and not r["round"]["passed"] and r["level_bonus"] == 0   # too many wrong taps
+    r = c.post("/api/player/A/game", json={"game": "recall", "score": 3, "detail": {"errors": 0}}).json()
+    assert r["round"]["passed"] and r["round"]["unlocked"] == 2 and r["level_bonus"] == 10
+    assert r["stats"]["levels"]["level"] == 2 and r["sparks_gained"] == 0                   # daily +15 already paid
+    r = c.post("/api/player/A/game", json={"game": "trails", "score": 12.5, "detail": {"errors": 0}}).json()
+    assert r["round"]["passed"]                                                             # lower is better: 12.5 s <= 15 s
+    assert not c.post("/api/player/B/game", json={"game": "trails", "score": 9,
+                                                  "detail": {"errors": 0, "finished": False}}).json()["round"]["passed"]
+    lb = c.get("/api/games/trails/leaderboard?player=B").json()
+    assert [x["name"] for x in lb["rows"]] == ["A", "B"] and lb["you"]["rank"] == 2
+    classic = c.post("/api/player/A/game", json={"game": "fluency", "score": 14, "detail": {"classic": True}}).json()
+    assert classic["round"] is None                                                         # clinical version has no level
+
+
 # ---------------------------------------------------------------- Brain Gym
 def test_fluency_scoring_rejects_non_animals_and_repeats():
     from neurotrail import games
@@ -199,3 +242,41 @@ def test_wearable_sleep_feeds_profile():
     p = Player.create("W")
     db.put_days("W", {date.today().isoformat(): {"sleep_hours": 5.0}}, "test")
     assert Player.load("W").profile()["sleep_hours"] == 5.0
+
+
+def test_fluency_audio_route_counts_spoken_animals():
+    """Animal Naming by voice: upload a WAV (8 animals, Windows TTS) → Whisper on the server → counted."""
+    from neurotrail import speech
+    if not speech.available():
+        pytest.skip("faster-whisper not installed")
+    from fastapi.testclient import TestClient
+    import web.server as srv
+    wav = (ROOT / "tests" / "fixtures" / "animals_tts.wav").read_bytes()
+    r = TestClient(srv.app).post("/api/games/fluency-audio", files={"file": ("a.wav", wav, "audio/wav")})
+    assert r.status_code == 200, r.text
+    assert r.json()["score"] >= 7
+
+
+def test_voice_game_endpoint_scores_flow():
+    """Voice Check game: the server measures flow (% time not in long pauses); slow, pausing speech scores lower."""
+    from fastapi.testclient import TestClient
+    import web.server as srv
+    c = TestClient(srv.app)
+    flow = {}
+    for k in ("fast", "slow"):
+        r = c.post("/api/games/voice-analyze", files={"file": ("v.wav", (FIX / f"tts_{k}.wav").read_bytes(), "audio/wav")})
+        assert r.status_code == 200, r.text
+        flow[k] = r.json()["flow"]
+    assert 0 <= flow["slow"] < flow["fast"] <= 100
+    assert c.post("/api/games/voice-analyze", files={"file": ("v.wav", b"not audio", "audio/wav")}).status_code in (400, 422)
+
+
+def test_voice_and_read_aloud_levels():
+    from neurotrail import games as gym
+    assert {"voice", "readaloud"} <= {g["id"] for g in gym.GAMES}
+    assert gym.level_passed("voice", 1, 62, {"finished": True})
+    assert not gym.level_passed("voice", 1, 90, {"finished": False})    # stopped talking early
+    assert not gym.level_passed("voice", 1, 55, {"finished": True})     # too many long pauses
+    p = gym.read_passage(8)
+    assert p["words"] >= gym.LEVELS["readaloud"][7]["words"]
+    assert gym.level_passed("readaloud", 1, gym.LEVELS["readaloud"][0]["target"], {})

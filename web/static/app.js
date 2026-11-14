@@ -5,9 +5,9 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
-import { pageGym, pageGame, pageMRI } from './gym.js?v=6';
+import { pageGym, pageGame, pageMRI, railHTML, boardHTML, startDemo } from './gym.js?v=11';
 import { pageHands } from './hands.js?v=6';
-import { pageHome as pageHome2, pageVoice, pageData, plainLever, plainAmount, buddy } from './ui2.js?v=1';
+import { pageHome as pageHome2, pageVoice, pageData, plainLever, plainAmount, buddy } from './ui2.js?v=4';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -23,7 +23,6 @@ const TIER = { 'Randomized trial': 'b-rct', 'Large cohort': 'b-cohort', 'Mixed /
 const enc = encodeURIComponent;
 
 let QUESTS = [], QMAP = {}, ME = null, SEL = null, META = null, ROUTE = 'home';
-const inputs = {};
 const charts = {};
 const toast = (m, ms = 2800) => { const t = $('#toast'); t.textContent = m; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), ms); };
 const chartOpts = (extra = {}) => ({ responsive: true, maintainAspectRatio: false, plugins: { legend: { labels: { color: '#C9D0EE' } } },
@@ -123,16 +122,18 @@ function buildSparkles() {
   sparkles = new THREE.Points(g, new THREE.PointsMaterial({ size: 4, map: spriteTex, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
   sparkles.userData = { ph }; brain.add(sparkles);
 }
+let GPAINT = null;   // Games page: { state: {area: 'done'|'open'}, color: {area: hex}, focus: area }
 function paintRegions(hover) {
   if (!ME || !META || !hemis.left) return;
-  const st = ME.trail || {}, focus = hover || SEL;
+  const games = ROUTE === 'gym' && GPAINT;   // on the Games page, colour each game's brain area instead of the quests'
+  const st = games ? GPAINT.state : ME.trail || {}, focus = games ? GPAINT.focus : hover || SEL;
   const byIdx = Object.fromEntries(Object.entries(META.groups).map(([k, v]) => [v, k]));
   for (const h of Object.values(hemis)) {
     const G = h.glow.array, T = h.tint.array, P = h.pulse.array; G.fill(0); T.fill(0); P.fill(0);
     for (let i = 0; i < h.region.length; i++) {
       const qid = byIdx[h.region[i]]; if (!qid) continue;
       const q = QMAP[qid], s = st[qid]; if (!q || !s) continue;
-      const c = new THREE.Color(q.color); let gi = 0, ta = .16, pu = 0;
+      const c = new THREE.Color(games ? GPAINT.color[qid] : q.color); let gi = 0, ta = .16, pu = 0;
       if (s === 'done') { gi = .32; ta = .62; }
       if (s === 'next') { gi = .2; ta = .45; pu = 1; }
       if (focus === qid) { gi = Math.max(gi, .3) + .14; ta = .72; pu = s === 'done' ? 0 : 1; }
@@ -215,6 +216,10 @@ function renderHUD() {
   $('#levelRing').style.strokeDashoffset = 100.5 * (1 - (L.next_at ? (ME.sparks - L.floor) / (L.next_at - L.floor) : 1));
   $('#playerName').textContent = ME.name;
 }
+function gameBrain(state, color, focus, title, fact) {   // called by the Games page (gym.js)
+  GPAINT = { state, color, focus }; paintRegions(); flyTo(focus);
+  $('#capTitle').innerHTML = title; $('#capFact').textContent = fact;
+}
 function caption(id) {
   if (!id || !QMAP[id]) { $('#capTitle').textContent = ''; $('#capFact').textContent = ''; return; }
   const q = QMAP[id]; $('#capTitle').innerHTML = `<span style="color:${q.color}">●</span> ${q.stop} · ${q.region_name}`; $('#capFact').textContent = q.region_fact;
@@ -222,7 +227,7 @@ function caption(id) {
 
 // ================================================================ ROUTER
 const homeRoute = () => { SEL = null; paintRegions(); caption(null); goHomeCam(); return pageHome2(); };
-const routes = { home: homeRoute, play: pagePlay, gym: pageGym, game: pageGame, sprint: pageSprint, voice: pageVoice, hands: pageHands, data: pageData, mri: pageMRI, progress: pageProgress, coach: pageCoach, levers: pageLevers, science: pageScience };
+const routes = { home: homeRoute, gym: pageGym, game: pageGame, sprint: pageSprint, voice: pageVoice, hands: pageHands, data: pageData, mri: pageMRI, progress: pageProgress, coach: pageCoach, levers: pageLevers, science: pageScience };
 async function route() {
   if (!ME?.onboarded) return;
   const [, r = 'home', arg] = (location.hash || '#/').split('/');
@@ -231,216 +236,95 @@ async function route() {
   const tab = { game: 'gym', sprint: 'gym', mri: 'data', levers: 'data' }[ROUTE] || ROUTE;
   $$('#tabs a').forEach(a => a.classList.toggle('on', a.dataset.r === tab));
   $$('.page').forEach(p => p.classList.toggle('on', p.id === 'p-' + ROUTE));
-  stage.classList.toggle('dim', !['home', 'play'].includes(ROUTE) || (ROUTE === 'home' && innerWidth < 1150));
+  stage.classList.toggle('dim', !['home', 'gym'].includes(ROUTE) || (ROUTE === 'home' && innerWidth < 1150));
   stage.classList.toggle('side', ROUTE === 'home');
-  VIEW_TARGET = ROUTE === 'play' ? -0.2 : ROUTE === 'home' ? -0.22 : 0;
+  VIEW_TARGET = ROUTE === 'gym' ? -0.2 : ROUTE === 'home' ? -0.22 : 0;
   if (ROUTE !== 'sprint') G = null;
-  await routes[ROUTE](arg);
+  try { await routes[ROUTE](arg); }
+  catch (e) {   // never leave a blank page: say what broke
+    console.error(e);
+    const el = $('#p-' + ROUTE);
+    if (el) el.innerHTML = `<div class="scrollpage"><div class="wrap"><div class="glass card"><b>⚠ This page couldn't load.</b><p class="muted">${esc(e.message)}</p>
+      <p class="muted">If the app was just updated, restart the server (<code>python web/server.py</code>) and refresh the page.</p></div></div></div>`;
+  }
 }
 addEventListener('hashchange', route);
-
-// ================================================================ HOME
-function pageHome() {
-  SEL = null; paintRegions(); caption(null); goHomeCam();
-  const ids = Object.keys(ME.trail), done = ids.filter(i => ME.trail[i] === 'done').length, next = ids.find(i => ME.trail[i] === 'next');
-  const C = 2 * Math.PI * 40, L = ME.lever;
-  $('#p-home').innerHTML = `<div class="home">
-    <div class="col"><div class="glass panel">
-      <div class="eyebrow">TODAY</div>
-      <div class="today-ring"><svg viewBox="0 0 100 100"><circle cx="50" cy="50" r="40" stroke="rgba(255,255,255,.08)" stroke-width="10" fill="none"/>
-        <circle cx="50" cy="50" r="40" stroke="url(#tr)" stroke-width="10" fill="none" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - done / ids.length)}" style="transition:1s;filter:drop-shadow(0 0 6px #59F0FF)"/>
-        <defs><linearGradient id="tr"><stop offset="0" stop-color="#59F0FF"/><stop offset="1" stop-color="#9B7BFF"/></linearGradient></defs></svg>
-        <div><div class="big">${done}/${ids.length}</div><div class="muted">brain regions lit today</div></div></div>
-      ${next ? `<a class="bigbtn" href="#/play/${next}" style="margin-top:14px">${QMAP[next].icon} Play next: ${QMAP[next].title} →</a>` : '<div class="bigbtn" style="margin-top:14px">🏆 Whole brain lit today</div>'}
-    </div>
-    <div class="glass panel"><div class="eyebrow">QUESTS · ANY ORDER</div>
-      ${ids.map(id => { const q = QMAP[id], s = ME.trail[id]; return `<a class="qtile ${s}" href="#/play/${id}" data-q="${id}" style="--c:${q.color}">
-        <div class="orb" style="width:40px;height:40px;font-size:18px">${q.icon}</div>
-        <div class="tmeta"><div class="tt">${q.title}</div><div class="ts">${q.stop}</div></div>
-        <div class="go">${s === 'done' ? '✓ lit' : `+${q.sparks} ⚡`}</div></a>`; }).join('')}
-    </div></div>
-    <div class="mid"></div>
-    <div class="col">
-      <div class="glass panel coachcard"><div class="eyebrow">🤖 YOUR COACH</div><div class="bubble" id="homeCoach"><span class="muted">Loading…</span></div>
-        <a class="bigbtn" href="#/coach" style="margin-top:12px;background:linear-gradient(90deg,#9B7BFF,#59F0FF)">Talk to your coach →</a></div>
-      <div class="glass panel"><div class="eyebrow">YOUR LEVERS</div>
-        <div style="font:700 34px 'Space Grotesk';margin:6px 0;color:${L.years > 1 ? '#FF8A7A' : L.years > 0 ? '#FFC83D' : '#3DDC97'}">${Math.abs(L.years).toFixed(1)} yrs ${L.years >= 0 ? 'older' : 'younger'}</div>
-        <div class="muted">processing speed linked to your significant factors vs healthy targets (NHANES, 95% CI ${fmt(L.ci[0])} to ${fmt(L.ci[1])})</div>
-        <a href="#/levers" class="muted" style="color:#59F0FF">Open the control room →</a></div>
-      <div class="glass panel"><div class="eyebrow">THIS WEEK</div>
-        <div class="mini-bars">${ME.week.map(d => `<div style="height:${Math.max(6, d.quests / 9 * 100)}%" title="${d.date}: ${d.quests}"></div>`).join('')}</div>
-        <div style="display:flex">${ME.week.map(d => `<span style="flex:1;text-align:center;font-size:10px;color:#9AA3C7">${d.dow}</span>`).join('')}</div>
-        <a href="#/progress" class="muted" style="color:#59F0FF">See full progress →</a></div>
-    </div></div>`;
-  $$('#p-home .qtile').forEach(t => { t.onmouseenter = () => { paintRegions(t.dataset.q); caption(t.dataset.q); }; t.onmouseleave = () => { paintRegions(); caption(null); }; });
-  api(`/api/player/${enc(ME.name)}/coach`).then(h => {
-    const last = [...h.messages].reverse().find(m => m.role === 'assistant');
-    $('#homeCoach').innerHTML = last ? esc(last.content.slice(0, 320)) + (last.content.length > 320 ? '…' : '') : `Hi ${esc(ME.name)}! I read your logs and run the real models. Ask me what your biggest lever is, or to build your week.`;
-  }).catch(() => {});
-}
-
-// ================================================================ PLAY
-function pagePlay(id) {
-  if (!id || !QMAP[id]) { const n = Object.keys(ME.trail).find(k => ME.trail[k] === 'next') || Object.keys(ME.trail)[0]; location.hash = `#/play/${n}`; return; }
-  SEL = id; paintRegions(); caption(id); flyTo(id); renderPlay();
-}
-function renderPlay() {
-  const q = QMAP[SEL], s = ME.trail[q.id], steps = ME.steps[q.id] || [], nDone = steps.filter(Boolean).length;
-  const ids = Object.keys(ME.trail), i = ids.indexOf(q.id), prev = ids[(i - 1 + ids.length) % ids.length], nxt = ids[(i + 1) % ids.length];
-  const nh = q.nhanes ? `<p class="ours"><b>Our NHANES model</b> (n=2,597, survey-weighted): ${q.nhanes.label} ↔ ${fmt(q.nhanes.dsst_points)} DSST points (95% CI ${fmt(q.nhanes.dsst_ci[0])} to ${fmt(q.nhanes.dsst_ci[1])}) ≈ ${fmt(q.nhanes.years)} yrs, ${q.nhanes.p_value < .05 ? '<span class="sig">significant</span>' : '<span class="nsig">not significant</span>'} (p=${q.nhanes.p_value.toPrecision(2)}). Association, not cause.</p>` : '';
-  const ev = `<details class="ev"><summary>Why this quest? The evidence</summary><div class="evb">${q.evidence.map(e => `<p>• ${e.claim} <a href="${e.url}" target="_blank" rel="noopener">source ↗</a></p>`).join('')}${nh}${q.caveat ? `<p class="caveat">⚠ ${q.caveat}</p>` : ''}<p class="formula">sparks = ${q.sparks_formula}</p></div></details>`;
-  const picker = `<div class="qpicker">${ids.map(k => `<a href="#/play/${k}" class="${k === q.id ? 'on' : ''} ${ME.trail[k] === 'done' ? 'done' : ''}" style="--c:${QMAP[k].color}" title="${QMAP[k].title}">${QMAP[k].icon}</a>`).join('')}</div>`;
-  let body;
-  if (s === 'done') body = `<div class="done-card"><div class="big">Neuron fired 🔥</div><p class="muted">${q.region_name} stays lit for today. Come back tomorrow to keep your streak.</p><a class="cta" href="#/play/${nxt}" style="text-decoration:none;display:inline-block">Next quest →</a></div>`;
-  else body = `<div class="progress-strip"><i style="width:${nDone / steps.length * 100}%"></i></div><div class="muted" id="stepCount">${nDone} of ${steps.length} steps done · tap a step when you've done it</div>
-    <div class="steps">${q.steps.map((t, k) => `<div class="stp ${steps[k] ? 'on' : ''} ${q.log.kind === 'speed' && k > 0 ? 'auto' : ''}" data-i="${k}"><div class="box">✓</div><div><div class="num">STEP ${k + 1}${q.log.kind === 'speed' && k > 0 ? ' · ticks itself when you play' : ''}</div><div class="txt">${t}</div></div></div>`).join('')}</div>
-    ${q.log.kind === 'speed' ? `<a class="fire" href="#/sprint" style="display:block;text-align:center;text-decoration:none">🎮 Play Speed Sprint ${ME.rounds_today ? `(round ${ME.rounds_today + 1} = booster)` : ''}</a>` : inputUI(q)}
-    <button class="fire" id="fireBtn" disabled>🔥 Fire this neuron · +${q.sparks} ⚡</button>
-    <div class="muted" id="fireHint" style="text-align:center;margin-top:6px"></div>
-    ${ME.support && q.id === 'joy' ? `<div class="support">Your check-in suggests things may be hard right now. In the US, call or text <b>988</b> any time. NeuroTrail is not treatment.</div>` : ''}`;
-  $('#p-play').innerHTML = `<div class="play"><div class="left glass" style="--c:${q.color}">
-    ${picker}
-    <div class="q-top"><div class="q-icon">${q.icon}</div><div class="reward">${s === 'done' ? '✓' : `+${q.sparks} ⚡`}<small>${s === 'done' ? 'LIT TODAY' : 'REWARD'}</small></div></div>
-    <div class="eyebrow" style="margin-top:8px">MISSION ${i + 1} OF ${ids.length}</div>
-    <div class="q-title">${q.title}</div><div class="q-region">Lights up: ${q.region_name} (${q.stop})</div>
-    <span class="badge ${TIER[q.tier]}">${q.tier}</span>${q.lancet_paf ? `<span class="badge b-cohort">${q.lancet_paf}% of dementia cases linked</span>` : ''}
-    ${body}${ev}
-    <div class="navrow"><a href="#/play/${prev}">← ${QMAP[prev].title}</a><a href="#/">Home</a><a href="#/play/${nxt}">${QMAP[nxt].title} →</a></div>
-  </div><div></div></div>`;
-  if (s === 'done') return;
-  const panel = $('#p-play');
-  $$('.stp', panel).forEach(el => el.onclick = async () => {
-    if (el.classList.contains('auto')) return toast('This step ticks itself when you play Speed Sprint.');
-    const k = +el.dataset.i, on = !el.classList.contains('on');
-    el.classList.toggle('on', on); if (on) sparkStream(q.id, 40);
-    try { ME = await api(`/api/player/${enc(ME.name)}/step`, { quest: q.id, index: k, done: on }); } catch (e) { toast(e.message); }
-    const sd = ME.steps[q.id].filter(Boolean).length; $('.progress-strip i', panel).style.width = sd / steps.length * 100 + '%';
-    $('#stepCount').textContent = `${sd} of ${steps.length} steps done${sd === steps.length ? ' · all done!' : ''}`; refreshFire(q);
-  });
-  const setV = (k, val, unit) => { inputs[q.id][k] = val; const b = $('#lv_' + k); if (b) { b.textContent = val + (unit || ''); b.style.opacity = 1; }
-    const r = $(`input[data-k="${k}"]`, panel); if (r) r.value = val;
-    if (q.log.kind === 'steps') { const v = inputs[q.id], g = v.goal || 3826; $('.meter i', panel).style.width = Math.min(100, v.n / g * 100) + '%'; }
-    refreshFire(q); };
-  $$('input[type=range]', panel).forEach(el => el.oninput = () => setV(el.dataset.k, +el.value, el.dataset.unit));
-  $$('[data-up],[data-dn]', panel).forEach(b => b.onclick = () => { const k = b.dataset.up || b.dataset.dn, st = +b.dataset.st, cur = inputs[q.id][k] ?? +b.dataset.def;
-    const unit = $(`input[data-k="${k}"]`, panel)?.dataset.unit; setV(k, +(b.dataset.up ? Math.min(+b.dataset.max, cur + st) : Math.max(+b.dataset.min, cur - st)).toFixed(2), unit); });
-  $$('[data-goal]', panel).forEach(b => b.onclick = () => { inputs[q.id].goal = +b.dataset.goal; renderPlay(); });
-  $$('[data-pick]', panel).forEach(b => b.onclick = () => { inputs[q.id][b.dataset.pick] = b.dataset.val; renderPlay(); });
-  $('#fireBtn').onclick = () => fire(q);
-  refreshFire(q);
-}
-// Tap-only controls (no keyboard needed). A value counts only after you move it.
-function ctl(q, k, label, min, max, step, def, unit = '') {
-  const v = inputs[q.id] ||= {}, val = v[k] ?? def, set = v[k] != null;
-  return `<div class="sl"><div class="lbl">${label}<b id="lv_${k}" style="${set ? '' : 'opacity:.45'}">${val}${unit}${set ? '' : ' (set me)'}</b></div>
-    <div style="display:flex;gap:8px;align-items:center"><button class="chip" data-dn="${k}" data-st="${step}" data-min="${min}" data-def="${def}">−</button>
-    <input type="range" min="${min}" max="${max}" step="${step}" value="${val}" data-k="${k}" data-unit="${unit}" style="flex:1">
-    <button class="chip" data-up="${k}" data-st="${step}" data-max="${max}" data-def="${def}">+</button></div></div>`;
-}
-function chips(q, k, opts) { const v = inputs[q.id] ||= {}; return `<div class="chips">${opts.map(o => `<button class="chip ${v[k] === o ? 'on' : ''}" data-pick="${k}" data-val="${esc(o)}">${esc(o)}</button>`).join('')}</div>`; }
-function inputUI(q) {
-  const v = inputs[q.id] ||= {}, k = q.log.kind;
-  if (k === 'bp') return `<div class="inputs"><label>Reading 1</label>${ctl(q, 's1', 'Systolic (top)', 80, 220, 1, 125, ' mmHg')}${ctl(q, 'd1', 'Diastolic (bottom)', 40, 130, 1, 80, ' mmHg')}
-    <label>Reading 2 (one minute later)</label>${ctl(q, 's2', 'Systolic (top)', 80, 220, 1, 125, ' mmHg')}${ctl(q, 'd2', 'Diastolic (bottom)', 40, 130, 1, 80, ' mmHg')}</div>`;
-  if (k === 'steps') { const goal = v.goal || 3826, n = +v.n || 0; return `<div class="inputs"><label>Today's target</label><div class="chips">${[3826, 9826].map(g => `<button class="chip ${goal === g ? 'on' : ''}" data-goal="${g}">${g.toLocaleString()} · ${g === 3826 ? 'minimum dose' : 'optimal dose'}</button>`).join('')}</div>
-      ${ctl(q, 'n', 'Steps today (from your phone or watch)', 0, 25000, 100, 5000)}<div class="meter"><i style="width:${Math.min(100, n / goal * 100)}%"></i></div></div>`; }
-  if (k === 'connect') return `<div class="inputs"><label>Who did you talk to?</label>${chips(q, 'who', ['Family', 'Partner', 'Friend', 'Neighbor', 'Colleague', 'Someone new'])}${ctl(q, 'mins', 'Minutes', 0, 120, 5, 15, ' min')}</div>`;
-  if (k === 'hearing') return `<div class="inputs"><label>Your path today</label>${chips(q, 'path', ['Wore my hearing aids all day', 'Took a hearing screening', 'Booked an audiologist'])}</div>`;
-  if (k === 'joy') return `<div class="inputs"><label>Pick your activity</label>${chips(q, 'act', q.log.menu)}
-      <label>Scheduled for</label>${chips(q, 'at', ['Morning', 'Midday', 'Afternoon', 'Evening'])}
-      ${ctl(q, 'before', 'Mood before', 0, 10, 1, 5, '/10')}${ctl(q, 'after', 'Mood after', 0, 10, 1, 5, '/10')}</div>`;
-  if (k === 'sleep') return `<div class="inputs">${ctl(q, 'h', 'Hours slept last night', 2, 12, .25, 7, ' h')}</div>`;
-  if (k === 'labs') return `<div class="inputs"><div class="muted">Optional: set them only if you found your numbers.</div>${ctl(q, 'ldl', 'LDL cholesterol', 40, 250, 1, 100, ' mg/dL')}${ctl(q, 'a1c', 'HbA1c', 4, 12, .1, 5.6, '%')}</div>`;
-  if (k === 'check') return `<div class="inputs"><label>Today's trigger</label>${chips(q, 'trigger', ['Morning coffee', 'After meals', 'Stress', 'With friends', 'Driving', 'Alcohol'])}
-      <label>Your substitute</label>${chips(q, 'sub', ['5-minute walk', 'Glass of water', 'Gum', 'Deep breaths', 'Call someone'])}</div>`;
-  return '';
-}
-function missing(q) {
-  const v = inputs[q.id] || {}, k = q.log.kind;
-  if (k === 'bp' && ['s1', 'd1', 's2', 'd2'].some(x => v[x] == null)) return 'set both readings (top and bottom)';
-  if (k === 'steps' && !(v.n > 0)) return 'set your step count';
-  if (k === 'connect' && !(v.who && v.mins >= 10)) return 'pick who, and 10+ minutes';
-  if (k === 'hearing' && !v.path) return 'pick your path';
-  if (k === 'joy' && !v.act) return 'pick an activity';
-  return '';
-}
-function refreshFire(q) {
-  const b = $('#fireBtn'); if (!b) return;
-  const left = (ME.steps[q.id] || []).filter(x => !x).length, m = missing(q);
-  b.disabled = left > 0 || !!m;
-  $('#fireHint').textContent = left ? `${left} step${left > 1 ? 's' : ''} to go` : m ? `Almost: ${m}` : 'Ready. Fire it!';
-}
-async function fire(q) {
-  const v = inputs[q.id] || {}, k = q.log.kind; let value = null, extra = {};
-  if (k === 'bp') { value = (v.s1 + v.s2) / 2; extra = { readings: [[v.s1, v.d1], [v.s2, v.d2]] }; }
-  if (k === 'steps') { value = v.n; extra = { goal: v.goal || 3826 }; }
-  if (k === 'connect') { value = v.mins; extra = { who: v.who }; }
-  if (k === 'hearing') extra = { path: v.path };
-  if (k === 'joy') { value = (v.after ?? 5) - (v.before ?? 5); extra = { activity: v.act, at: v.at, before: v.before ?? 5, after: v.after ?? 5 }; }
-  if (k === 'sleep') value = v.h ?? 7;
-  if (k === 'labs') extra = { ldl: v.ldl ?? null, a1c: v.a1c ?? null };
-  if (k === 'check') extra = { trigger: v.trigger, substitute: v.sub };
-  if (k === 'speed') value = ME.best_speed;
-  try {
-    const r = await api(`/api/player/${enc(ME.name)}/complete`, { quest: q.id, value, extra }); ME = r;
-    sparkStream(q.id, 220, true); sparkStream(q.id, 90); bloom.strength = 2.2; setTimeout(() => (bloom.strength = .55), 700);
-    const fl = document.createElement('div'); fl.className = 'float-gain'; fl.textContent = `+${r.gained} ⚡`; fl.style.left = '30%'; fl.style.top = '45%'; document.body.appendChild(fl); setTimeout(() => fl.remove(), 1700);
-    if (k === 'bp' && value >= 180) toast('⚠ 180+ is very high. If readings stay this high, contact a clinician promptly.', 6000);
-    else if (k === 'steps') toast(value >= 9826 ? '🏅 Optimal dose reached (UK Biobank HR 0.49)' : value >= 3826 ? '✅ Minimum dose reached. Next: 9,826' : `${(3826 - value).toLocaleString()} more steps to the minimum dose`, 4000);
-    else if (k === 'joy' && extra.after > extra.before) toast(`Mood ${extra.before} → ${extra.after}. That's behavioural activation working.`, 4000);
-    renderHUD(); paintRegions(); renderPlay();
-    if (r.leveled_up) setTimeout(() => { $('#luName').textContent = `Level ${r.level.index} · ${r.level.name}`; $('#luText').textContent = `${r.sparks.toLocaleString()} sparks banked.`; openOv('levelup'); }, 1300);
-  } catch (e) { toast(e.message); }
-}
 
 // ================================================================ SPRINT
 const SYM = ['◆', '▲', '●', '■', '★', '✚', '⬟', '☾', '♥'];
 let G = null;
+// 15-second rounds with levels. The server (neurotrail/games.py SPEED_LEVELS) decides the level and whether you passed.
+const ruleText = L => `${L.symbols} symbols${L.shuffle ? ' · key reshuffles every 4 correct' : ''} · goal ${L.target} correct`;
 function pageSprint() {
-  $('#p-sprint').innerHTML = `<div class="sprint-wrap"><div class="arcade" id="arcadeBody"></div></div>`;
-  $('#arcadeBody').innerHTML = `<div class="eyebrow">SPEED SPRINT · 90 SECONDS</div><h2 style="font:700 40px 'Space Grotesk';margin:10px 0">Match the symbol to its number</h2>
-    <p class="muted" style="max-width:560px;margin:0 auto">A digital task modeled on the Digit Symbol Substitution Test. Tap the keypad (or keys 1–9).
-    Speed training with boosters was the only ACTIVE-trial arm linked to fewer dementia diagnoses (HR 0.75).</p>
-    <div class="a-big">${ME.best_speed ?? '–'}</div><div class="muted">personal best · ${ME.rounds_today} round${ME.rounds_today === 1 ? '' : 's'} today ${ME.rounds_today >= 2 ? '· booster done ✓' : ''}</div>
-    <div class="row" style="justify-content:center"><button class="cta" id="goBtn">▶ Start ${ME.rounds_today ? 'booster round' : 'sprint'}</button></div>`;
+  const S = ME.speed, L = S.rule, top = S.passed >= S.top;
+  $('#p-sprint').innerHTML = `<div class="sprint-wrap"><div class="arcade gamebox" style="--c:#FFC83D"><a class="close" href="#/gym/speed" style="text-decoration:none;display:grid;place-items:center">✕</a>
+    <div class="gwrap"><div id="rail">${railHTML(S)}</div><div id="arcadeBody"></div></div></div></div>`;
+  $('#arcadeBody').innerHTML = `<div class="eyebrow">SPEED GAME · LEVEL ${S.level} OF ${S.top}</div><h2 class="gh2">⚡ Speed Sprint</h2>
+    <div class="demo" id="demo"></div>
+    <p class="muted howto">Match each symbol to its number using the key, as many as you can in ${S.seconds} seconds. Tap the keypad (or keys 1–${L.symbols}).</p>
+    <div class="goalcard"><small>LEVEL ${S.level} GOAL</small><b>${L.target} correct with ${Math.round(S.pass_accuracy * 100)}%+ right</b><span>${ruleText(L)} · ${top ? 'every level cleared, keep beating your best' : `unlocks level ${S.level + 1}`}</span></div>
+    <div class="muted">your best at level ${S.level}: <b>${S.best_here ?? '–'}</b> · ${ME.rounds_today} round${ME.rounds_today === 1 ? '' : 's'} today ${ME.rounds_today >= 2 ? '· booster done ✓' : ''}</div>
+    <div class="row" style="justify-content:center"><button class="cta" id="goBtn">▶ Start level ${S.level}${ME.rounds_today === 1 ? ' · booster round' : ''}</button></div>
+    <p class="muted" style="max-width:560px;margin:14px auto 0;font-size:12px">Modeled on the Digit Symbol Substitution Test. Speed training with boosters was the only ACTIVE-trial arm linked to fewer dementia diagnoses (HR 0.75).</p>`;
+  startDemo($('#demo'), 'speed');
   $('#goBtn').onclick = startGame;
 }
+function newKey(n) { const d = Array.from({ length: n }, (_, i) => i + 1).sort(() => Math.random() - .5); return Object.fromEntries(SYM.slice(0, n).map((s, i) => [s, d[i]])); }
+function nextSym() { const pool = SYM.slice(0, G.L.symbols); let nx; do { nx = pool[Math.floor(Math.random() * pool.length)]; } while (nx === G.tgt); return nx; }
+function drawKey() { $('#keyrow').innerHTML = Object.keys(G.key).sort((a, b) => G.key[a] - G.key[b]).map(s => `<div><b>${s}</b><span>${G.key[s]}</span></div>`).join(''); }
 function startGame() {
-  const d = [1, 2, 3, 4, 5, 6, 7, 8, 9].sort(() => Math.random() - .5);
-  G = { key: Object.fromEntries(SYM.map((s, i) => [s, d[i]])), t0: performance.now(), ok: 0, bad: 0, combo: 0, best: 0, tgt: SYM[Math.floor(Math.random() * 9)], over: false };
-  $('#arcadeBody').innerHTML = `<div class="a-top"><div class="a-stat"><small>CORRECT</small><span id="aOk">0</span></div>
-      <div class="timer"><svg width="120" height="120"><circle cx="60" cy="60" r="52" stroke="rgba(255,255,255,.1)" stroke-width="8" fill="none"/><circle id="tRing" cx="60" cy="60" r="52" stroke="#59F0FF" stroke-width="8" fill="none" stroke-linecap="round" stroke-dasharray="326.7" style="filter:drop-shadow(0 0 8px #59F0FF)"/></svg><div class="t" id="tLeft">90</div></div>
+  const L = ME.speed.rule;
+  G = { L, T: ME.speed.seconds, bestHere: ME.speed.best_here, key: newKey(L.symbols), t0: performance.now(), ok: 0, bad: 0, combo: 0, best: 0, tgt: null, over: false };
+  G.tgt = nextSym();
+  $('#arcadeBody').innerHTML = `<div class="eyebrow">LEVEL ${L.level} · ${ruleText(L)}</div>
+    <div class="a-top"><div class="a-stat"><small>CORRECT</small><span id="aOk">0</span></div>
+      <div class="timer"><svg width="120" height="120"><circle cx="60" cy="60" r="52" stroke="rgba(255,255,255,.1)" stroke-width="8" fill="none"/><circle id="tRing" cx="60" cy="60" r="52" stroke="#59F0FF" stroke-width="8" fill="none" stroke-linecap="round" stroke-dasharray="326.7" style="filter:drop-shadow(0 0 8px #59F0FF)"/></svg><div class="t" id="tLeft">${G.T}</div></div>
       <div class="a-stat"><small>ERRORS</small><span id="aBad">0</span></div></div>
+    <div class="goalbar"><i id="gBar"></i><span id="gTxt">0 / ${L.target} to pass</span></div>
     <div class="symbol" id="sym">${G.tgt}</div><div class="combo" id="combo"></div>
-    <div class="keyrow">${SYM.slice().sort((a, b) => G.key[a] - G.key[b]).map(s => `<div><b>${s}</b><span>${G.key[s]}</span></div>`).join('')}</div>
-    <div class="pad">${[1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => `<button data-n="${n}">${n}</button>`).join('')}</div>`;
+    <div class="keyrow" id="keyrow"></div>
+    <div class="pad" style="grid-template-columns:repeat(${L.symbols},1fr);max-width:${L.symbols * 90}px;margin:0 auto">${Array.from({ length: L.symbols }, (_, i) => `<button data-n="${i + 1}">${i + 1}</button>`).join('')}</div>`;
+  drawKey();
   $$('.pad button').forEach(b => b.onclick = () => answer(+b.dataset.n, b)); tick();
 }
 function answer(n, btn) {
   if (!G || G.over) return;
   btn = btn || $(`.pad button[data-n="${n}"]`); btn?.classList.add('hit'); setTimeout(() => btn?.classList.remove('hit'), 100);
   const sym = $('#sym'); sym.classList.remove('ok', 'bad'); void sym.offsetWidth;
-  if (G.key[G.tgt] === n) { G.ok++; G.combo++; G.best = Math.max(G.best, G.combo); sym.classList.add('ok'); } else { G.bad++; G.combo = 0; sym.classList.add('bad'); }
-  let nx; do { nx = SYM[Math.floor(Math.random() * 9)]; } while (nx === G.tgt); G.tgt = nx; setTimeout(() => (sym.textContent = G.tgt), 90);
-  $('#aOk').textContent = G.ok; $('#aBad').textContent = G.bad; $('#combo').textContent = G.combo >= 3 ? `×${G.combo} COMBO` : '';
+  let shuffled = false;
+  if (G.key[G.tgt] === n) {
+    G.ok++; G.combo++; G.best = Math.max(G.best, G.combo); sym.classList.add('ok');
+    if (G.L.shuffle && G.ok % 4 === 0) { G.key = newKey(G.L.symbols); drawKey(); shuffled = true; const k = $('#keyrow'); k.classList.remove('shuf'); void k.offsetWidth; k.classList.add('shuf'); }
+  } else { G.bad++; G.combo = 0; sym.classList.add('bad'); }
+  G.tgt = nextSym(); setTimeout(() => (sym.textContent = G.tgt), 90);
+  $('#aOk').textContent = G.ok; $('#aBad').textContent = G.bad;
+  $('#combo').textContent = shuffled ? '🔀 KEY SHUFFLED' : G.combo >= 3 ? `×${G.combo} COMBO` : '';
+  $('#gBar').style.width = Math.min(100, G.ok / G.L.target * 100) + '%'; $('#gBar').classList.toggle('full', G.ok >= G.L.target);
+  $('#gTxt').textContent = G.ok >= G.L.target ? 'goal reached ✓ keep going' : `${G.ok} / ${G.L.target} to pass`;
 }
-addEventListener('keydown', e => { if (G && !G.over && /^[1-9]$/.test(e.key)) answer(+e.key); });
+addEventListener('keydown', e => { if (G && !G.over && /^[1-9]$/.test(e.key) && +e.key <= G.L.symbols) answer(+e.key); });
 function tick() {
   if (!G || G.over) return;
-  const left = Math.max(0, 90 - (performance.now() - G.t0) / 1000);
-  $('#tLeft').textContent = Math.ceil(left); $('#tRing').style.strokeDashoffset = 326.7 * (1 - left / 90); if (left <= 10) $('#tRing').setAttribute('stroke', '#FF5A6E');
+  const left = Math.max(0, G.T - (performance.now() - G.t0) / 1000);
+  $('#tLeft').textContent = Math.ceil(left); $('#tRing').style.strokeDashoffset = 326.7 * (1 - left / G.T); if (left <= 5) $('#tRing').setAttribute('stroke', '#FF5A6E');
   if (left <= 0) return endGame(); requestAnimationFrame(tick);
 }
 async function endGame() {
-  G.over = true; const prevBest = ME.best_speed ?? -1;
+  G.over = true;
   const r = await api(`/api/player/${enc(ME.name)}/speed`, { correct: G.ok, wrong: G.bad, best_combo: G.best });
-  const acc = G.ok / Math.max(1, G.ok + G.bad); ME = r; renderHUD();
-  $('#arcadeBody').innerHTML = `<div class="eyebrow">ROUND ${r.rounds_today} COMPLETE</div><div class="a-big">${G.ok}</div><div class="muted">correct in 90 seconds · ${(acc * 100).toFixed(0)}% accuracy · best combo ×${G.best}</div>
-    ${G.ok > prevBest ? '<div style="margin-top:10px"><span class="pb">NEW PERSONAL BEST</span></div>' : ''}
-    ${r.history.length > 1 ? '<div style="max-width:620px;height:180px;margin:20px auto"><canvas id="hChart"></canvas></div>' : ''}
-    <div class="row" style="justify-content:center">${r.rounds_today < 2 ? '<button class="cta" id="againBtn">⚡ Booster round (step 3)</button>' : `<a class="cta" href="#/play/speed" style="text-decoration:none">🔥 Claim your quest →</a>`}<a class="ghost" href="#/gym" style="text-decoration:none">Brain Gym</a></div>`;
-  if (r.history.length > 1) chart('hChart', { type: 'line', data: { labels: r.history.map((_, i) => i + 1), datasets: [{ label: 'correct', data: r.history, borderColor: '#59F0FF', backgroundColor: 'rgba(89,240,255,.15)', fill: true, tension: .35 }] }, options: chartOpts({ plugins: { legend: { display: false } } }) });
-  $('#againBtn') && ($('#againBtn').onclick = startGame); G = null;
+  const R = r.round, acc = G.ok / Math.max(1, G.ok + G.bad), pct = Math.round(r.speed.pass_accuracy * 100); ME = r; renderHUD();
+  const why = R.passed ? '' : G.ok < R.target ? `${R.target - G.ok} more correct needed to pass.` : `Goal reached, but accuracy was ${(acc * 100).toFixed(0)}% (needs ${pct}%+). Fewer wrong taps!`;
+  const msg = R.unlocked ? `<div class="unlock">🔓 Level ${R.unlocked} unlocked! <b>+${r.level_bonus} ⚡</b></div>` : R.new_clear ? `<div class="unlock">🏆 You cleared the final level! <b>+${r.level_bonus} ⚡</b></div>` : R.passed ? '' : `<p class="why">${why}</p>`;
+  const burst = R.new_clear ? `<div class="confetti">${'⚡✨🎉⭐'.repeat(5).split('').filter(c => c.trim()).map((c, i) => `<i style="--x:${(i * 37) % 100}%;--d:${(i % 5) * .08}s">${c}</i>`).join('')}</div>` : '';
+  $('#rail').innerHTML = railHTML(r.speed);
+  $('#arcadeBody').innerHTML = `${burst}<div class="resbadge ${R.passed ? 'win' : 'lose'}">${R.passed ? `✓ LEVEL ${R.level} PASSED` : `✗ LEVEL ${R.level} · NOT YET`}</div>
+    <div class="a-big">${G.ok}</div><div class="muted">correct in ${G.T} seconds · goal ${R.target} · ${(acc * 100).toFixed(0)}% accuracy · best combo ×${G.best} · round ${r.rounds_today} today</div>
+    ${msg}${G.bestHere != null && G.ok > G.bestHere ? '<div style="margin-top:8px"><span class="pb">NEW BEST AT THIS LEVEL</span></div>' : ''}
+    ${r.rounds_today === 1 ? '<p class="muted">Play one more round today as a booster: in the ACTIVE trial, only speed training with boosters was linked to fewer dementia diagnoses.</p>' : ''}
+    ${boardHTML(r.leaderboard, 5)}
+    <div class="row" style="justify-content:center"><button class="cta" id="againBtn">${R.unlocked ? `▶ Play level ${R.unlocked}` : '↻ Play again'}</button>
+      <a class="ghost" href="#/gym/speed" style="text-decoration:none">Brain Gym</a></div>`;
+  $('#againBtn').onclick = startGame; G = null;
 }
 
 // ================================================================ PROGRESS (every source, each its own variable)
@@ -466,7 +350,7 @@ function pvar(v) {
     <div class="pv-src">${esc(v.source || '')}${v.domain ? ' · ' + esc(v.domain) : ''}${v.n ? ` · ${v.n} ${v.n === 1 ? 'point' : 'points'}` : ''}${v.latest_date ? ` · last ${String(v.latest_date).slice(0, 10)}` : ''}</div>
     ${latest}${v.recent != null && v.recent !== v.latest ? `<div class="muted pv-sub">${v.recent_label}</div>` : ''}
     ${change}${v.need ? `<div class="pv-need">Needs ${esc(v.need)} to show a trend</div>` : ''}${v.stale_days ? `<div class="pv-need">${v.source === 'game' ? 'Last played' : 'No new data for'} ${v.stale_days} days${v.source === 'game' ? ' ago' : ''}</div>` : ''}
-    ${v.practice_skipped ? `<div class="muted pv-sub">First ${v.practice_skipped} plays skipped as practice</div>` : ''}${pct}
+    ${v.practice_skipped ? `<div class="muted pv-sub">First ${v.practice_skipped} plays skipped as practice</div>` : ''}${v.format ? `<div class="muted pv-sub">Compared within: ${esc(v.format)}</div>` : ''}${v.level_reached ? `<div class="pv-pct">🏅 Level ${v.level_reached}${v.level_top ? ' of ' + v.level_top : ''} cleared</div>` : ''}${pct}
     ${v.points?.length > 2 ? `<div class="pv-spark"><canvas id="sp_${v.id}"></canvas></div>` : ''}
     ${v.research || v.note ? `<details class="pv-more"><summary>What this means</summary>${v.research ? `<p>${esc(v.research)}</p>` : ''}${v.note ? `<p class="muted">${esc(v.note)}</p>` : ''}</details>` : ''}
   </div>`;
@@ -532,7 +416,7 @@ function renderMsgs(ms) {
 }
 function renderPlans(ps) {
   $('#plans').innerHTML = ps.length ? ps.map(p => `<div class="plan"><b>${esc(p.title)}</b><div class="muted">${p.created_at.replace('T', ' ')} · ${p.source === 'claude' ? 'by Claude agent' : 'offline coach'}</div>
-    ${p.items.map(i => `<div class="pi"><b>${esc(i.day)}</b><span>${QMAP[i.quest_id]?.icon || ''}</span><a href="#/play/${i.quest_id}" style="color:#DDE2FA;text-decoration:none">${esc(i.action)}</a></div>`).join('')}</div>`).join('')
+    ${p.items.map(i => `<div class="pi"><b>${esc(i.day)}</b><span>${QMAP[i.quest_id]?.icon || ''}</span><span style="color:#DDE2FA">${esc(i.action)}</span></div>`).join('')}</div>`).join('')
     : '<div class="muted">No plans yet. Ask: "Build my weekly plan".</div>';
 }
 async function send(text) {
@@ -751,7 +635,7 @@ async function boot() {
   if (location.protocol === 'file:') { document.body.insertAdjacentHTML('beforeend', '<div class="overlay open"><div class="modal"><h2>Open the app through its server</h2><p>Run <code>python3 web/server.py</code>, then open <b>http://localhost:8600</b>.</p></div></div>'); return; }
   try { QUESTS = await api('/api/quests'); } catch { toast('NeuroTrail server not reachable. Start it with: python3 web/server.py', 10000); return; }
   QMAP = Object.fromEntries(QUESTS.map(q => [q.id, q]));
-  window.NTX = { api, toast, chart, chartOpts, renderHUD, fmt, QMAP: () => QMAP, getME: () => ME, setME: (m) => { ME = m; } };
+  window.NTX = { api, toast, chart, chartOpts, renderHUD, fmt, gameBrain, QMAP: () => QMAP, getME: () => ME, setME: (m) => { ME = m; } };
   // Show the page first; build the 3D brain (2 MB, a few seconds of work) afterwards. It used to block every page.
   frame(); await showWelcome();
   (window.requestIdleCallback || (f => setTimeout(f, 50)))(() => loadBrain().catch(() => { }));

@@ -126,7 +126,7 @@ def test_overview_combines_sources_with_rules(client):
     client.post("/api/players", json={"name": "Bo"})
     _seed_watch("Bo", 50, 3000, 6000)
     for sc in [10, 30, 31, 30, 32, 33, 35, 36]:      # big practice jump on play 2, then gentle improvement
-        client.post("/api/player/Bo/game", json={"game": "stroop", "score": sc, "detail": {}})
+        client.post("/api/player/Bo/game", json={"game": "stroop", "score": sc, "detail": {"classic": True}})
     db.add_mri("Bo", "OASIS sample OAS1_0001", 70, 75, 5, True)    # a sample scan is not theirs
     ov = client.get("/api/player/Bo/overview").json()
     V = {v["id"]: v for v in ov["variables"]}
@@ -170,3 +170,17 @@ def test_hearing_tests_are_snapshots_then_compared(client):
     db.put_days("Di", {"2026-10-10": {"hearing_pta_db": 33.0}}, "AirPods")      # 15 dB worse, beyond retest noise
     V = {v["id"]: v for v in client.get("/api/player/Di/overview").json()["variables"]}
     assert V["hearing_pta_db"]["status"] == "slipping" and V["hearing_pta_db"]["change"] == 15.0
+
+
+def test_game_levels_never_mixed(client):
+    """Level 1 is easy and level 2 harder: a lower score at level 2 is not a decline."""
+    client.post("/api/players", json={"name": "Ed"})
+    for sc in [12, 13, 13, 14]:                      # level 1 (target 6): each passes, so next round is level 2
+        client.post("/api/player/Ed/game", json={"game": "stroop", "score": sc, "detail": {"correct": sc, "wrong": 0}})
+    rows = __import__("neurotrail.progress", fromlist=["x"]).game_rows(type("P", (), {"name": "Ed"}), "stroop")
+    assert len({f for _, _, f, _ in rows}) > 1      # really did move up levels
+    V = {v["id"]: v for v in client.get("/api/player/Ed/overview").json()["variables"]}
+    g = V["game_stroop"]
+    assert g["format"].startswith("level") and g["level_reached"] >= 1
+    same = [r for r in rows if r[2] == g["format"].replace("classic test", "classic")]
+    assert len(g["points"]) == len(same) < len(rows)   # only one level's rounds feed the trend
