@@ -3,7 +3,7 @@
 // Buddy: bottom-right, opens a small chat with the same AI coach (/api/player/{name}/coach).
 // It can talk: replies are read aloud (browser speech synthesis) and you can speak your question
 // (browser speech recognition, Chrome/Edge/Safari). Both are optional and can be switched off.
-import { buddy } from './ui2.js?v=7';
+import { buddy } from './ui2.js?v=9';
 
 const X = () => window.NTX;
 const $ = s => document.querySelector(s);

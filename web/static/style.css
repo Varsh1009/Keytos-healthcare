@@ -723,3 +723,36 @@ ul.plain { padding-left: 18px; line-height: 1.6; color: #DDE2FA; font-size: 14px
 .wpair { display: flex; align-items: center; gap: 10px; padding: 12px; font: 600 15px Inter; color: #DDE2FA; }
 .wpulse { font-size: 26px; animation: bob 1s ease-in-out infinite; }
 @media (max-width: 760px) { .cr-grid { grid-template-columns: 1fr !important; } }
+/* Progress: Today */
+.ptoday { margin: 6px 0 18px; }
+.pt-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 14px; flex-wrap: wrap; margin-bottom: 12px; }
+.pt-head h2 { margin: 4px 0; font: 700 24px/1.25 'Space Grotesk'; color: #fff; }
+.tgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.tcard { display: block; padding: 16px; border-radius: 18px; text-decoration: none; color: #DDE2FA; border: 1px solid color-mix(in srgb, var(--c) 45%, transparent); transition: transform .15s; }
+.tcard:hover { transform: translateY(-2px); }
+.thead { display: flex; align-items: center; gap: 10px; }
+.thead > div { display: flex; flex-direction: column; flex: 1; } .thead b { color: #fff; font-size: 16px; } .thead small { color: #9AA3C7; font-size: 12px; }
+.ticon { font-size: 28px; }
+.tverd { font: 700 12px Inter; color: var(--c); background: color-mix(in srgb, var(--c) 15%, transparent); padding: 5px 9px; border-radius: 999px; white-space: nowrap; }
+.tpill { display: inline-block; margin-top: 10px; font: 600 12px Inter; padding: 4px 9px; border-radius: 999px; background: rgba(255,200,61,.14); color: #FFD66B; }
+.tbars { margin-top: 10px; display: grid; gap: 6px; }
+.tbars > div { display: grid; grid-template-columns: 70px 1fr 36px; align-items: center; gap: 8px; }
+.tbars small { color: #9AA3C7; font-size: 12px; } .tbars b { font-size: 13px; text-align: right; }
+.tbars i { display: block; height: 10px; border-radius: 6px; background: rgba(255,255,255,.25); }
+.tcard p { margin: 10px 0 0; font-size: 14px; line-height: 1.4; }
+.tnote { font-size: 12px; margin-top: 10px; }
+/* My data: device list + loading ring */
+.wdevs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.wdev { display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 14px 6px; border-radius: 16px; border: 1px solid var(--line); background: rgba(255,255,255,.05); color: #fff; cursor: pointer; font: 600 13px/1.2 Inter; text-align: center; transition: .15s; }
+.wdev span { font-size: 28px; }
+.wdev:hover:not(:disabled) { border-color: rgba(89,240,255,.6); background: rgba(89,240,255,.1); transform: translateY(-2px); }
+.wdev:disabled { opacity: .5; cursor: default; }
+.wor { text-align: center; color: #9AA3C7; font-size: 13px; margin: 10px 0; }
+#wdrop.wbig { flex-direction: row; justify-content: center; padding: 14px; gap: 12px; } #wdrop.wbig span { font-size: 26px; }
+.wring { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 18px 0 6px; position: relative; }
+.wring svg { width: 96px; height: 96px; transform: rotate(-90deg); }
+.wr-bg { fill: none; stroke: rgba(255,255,255,.1); stroke-width: 7; }
+.wr-fg { fill: none; stroke: #59F0FF; stroke-width: 7; stroke-linecap: round; filter: drop-shadow(0 0 6px rgba(89,240,255,.6)); }
+.wring b { position: absolute; top: 52px; font: 700 18px 'Space Grotesk'; color: #fff; }
+.wring span { color: #DDE2FA; font: 600 14px Inter; }
+@media (max-width: 420px) { .wdevs { grid-template-columns: repeat(2, 1fr); } }

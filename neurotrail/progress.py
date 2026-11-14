@@ -210,7 +210,7 @@ def game_rows(p, gid: str) -> list[dict]:
     """Every play: raw score, a comparable value, its format ("levels", "classic" or "old") and level.
     Old = rounds saved before levels existed (e.g. 90-second Speed Sprint)."""
     if gid == "speed":
-        src = [{"ts": r["ts"], "raw": float(r["correct"]), "level": r.get("level"),
+        src = [{"ts": r["ts"], "date": r["date"], "raw": float(r["correct"]), "level": r.get("level"),
                 "passed": bool(r.get("level")) and gym.speed_passed(r), "classic": False} for r in db.rounds(p.name)]
     else:
         src = []
@@ -218,7 +218,7 @@ def game_rows(p, gid: str) -> list[dict]:
             d = r["detail"]
             if gid == "voice" and "task" in d:       # voice-recording page rows (speech tempo), not the Voice Check game
                 continue
-            src.append({"ts": r["ts"], "raw": float(r["score"]), "level": d.get("level"), "passed": bool(d.get("passed")),
+            src.append({"ts": r["ts"], "date": r["date"], "raw": float(r["score"]), "level": d.get("level"), "passed": bool(d.get("passed")),
                         "classic": bool(d.get("classic"))})
     for r in src:
         if r["classic"]:
@@ -398,7 +398,7 @@ def build(p) -> dict:
               "watch_days": len(days), "checkins": len(logs), "voice": len(voices), "hands": len(hands),
               "scans": len(all_mri) + len(db.eegs(p.name))}
     return {"combined": comb, "updates": feed, "totals": totals, "sample_watch": bool(srcs) and all(x.startswith("Sample") for x in srcs), "groups": groups, "variables": vars_, "summary": summary, "coverage": _coverage(p, days, voices, hands, scans),
-            "links": _links(series, p), "rules": RULES, "model": _model_card(wm)}
+            "links": _links(series, p), "rules": RULES, "model": _model_card(wm), "today": today_section(p, rows_all, voices, hands)}
 
 
 def _coverage(p, days, voices, hands, scans) -> list[dict]:
@@ -668,3 +668,99 @@ def updates(p, days: dict, limit: int = 30) -> list[dict]:
 def pfmt(v) -> str:
     v = float(v)
     return f"{v:,.0f}" if abs(v) >= 100 or v == int(v) else f"{v:.1f}" if abs(v) >= 10 else f"{v:.2f}".rstrip("0").rstrip(".")
+
+
+def today_section(p, rows_all: dict, voices: list, hands: list, today: date | None = None) -> dict:
+    """Everything played TODAY counts right away, even one level of one game.
+
+    For each game played today: your best play today, compared with YOUR usual (median of earlier
+    plays in the same format, practice play skipped). Games use the level index (level - 1 + how
+    close you got to that level's goal), so moving up a level counts as progress. The first time you
+    play a game, that play becomes your starting point. Small differences (< 0.25 levels, or < 10% of
+    your usual for classic scores) are called "about your usual" because normal day-to-day wobble
+    is that big.
+    """
+    d0 = (today or date.today()).isoformat()
+    items = []
+    for g in gym.GAMES:
+        rows = rows_all.get(g["id"]) or []
+        now = [r for r in rows if r.get("date") == d0]
+        if not now:
+            continue
+        fmt = max({r["fmt"] for r in now}, key=lambda f: (sum(1 for r in now if r["fmt"] == f), f == "levels"))
+        now = [r for r in now if r["fmt"] == fmt]
+        before = [r for r in rows if r.get("date", "") < d0 and r["fmt"] == fmt][GAME_PRACTICE:] or \
+                 [r for r in rows if r.get("date", "") < d0 and r["fmt"] == fmt]
+        lv = fmt == "levels"
+        higher = lv or g["better"] == "higher"
+        best = (max if higher else min)(now, key=lambda r: r["value"])
+        item = {"id": g["id"], "title": g["title"], "icon": g.get("icon", ""), "domain": g.get("domain", ""),
+                "plays": len(now), "level": best.get("level"), "raw": best["raw"], "unit": g["unit"],
+                "levels_cleared": sorted({r["level"] for r in now if r["passed"] and r.get("level")}),
+                "link": "#/sprint" if g["id"] == "speed" else f"#/game/{g['id']}"}
+        if not before:
+            item |= {"verdict": "first", "text": "First time: this play is your starting point."}
+        else:
+            usual = st.median(r["value"] for r in before)
+            diff = best["value"] - usual
+            if lv:
+                small = 0.25
+                txt = f"{abs(diff):.1f} levels"
+            else:
+                small = max(abs(usual) * 0.10, 1e-9)
+                txt = f"{abs(diff):.0f} {g['unit']}"
+            good = diff > small if higher else diff < -small
+            bad = diff < -small if higher else diff > small
+            item |= {"usual": round(usual, 2), "today_value": round(best["value"], 2), "diff": round(diff, 2),
+                     "n_before": len(before), "verdict": "better" if good else "lower" if bad else "usual",
+                     "text": (f"{txt} above your usual" if good else f"{txt} below your usual" if bad else "About your usual")
+                             + f" (from {len(before)} earlier play{'s' if len(before) != 1 else ''})."}
+        items.append(item)
+    for task, label in (("reading", "Voice check (read aloud)"), ("free", "Voice check (story)")):
+        now = [v for v in voices if v["date"] == d0 and v["task"] == task and v["metrics"].get("speech_tempo")]
+        if not now:
+            continue
+        before = [v for v in voices if v["date"] < d0 and v["task"] == task and v["metrics"].get("speech_tempo")]
+        m = now[-1]["metrics"]
+        it = {"id": "voice_" + task, "title": label, "icon": "🎙️", "domain": "Speech", "plays": len(now),
+              "link": "#/voice", "tempo": m.get("speech_tempo"), "pause": m.get("silent_pause_ratio")}
+        if before:
+            u = st.median(v["metrics"]["speech_tempo"] for v in before)
+            d = m["speech_tempo"] - u
+            it |= {"verdict": "better" if d > 0.15 else "lower" if d < -0.15 else "usual",
+                   "text": f"Speaking pace {m['speech_tempo']:.1f} syllables/s vs your usual {u:.1f}."}
+        else:
+            it |= {"verdict": "first", "text": f"Speaking pace {m['speech_tempo']:.1f} syllables/s. This is your starting point."}
+        items.append(it)
+    hnow = [h for h in hands if h["date"] == d0]
+    if hnow:
+        r = hnow[-1]["detail"].get("results", {})
+        tap, amp = r.get("tap", {}).get("rate_hz"), r.get("steady", {}).get("amplitude_mm")
+        side = hnow[-1]["detail"].get("hand", "")
+        before = [h for h in hands if h["date"] < d0 and h["detail"].get("hand") == side
+                  and h["detail"].get("results", {}).get("tap", {}).get("rate_hz")]
+        parts = ([f"{tap:.1f} finger taps/s"] if tap else []) + ([f"hand shake {amp:.1f} mm"] if amp is not None else [])
+        it = {"id": "hands", "title": f"Hand check ({side} hand)" if side else "Hand check", "icon": "✋",
+              "domain": "Movement control", "plays": len(hnow), "link": "#/hands"}
+        if before and tap:
+            u = st.median(h["detail"]["results"]["tap"]["rate_hz"] for h in before)
+            it |= {"verdict": "better" if tap - u > 0.3 else "lower" if tap - u < -0.3 else "usual",
+                   "text": ", ".join(parts) + f". Your usual tapping: {u:.1f}/s."}
+        else:
+            it |= {"verdict": "first", "text": ", ".join(parts) + ". This is your starting point." if parts else "Saved."}
+        items.append(it)
+    counts = {k: sum(1 for i in items if i["verdict"] == k) for k in ("better", "usual", "lower", "first")}
+    areas = sorted({i["domain"] for i in items if i.get("domain")})
+    if not items:
+        headline = "Nothing played yet today. Even one level counts."
+    elif counts["better"] and not counts["lower"]:
+        headline = f"Good day: {counts['better']} of {len(items)} above your usual."
+    elif counts["lower"] and not counts["better"]:
+        headline = f"{counts['lower']} of {len(items)} below your usual today. One day is normal wobble; the weekly trend matters more."
+    elif counts["better"] or counts["lower"]:
+        headline = f"Mixed day: {counts['better']} above, {counts['lower']} below your usual."
+    elif counts["first"] == len(items):
+        headline = f"You started {len(items)} new {'thing' if len(items) == 1 else 'things'} today. These are your starting points."
+    else:
+        headline = "Right around your usual today."
+    return {"date": d0, "items": items, "counts": counts, "areas": areas, "headline": headline}

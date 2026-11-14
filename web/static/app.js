@@ -9,7 +9,7 @@ import { pageGym, pageGame, pageMRI, railHTML, boardHTML, startDemo } from './gy
 import { pageHands } from './hands.js?v=7';
 import { initDock } from './dock.js?v=1';
 import { pageEEG } from './records.js?v=1';
-import { pageHome as pageHome2, pageVoice, pageData, plainLever, plainAmount, buddy } from './ui2.js?v=7';
+import { pageHome as pageHome2, pageVoice, pageData, plainLever, plainAmount, buddy } from './ui2.js?v=9';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -352,6 +352,20 @@ function feedHTML(U) {
   }
   return `<div class="glass pfeed"><b>Latest updates</b><div class="muted">Everything you've done, newest first</div>${rows}</div>`;
 }
+const TODAY_LOOK = { better: ['⬆️', '#3DDC97', 'Above your usual'], usual: ['➡️', '#59F0FF', 'About your usual'], lower: ['⬇️', '#FFB86B', 'Below your usual'], first: ['🌱', '#C9A7FF', 'Starting point'] };
+function todayHTML(T) {
+  if (!T) return '';
+  const cards = T.items.map(i => { const [e, c, w] = TODAY_LOOK[i.verdict] || TODAY_LOOK.usual;
+    const lvl = i.levels_cleared?.length ? `<span class="tpill">🏅 cleared level ${i.levels_cleared.join(', ')}</span>` : i.level ? `<span class="tpill">level ${i.level}</span>` : '';
+    const bar = i.usual != null && i.today_value != null ? (() => { const mx = Math.max(i.usual, i.today_value) * 1.15 || 1;
+      return `<div class="tbars"><div><small>your usual</small><i style="width:${i.usual / mx * 100}%"></i><b>${i.usual.toFixed(1)}</b></div><div class="now"><small>today</small><i style="width:${i.today_value / mx * 100}%;background:${c}"></i><b>${i.today_value.toFixed(1)}</b></div></div>`; })() : '';
+    return `<a class="tcard glass" href="${i.link}" style="--c:${c}"><div class="thead"><span class="ticon">${i.icon}</span><div><b>${esc(i.title)}</b><small>${esc(i.domain || '')} · ${i.plays} play${i.plays > 1 ? 's' : ''} today</small></div><span class="tverd">${e} ${w}</span></div>
+      ${lvl}${bar}<p>${esc(i.text)}</p></a>`; }).join('');
+  return `<section class="ptoday"><div class="pt-head"><div><div class="eyebrow">TODAY · ${T.date}</div><h2>${esc(T.headline)}</h2>
+      ${T.areas.length ? `<p class="muted">Today counted toward: ${T.areas.map(esc).join(' · ')}</p>` : ''}</div><a class="cta" href="#/gym" style="text-decoration:none">🎮 Play a game</a></div>
+    ${cards ? `<div class="tgrid">${cards}</div>` : `<p class="muted">Play any game, even one level, and it shows up here straight away with how it compares with your usual.</p>`}
+    <p class="muted tnote">"Your usual" = the middle of your earlier plays of the same game (your very first practice play is skipped). Games are scored by level, so moving up a level counts as progress.</p></section>`;
+}
 async function pageProgress() {
   const O = await api(`/api/player/${enc(ME.name)}/overview`), C = O.combined;
   const missing = O.coverage.filter(c => !c.ok);
@@ -376,6 +390,7 @@ async function pageProgress() {
   $('#p-progress').innerHTML = `<div class="scrollpage"><div class="wrap pwrap">
     <div class="h1">Your progress</div>
     <div class="sub">Everything you do in NeuroTrail, put together and compared with <b>your own</b> starting point.</div>
+    ${todayHTML(O.today)}
     ${body}
     ${(() => { const T = O.totals, k = [[T.plays, 'game plays', '🧩'], [T.games_tried, 'games tried', '🎮'], [T.levels, 'levels cleared', '🏅'], [T.watch_days, 'days of watch data', '⌚'], [T.voice + T.hands, 'voice & hand checks', '🎙️'], [T.scans, 'scans & recordings', '🧠'], [T.checkins, 'check-ins', '✅']].filter(x => x[0]);
       return k.length ? `<div class="ptotals">${k.map(([n, l, i]) => `<div><b>${i} ${n}</b><span>${l}</span></div>`).join('')}</div>` : ''; })()}
